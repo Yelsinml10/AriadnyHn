@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 TITLE="INSTALADOR VPN COMPLETO 🚀"
-TOKEN="${TOKEN:-}" # Allow TOKEN to be set as an environment variable
+TOKEN="${TOKEN:-}"
 BASE_URL="https://raw.githubusercontent.com/Yelsinml10/AriadnyHn/main"
 
 # Functions
@@ -23,14 +23,12 @@ info() { echo -e "${GREEN}[✓]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1" >&2; exit 1; }
 
-# Check if running as root
 require_root() {
   if [[ "$EUID" -ne 0 ]]; then
-    error "Este script debe ejecutarse como root. Usa 'sudo bash $0'."
+    error "Ejecuta como root: sudo bash $0"
   fi
 }
 
-# Display header
 display_header() {
   clear
   echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
@@ -39,41 +37,27 @@ display_header() {
   echo ""
 }
 
-# Check for required dependencies
 check_dependencies() {
   if ! command -v curl >/dev/null 2>&1; then
-    error "curl no está instalado. Por favor, instálalo antes de continuar."
+    error "curl no está instalado."
   fi
 }
 
-# Download and execute a script with optional authentication
 download_and_execute() {
   local script_name="$1"
 
-  if [[ -n "$TOKEN" ]]; then
-    echo "Descargando $script_name..."
-    if curl -fsSL -H "Authorization: token $TOKEN" "$BASE_URL/$script_name" > "$script_name"; then
-      chmod +x "$script_name"
-      echo "Ejecutando $script_name..."
-      "./$script_name"
-      rm "$script_name"
-    else
-      error "Error al descargar $script_name."
-    fi
+  echo "Descargando $script_name..."
+  if curl -fsSL "$BASE_URL/$script_name" > "$script_name"; then
+    chmod +x "$script_name"
+    echo "Ejecutando $script_name..."
+    "./$script_name"
+    rm "$script_name"
   else
-    echo "Descargando $script_name..."
-    if curl -fsSL "$BASE_URL/$script_name" > "$script_name"; then
-      chmod +x "$script_name"
-      echo "Ejecutando $script_name..."
-      "./$script_name"
-      rm "$script_name"
-    else
-      error "Error al descargar $script_name."
-    fi
+    error "Error al descargar $script_name."
   fi
 }
 
-# Main menu
+# MAIN MENU - SOLO ESTO ES LO QUE IMPORTA
 main_menu() {
   display_header
 
@@ -101,9 +85,17 @@ main_menu() {
       echo -e "${GREEN}✅ Instalación completa finalizada!${NC}"
       ;;
     5) download_and_execute "firewall.sh" ;;
-    6) download_and_execute "install-sshpanel.sh" ;;
+    6) 
+      echo -e "${YELLOW}📥 Instalando SSH Panel...${NC}"
+      # Instalación directa sin depender de archivo externo
+      mkdir -p /usr/local/bin
+      curl -fsSL "https://raw.githubusercontent.com/Yelsinml10/AriadnyHn/main/sshpanel.sh" -o /usr/local/bin/sshpanel.sh
+      chmod +x /usr/local/bin/sshpanel.sh
+      echo "alias sshpanel='sudo /usr/local/bin/sshpanel.sh'" >> ~/.bashrc
+      echo -e "${GREEN}✅ SSH Panel instalado. Ejecuta: sshpanel${NC}"
+      ;;
     7) echo "Saliendo..." ; exit 0 ;;
-    *) error "Opción inválida. Por favor, selecciona una opción válida." ;;
+    *) error "Opción inválida." ;;
   esac
 }
 
