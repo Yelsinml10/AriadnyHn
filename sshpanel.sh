@@ -75,8 +75,9 @@ create_user() {
             echo -e "${COLOR_RED}✘ El usuario '$username' ya existe.${COLOR_RESET}"
         elif [ -z "$username" ]; then
             echo -e "${COLOR_RED}✘ El nombre no puede estar vacío.${COLOR_RESET}"
-        elif [[ ! "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-            echo -e "${COLOR_RED}✘ Nombre inválido. Solo minúsculas, números y guión bajo para el nombre de cuenta.${COLOR_RESET}"
+        # Modificado: Ahora acepta caracteres en mayúscula (A-Z) al inicio y en el cuerpo
+        elif [[ ! "$username" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+            echo -e "${COLOR_RED}✘ Nombre inválido. Solo letras (mayúsculas/minúsculas), números y guión bajo.${COLOR_RESET}"
         else
             break
         fi
@@ -142,7 +143,8 @@ create_user() {
     echo -e "${COLOR_BLUE}│              ${COLOR_WHITE}CREANDO USUARIO...${COLOR_BLUE}                         │${COLOR_RESET}"
     echo -e "${COLOR_BLUE}└────────────────────────────────────────────────────────────┘${COLOR_RESET}"
     
-    useradd -m -s "$shell" -c "SSH User $(date +%Y-%m-%d)" "$username"
+    # Modificado: Se agrega --badnames para forzar el soporte de mayúsculas en el comando nativo de Linux
+    useradd -m -s "$shell" --badnames -c "SSH User $(date +%Y-%m-%d)" "$username"
     echo "$username:$password" | chpasswd
     
     exp_date=$(date -d "+$exp_days days" +%Y-%m-%d)
