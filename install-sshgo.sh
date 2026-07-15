@@ -101,7 +101,7 @@ const (
 )
 
 func main() {
-	puertos := []int{80, 8080, 8880, 2053}
+	puertos := []int{8080}
 
 	for _, p := range puertos {
 		go func(port int) {
