@@ -43,6 +43,7 @@ show_header() {
 }
 
 generate_password() {
+    # Mantiene una mezcla robusta de Mayúsculas, Minúsculas, Números y Símbolos
     tr -dc 'A-Za-z0-9!@#$%&*' </dev/urandom | head -c 12
 }
 
@@ -75,14 +76,14 @@ create_user() {
         elif [ -z "$username" ]; then
             echo -e "${COLOR_RED}✘ El nombre no puede estar vacío.${COLOR_RESET}"
         elif [[ ! "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-            echo -e "${COLOR_RED}✘ Nombre inválido. Solo minúsculas, números y guión bajo.${COLOR_RESET}"
+            echo -e "${COLOR_RED}✘ Nombre inválido. Solo minúsculas, números y guión bajo para el nombre de cuenta.${COLOR_RESET}"
         else
             break
         fi
     done
     
     echo -e "${COLOR_YELLOW}➜ Opciones de contraseña:${COLOR_RESET}"
-    echo "  1) Generar automáticamente"
+    echo "  1) Generar automáticamente (Incluye mayúsculas)"
     echo "  2) Ingresar manualmente"
     read -p "Selecciona (1-2): " pass_option
     
@@ -90,6 +91,7 @@ create_user() {
         password=$(generate_password)
         echo -e "${COLOR_GREEN}✓ Contraseña generada: ${COLOR_WHITE}$password${COLOR_RESET}"
     else
+        # Permitirá cualquier carácter ingresado manualmente (incluyendo mayúsculas)
         read -sp "Contraseña: " password
         echo ""
         read -sp "Confirmar contraseña: " password_confirm
@@ -154,7 +156,6 @@ create_user() {
         echo -e "$username hard maxlogins $max_connections" >> /etc/security/limits.conf
     fi
     
-    # Restricción de IP segura mediante bloques Match al final del archivo
     if [ "$limit_ip" = "s" ] || [ "$limit_ip" = "S" ]; then
         echo -e "\nMatch User $username\n    AllowUsers $username@$allowed_ip" >> /etc/ssh/sshd_config
         systemctl restart sshd || systemctl restart ssh
@@ -196,7 +197,6 @@ list_users() {
         create_date=$(ls -ld /home/$user 2>/dev/null | awk '{print $6, $7, $8}')
         [ -z "$create_date" ] && create_date="N/A"
         
-        # Extracción segura de fecha de expiración por chage
         exp_raw=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2)
         if [[ "$exp_raw" =~ "never" ]] || [[ "$exp_raw" =~ "Nunca" ]] || [ -z "$exp_raw" ]; then
             exp_date="Nunca"
@@ -260,7 +260,6 @@ user_details() {
     echo "  Conexiones actuales: $current_conn"
     
     echo -e "\n${COLOR_WHITE}● Restricciones${COLOR_RESET}"
-    # Búsqueda adaptada al bloque Match seguro
     if sed -n "/Match User $username/,/^$/p" /etc/ssh/sshd_config | grep -q "AllowUsers"; then
         allowed_ip=$(sed -n "/Match User $username/,/^$/p" /etc/ssh/sshd_config | grep "AllowUsers" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
         echo "  Restringido a IP: $allowed_ip"
@@ -316,7 +315,6 @@ delete_user() {
     sed -i "/^$username soft maxlogins/d" /etc/security/limits.conf
     sed -i "/^$username hard maxlogins/d" /etc/security/limits.conf
     
-    # Eliminar bloque Match específico del usuario de forma segura en sshd_config
     sed -i "/Match User $username/,+1d" /etc/ssh/sshd_config
     systemctl restart sshd || systemctl restart ssh
     
@@ -343,7 +341,6 @@ extend_user() {
         return
     fi
     
-    # Obtener días de expiración actuales desde la época de forma segura
     exp_days_epoch=$(chage -l "$username" | grep "Account expires" | cut -d: -f2)
     
     if [[ "$exp_days_epoch" =~ "never" ]] || [[ "$exp_days_epoch" =~ "Nunca" ]]; then
@@ -389,7 +386,7 @@ change_password() {
     fi
     
     echo -e "${COLOR_YELLOW}➜ Opciones:${COLOR_RESET}"
-    echo "  1) Generar contraseña automáticamente"
+    echo "  1) Generar contraseña automáticamente (Incluye mayúsculas)"
     echo "  2) Ingresar manualmente"
     read -p "Selecciona (1-2): " pass_option
     
