@@ -1,19 +1,6 @@
-# Guardar el script
-nano /usr/local/bin/sshpanel.sh
-
-# Dar permisos
-chmod +x /usr/local/bin/sshpanel.sh
-
-# Crear alias
-echo "alias sshpanel='sudo /usr/local/bin/sshpanel.sh'" >> ~/.bashrc
-
-# Ejecutar
-source ~/.bashrc
-sshpanel
-
 #!/bin/bash
 # =============================================
-# PANEL SSH PROFESSIONAL v3.0
+# PANEL SSH PROFESSIONAL v3.0 (Corregido)
 # Sistema avanzado de gestión de usuarios SSH
 # =============================================
 
@@ -30,6 +17,12 @@ COLOR_PURPLE='\033[1;35m'
 COLOR_CYAN='\033[1;36m'
 COLOR_WHITE='\033[1;37m'
 COLOR_BOLD='\033[1m'
+
+# Asegurar que el script se ejecute como root
+if [ "$EUID" -ne 0 ]; then
+  echo -e "${COLOR_RED}✘ Este script debe ejecutarse como root (sudo).${COLOR_RESET}"
+  exit 1
+fi
 
 # === FUNCIONES DE UTILIDAD ===
 log_action() {
@@ -75,7 +68,6 @@ create_user() {
     echo -e "${COLOR_BLUE}╚════════════════════════════════════════════════════════════╝${COLOR_RESET}"
     echo ""
     
-    # === DATOS DEL USUARIO ===
     while true; do
         read -p "$(echo -e ${COLOR_GREEN}➜${COLOR_RESET} Nombre de usuario: )" username
         if id "$username" &>/dev/null; then
@@ -83,13 +75,12 @@ create_user() {
         elif [ -z "$username" ]; then
             echo -e "${COLOR_RED}✘ El nombre no puede estar vacío.${COLOR_RESET}"
         elif [[ ! "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-            echo -e "${COLOR_RED}✘ Nombre inválido. Solo letras minúsculas, números y guión bajo.${COLOR_RESET}"
+            echo -e "${COLOR_RED}✘ Nombre inválido. Solo minúsculas, números y guión bajo.${COLOR_RESET}"
         else
             break
         fi
     done
     
-    # === CONTRASEÑA ===
     echo -e "${COLOR_YELLOW}➜ Opciones de contraseña:${COLOR_RESET}"
     echo "  1) Generar automáticamente"
     echo "  2) Ingresar manualmente"
@@ -110,7 +101,6 @@ create_user() {
         fi
     fi
     
-    # === LÍMITE DE CONEXIONES ===
     while true; do
         read -p "$(echo -e ${COLOR_GREEN}➜${COLOR_RESET} Límite de conexiones simultáneas: )" max_connections
         if [[ "$max_connections" =~ ^[0-9]+$ ]] && [ "$max_connections" -gt 0 ]; then
@@ -119,7 +109,6 @@ create_user() {
         echo -e "${COLOR_RED}✘ Ingresa un número válido mayor a 0.${COLOR_RESET}"
     done
     
-    # === DÍAS DE EXPIRACIÓN ===
     while true; do
         read -p "$(echo -e ${COLOR_GREEN}➜${COLOR_RESET} Días de expiración: )" exp_days
         if [[ "$exp_days" =~ ^[0-9]+$ ]] && [ "$exp_days" -gt 0 ]; then
@@ -128,7 +117,6 @@ create_user() {
         echo -e "${COLOR_RED}✘ Ingresa un número válido mayor a 0.${COLOR_RESET}"
     done
     
-    # === RESTRICCIONES ADICIONALES ===
     echo -e "${COLOR_YELLOW}➜ Restricciones adicionales:${COLOR_RESET}"
     read -p "¿Limitar por IP? (s/n): " limit_ip
     if [ "$limit_ip" = "s" ] || [ "$limit_ip" = "S" ]; then
@@ -148,41 +136,34 @@ create_user() {
         echo -e "${COLOR_YELLOW}⚠ Acceso a shell habilitado (menos seguro)${COLOR_RESET}"
     fi
     
-    # === CREAR USUARIO ===
     echo -e "\n${COLOR_BLUE}┌────────────────────────────────────────────────────────────┐${COLOR_RESET}"
     echo -e "${COLOR_BLUE}│              ${COLOR_WHITE}CREANDO USUARIO...${COLOR_BLUE}                         │${COLOR_RESET}"
     echo -e "${COLOR_BLUE}└────────────────────────────────────────────────────────────┘${COLOR_RESET}"
     
-    # Crear usuario
     useradd -m -s "$shell" -c "SSH User $(date +%Y-%m-%d)" "$username"
-    echo -e "$password\n$password" | passwd "$username" &>/dev/null
+    echo "$username:$password" | chpasswd
     
-    # Configurar expiración
     exp_date=$(date -d "+$exp_days days" +%Y-%m-%d)
     chage -E "$exp_date" "$username"
     
-    # Configurar límite de conexiones
     mkdir -p /etc/ssh/limits
     echo "$max_connections" > "/etc/ssh/limits/$username"
     
-    # Aplicar límite de conexiones via PAM
     if ! grep -q "^$username soft maxlogins" /etc/security/limits.conf; then
         echo -e "$username soft maxlogins $max_connections" >> /etc/security/limits.conf
         echo -e "$username hard maxlogins $max_connections" >> /etc/security/limits.conf
     fi
     
-    # Configurar restricción de IP
+    # Restricción de IP segura mediante bloques Match al final del archivo
     if [ "$limit_ip" = "s" ] || [ "$limit_ip" = "S" ]; then
-        echo "AllowUsers $username@$allowed_ip" >> /etc/ssh/sshd_config
-        systemctl restart sshd
+        echo -e "\nMatch User $username\n    AllowUsers $username@$allowed_ip" >> /etc/ssh/sshd_config
+        systemctl restart sshd || systemctl restart ssh
     fi
     
-    # Crear directorio de configuración personalizada
     mkdir -p "/home/$username/.ssh"
     chown "$username:$username" "/home/$username/.ssh"
     chmod 700 "/home/$username/.ssh"
     
-    # === NOTIFICACIÓN ===
     log_action "Usuario creado: $username (Expira: $exp_date, Límite: $max_connections)"
     
     echo -e "\n${COLOR_GREEN}╔════════════════════════════════════════════════════════════╗${COLOR_RESET}"
@@ -208,33 +189,33 @@ list_users() {
     echo -e "${COLOR_BLUE}╚════════════════════════════════════════════════════════════╝${COLOR_RESET}"
     echo ""
     
-    printf "${COLOR_CYAN}%-15s %-18s %-10s %-8s %-15s${COLOR_RESET}\n" "USUARIO" "CREACIÓN" "EXPIRA" "CONEX" "ESTADO"
+    printf "${COLOR_CYAN}%-15s %-18s %-12s %-8s %-15s${COLOR_RESET}\n" "USUARIO" "CREACIÓN" "EXPIRA" "CONEX" "ESTADO"
     echo "──────────────────────────────────────────────────────────────────"
     
     for user in $(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd); do
-        # Fecha de creación
         create_date=$(ls -ld /home/$user 2>/dev/null | awk '{print $6, $7, $8}')
         [ -z "$create_date" ] && create_date="N/A"
         
-        # Fecha de expiración
-        exp_date=$(chage -l "$user" 2>/dev/null | grep "Account expires" | awk -F': ' '{print $2}')
-        [ -z "$exp_date" ] && exp_date="Nunca"
+        # Extracción segura de fecha de expiración por chage
+        exp_raw=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2)
+        if [[ "$exp_raw" =~ "never" ]] || [[ "$exp_raw" =~ "Nunca" ]] || [ -z "$exp_raw" ]; then
+            exp_date="Nunca"
+        else
+            exp_date=$(date -d "$exp_raw" +%Y-%m-%d 2>/dev/null || echo "N/A")
+        fi
         
-        # Límite de conexiones
         max_conn=$(cat "/etc/ssh/limits/$user" 2>/dev/null || echo "N/A")
         
-        # Estado del usuario
-        if ps -u "$user" | grep -q sshd; then
+        if ps -u "$user" 2>/dev/null | grep -q sshd; then
             status="${COLOR_GREEN}● Activo${COLOR_RESET}"
         else
             status="${COLOR_RED}○ Inactivo${COLOR_RESET}"
         fi
         
-        # Conteo de conexiones actuales
-        current_conn=$(ps -u "$user" | grep sshd | wc -l)
+        current_conn=$(ps -u "$user" 2>/dev/null | grep sshd | wc -l)
         conn_info="$current_conn/$max_conn"
         
-        printf "${COLOR_WHITE}%-15s${COLOR_RESET} %-18s %-10s %-8s %b\n" "$user" "$create_date" "$exp_date" "$conn_info" "$status"
+        printf "${COLOR_WHITE}%-15s${COLOR_RESET} %-18s %-12s %-8s %b\n" "$user" "$create_date" "$exp_date" "$conn_info" "$status"
     done
     
     echo ""
@@ -260,7 +241,6 @@ user_details() {
     
     echo -e "\n${COLOR_CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${COLOR_RESET}"
     
-    # Información básica
     echo -e "${COLOR_WHITE}● Información General${COLOR_RESET}"
     echo "  Usuario: $username"
     echo "  UID: $(id -u $username)"
@@ -268,31 +248,28 @@ user_details() {
     echo "  Shell: $(getent passwd $username | cut -d: -f7)"
     echo "  Home: /home/$username"
     
-    # Fechas
     echo -e "\n${COLOR_WHITE}● Fechas${COLOR_RESET}"
     echo "  Último cambio de password: $(chage -l $username | grep "Last password change" | cut -d: -f2-)"
     echo "  Expiración de cuenta: $(chage -l $username | grep "Account expires" | cut -d: -f2-)"
     echo "  Último inicio de sesión: $(last $username -n 1 | head -1 | awk '{$1=""; print $0}')"
     
-    # Límites
     echo -e "\n${COLOR_WHITE}● Límites y Conexiones${COLOR_RESET}"
     max_conn=$(cat "/etc/ssh/limits/$username" 2>/dev/null || echo "Sin límite")
-    current_conn=$(ps -u "$username" | grep sshd | wc -l)
+    current_conn=$(ps -u "$username" 2>/dev/null | grep sshd | wc -l)
     echo "  Límite máximo: $max_conn conexiones"
     echo "  Conexiones actuales: $current_conn"
     
-    # Restricciones
     echo -e "\n${COLOR_WHITE}● Restricciones${COLOR_RESET}"
-    if grep -q "AllowUsers.*$username@" /etc/ssh/sshd_config; then
-        allowed_ip=$(grep "AllowUsers.*$username@" /etc/ssh/sshd_config | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
+    # Búsqueda adaptada al bloque Match seguro
+    if sed -n "/Match User $username/,/^$/p" /etc/ssh/sshd_config | grep -q "AllowUsers"; then
+        allowed_ip=$(sed -n "/Match User $username/,/^$/p" /etc/ssh/sshd_config | grep "AllowUsers" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
         echo "  Restringido a IP: $allowed_ip"
     else
         echo "  Sin restricción de IP"
     fi
     
-    # Estado
     echo -e "\n${COLOR_WHITE}● Estado${COLOR_RESET}"
-    if ps -u "$username" | grep -q sshd; then
+    if ps -u "$username" 2>/dev/null | grep -q sshd; then
         echo -e "  ${COLOR_GREEN}✓ Conectado actualmente${COLOR_RESET}"
     else
         echo -e "  ${COLOR_RED}✗ No conectado${COLOR_RESET}"
@@ -330,19 +307,18 @@ delete_user() {
         return
     fi
     
-    # === CREAR BACKUP ===
     mkdir -p "$BACKUP_DIR"
     tar -czf "$BACKUP_DIR/${username}_$(date +%Y%m%d_%H%M%S).tar.gz" "/home/$username" 2>/dev/null
     
-    # === ELIMINAR ===
-    # Eliminar usuario
     userdel -r "$username" 2>/dev/null
     
-    # Eliminar archivos de configuración
     rm -f "/etc/ssh/limits/$username"
     sed -i "/^$username soft maxlogins/d" /etc/security/limits.conf
     sed -i "/^$username hard maxlogins/d" /etc/security/limits.conf
-    sed -i "/AllowUsers.*$username@/d" /etc/ssh/sshd_config
+    
+    # Eliminar bloque Match específico del usuario de forma segura en sshd_config
+    sed -i "/Match User $username/,+1d" /etc/ssh/sshd_config
+    systemctl restart sshd || systemctl restart ssh
     
     log_action "Usuario eliminado: $username"
     
@@ -367,8 +343,16 @@ extend_user() {
         return
     fi
     
-    current_exp=$(chage -l "$username" | grep "Account expires" | awk -F': ' '{print $2}')
-    echo -e "Fecha actual de expiración: ${COLOR_YELLOW}$current_exp${COLOR_RESET}"
+    # Obtener días de expiración actuales desde la época de forma segura
+    exp_days_epoch=$(chage -l "$username" | grep "Account expires" | cut -d: -f2)
+    
+    if [[ "$exp_days_epoch" =~ "never" ]] || [[ "$exp_days_epoch" =~ "Nunca" ]]; then
+        echo -e "Fecha actual de expiración: ${COLOR_YELLOW}Nunca${COLOR_RESET}"
+        base_date="now"
+    else
+        base_date=$(date -d "$exp_days_epoch" +%Y-%m-%d 2>/dev/null)
+        echo -e "Fecha actual de expiración: ${COLOR_YELLOW}$base_date${COLOR_RESET}"
+    fi
     
     while true; do
         read -p "$(echo -e ${COLOR_GREEN}➜${COLOR_RESET} Días a extender: )" extra_days
@@ -378,13 +362,7 @@ extend_user() {
         echo -e "${COLOR_RED}✘ Ingresa un número válido.${COLOR_RESET}"
     done
     
-    # Calcular nueva fecha
-    if [ "$current_exp" = "never" ] || [ "$current_exp" = "Nunca" ]; then
-        new_date=$(date -d "+$extra_days days" +%Y-%m-%d)
-    else
-        current_date=$(date -d "$current_exp" +%Y-%m-%d)
-        new_date=$(date -d "$current_date + $extra_days days" +%Y-%m-%d)
-    fi
+    new_date=$(date -d "$base_date + $extra_days days" +%Y-%m-%d)
     
     chage -E "$new_date" "$username"
     log_action "Extendida caducidad de $username a $new_date (+$extra_days días)"
@@ -430,7 +408,7 @@ change_password() {
         fi
     fi
     
-    echo -e "$new_password\n$new_password" | passwd "$username" &>/dev/null
+    echo "$username:$new_password" | chpasswd
     log_action "Contraseña cambiada para $username"
     
     echo -e "\n${COLOR_GREEN}✓ Contraseña actualizada exitosamente.${COLOR_RESET}"
@@ -451,7 +429,7 @@ while true; do
     echo -e "${COLOR_BLUE}│${COLOR_WHITE}  7${COLOR_RESET}  Ver logs del sistema                       ${COLOR_BLUE}│${COLOR_RESET}"
     echo -e "${COLOR_BLUE}│${COLOR_WHITE}  8${COLOR_RESET}  Backup/restaurar usuarios                  ${COLOR_BLUE}│${COLOR_RESET}"
     echo -e "${COLOR_BLUE}│${COLOR_WHITE}  9${COLOR_RESET}  Monitoreo en tiempo real                   ${COLOR_BLUE}│${COLOR_RESET}"
-    echo -e "${COLOR_BLUE}│${COLOR_WHITE}  0${COLOR_RESET}  Salir                                     ${COLOR_BLUE}│${COLOR_RESET}"
+    echo -e "${COLOR_WHITE}  0${COLOR_RESET}  Salir                                     ${COLOR_BLUE}│${COLOR_RESET}"
     echo -e "${COLOR_BLUE}└────────────────────────────────────────────────────────────┘${COLOR_RESET}"
     echo ""
     
@@ -479,6 +457,7 @@ while true; do
         9)
             echo "Monitoreo en tiempo real..."
             echo "Presiona Ctrl+C para salir"
+            sleep 1
             watch -n 2 'ps aux | grep sshd | grep -v grep'
             ;;
         0)
