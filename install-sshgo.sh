@@ -90,9 +90,7 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
-	"os"
 	"strings"
 	"time"
 )
@@ -100,94 +98,61 @@ import (
 const (
 	BUFLEN       = 4096 * 4
 	DEFAULT_HOST = "127.0.0.1:22"
-	READ_TIMEOUT = 30 * time.Second
 )
 
 func main() {
-	// Configurar logs a archivo y consola
-	logFile, err := os.OpenFile("/var/log/vpn-proxy.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		log.SetOutput(logFile)
-		defer logFile.Close()
-	}
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	puertos := []int{8080}
-	log.Printf("Iniciando proxy VPN en puertos: %v", puertos)
+	puertos := []int{80, 8080, 8880, 2053}
 
 	for _, p := range puertos {
 		go func(port int) {
 			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 			if err != nil {
-				log.Printf("ERROR: No se pudo escuchar en puerto %d: %v", port, err)
 				return
 			}
-			defer listener.Close()
-			log.Printf("Escuchando en :%d", port)
-
 			for {
 				client, err := listener.Accept()
 				if err != nil {
-					log.Printf("Error aceptando conexión en puerto %d: %v", port, err)
 					continue
 				}
 				go handleConnection(client)
 			}
 		}(p)
 	}
-
-	// Mantener vivo
 	select {}
 }
 
 func handleConnection(client net.Conn) {
 	defer client.Close()
-
-	// Timeout para leer el primer paquete
-	client.SetReadDeadline(time.Now().Add(READ_TIMEOUT))
+	
+	client.SetReadDeadline(time.Now().Add(15 * time.Second))
 
 	buf := make([]byte, BUFLEN)
 	n, err := client.Read(buf)
 	if err != nil {
-		log.Printf("Error leyendo desde %s: %v", client.RemoteAddr(), err)
 		return
 	}
-
+	
 	clientBuffer := string(buf[:n])
 	targetHost := findHeader(clientBuffer, "X-Real-Host")
 	if targetHost == "" {
 		targetHost = DEFAULT_HOST
-		log.Printf("Cliente %s usando host por defecto: %s", client.RemoteAddr(), DEFAULT_HOST)
-	} else {
-		log.Printf("Cliente %s → %s", client.RemoteAddr(), targetHost)
 	}
 
-	// Conectar al destino
 	target, err := net.DialTimeout("tcp", targetHost, 10*time.Second)
 	if err != nil {
-		log.Printf("ERROR: No se pudo conectar a %s: %v", targetHost, err)
 		return
 	}
 	defer target.Close()
 
-	// Escribir respuesta según tipo de conexión
+	// Lógica inteligente: Si el cliente pide upgrade a websocket, damos 101, si no, damos 200
 	if strings.Contains(clientBuffer, "Upgrade: websocket") {
-		// Respuesta para WebSocket
-		response := "HTTP/1.1 101 Switching Protocols\r\n" +
-			"Upgrade: websocket\r\n" +
-			"Connection: Upgrade\r\n" +
-			"Sec-WebSocket-Accept: " + generateWebSocketAccept(clientBuffer) + "\r\n\r\n"
-		client.Write([]byte(response))
-		log.Printf("WebSocket upgrade para %s", client.RemoteAddr())
+		client.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"))
 	} else {
-		// Respuesta HTTP estándar
 		client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 	}
 
-	// Quitar timeout después del handshake
 	client.SetReadDeadline(time.Time{})
 
-	// Bidireccional copy
 	done := make(chan struct{})
 	go func() {
 		io.Copy(target, client)
@@ -198,7 +163,6 @@ func handleConnection(client net.Conn) {
 		done <- struct{}{}
 	}()
 	<-done
-	log.Printf("Conexión cerrada: %s", client.RemoteAddr())
 }
 
 func findHeader(head, header string) string {
@@ -212,17 +176,7 @@ func findHeader(head, header string) string {
 	if end == -1 {
 		return ""
 	}
-	return strings.TrimSpace(head[start : start+end])
-}
-
-// Genera respuesta WebSocket básica (para compatibilidad)
-func generateWebSocketAccept(data string) string {
-	// Buscar Sec-WebSocket-Key
-	key := findHeader(data, "Sec-WebSocket-Key")
-	if key == "" {
-		return "dGhlIHNhbXBsZSBub25jZQ=="
-	}
-	return "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+	return head[start : start+end]
 }
 GOMAIN
 
