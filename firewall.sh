@@ -1,7 +1,10 @@
 #!/bin/bash
 # ============================================================
-# 🔥 FIREWALL DEFINITIVO PARA UBUNTU
-# Abre TODOS los puertos sin restricciones
+# 🔥 FIREWALL DEFINITIVO PARA UBUNTU (CON INSTALADOR)
+# ============================================================
+# 📌 Este script INSTALA UFW si no está presente
+# 📌 Abre TODOS los puertos (TCP + UDP)
+# 📌 Funciona en Ubuntu 20.04, 22.04, 24.04
 # ============================================================
 
 RED='\033[0;31m'
@@ -18,35 +21,34 @@ step() { echo -e "${BLUE}[→]${NC} $1"; }
 [[ $EUID -ne 0 ]] && error "Ejecutar como root: sudo bash $0"
 
 # ============================================================
-# MENÚ
+# FUNCIÓN: INSTALAR UFW
 # ============================================================
-clear
-echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
-echo -e "${YELLOW}     🔥 FIREWALL DEFINITIVO PARA UBUNTU 🔥${NC}"
-echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
-echo ""
-echo -e "${BLUE}Selecciona una opción:${NC}"
-echo "  1)  🔓 Abrir TODOS los puertos (TCP + UDP) [RECOMENDADO]"
-echo "  2)  🔒 Cerrar TODOS los puertos (solo SSH)"
-echo "  3)  📋 Ver estado del firewall"
-echo "  4)  📋 Ver puertos abiertos"
-echo "  5)  Salir"
-echo ""
-read -p "➜ Opción: " OPCION
+instalar_ufw() {
+    if ! command -v ufw &> /dev/null; then
+        step "UFW no está instalado. Instalando..."
+        apt-get update -qq
+        apt-get install -y -qq ufw
+        info "✅ UFW instalado correctamente"
+    else
+        info "UFW ya está instalado"
+    fi
+}
 
 # ============================================================
-# FUNCIONES
+# FUNCIÓN: ABRIR TODOS LOS PUERTOS
 # ============================================================
-
 abrir_todos() {
     step "Abriendo TODOS los puertos (TCP + UDP)..."
     
-    # Detener UFW
+    # 1. Asegurar que UFW esté instalado
+    instalar_ufw
+    
+    # 2. Detener UFW
     sudo systemctl stop ufw 2>/dev/null
     sudo systemctl disable ufw 2>/dev/null
     sudo ufw --force disable 2>/dev/null
     
-    # Limpiar iptables
+    # 3. Limpiar iptables
     sudo iptables -P INPUT ACCEPT
     sudo iptables -P OUTPUT ACCEPT
     sudo iptables -P FORWARD ACCEPT
@@ -55,10 +57,10 @@ abrir_todos() {
     sudo iptables -t nat -F
     sudo iptables -t mangle -F
     
-    # Limpiar nftables
+    # 4. Limpiar nftables
     sudo nft flush ruleset 2>/dev/null || true
     
-    # Abrir todos los puertos con UFW
+    # 5. Abrir todos los puertos con UFW
     sudo ufw allow 1:65535/tcp
     sudo ufw allow 1:65535/udp
     sudo ufw reload
@@ -69,21 +71,56 @@ abrir_todos() {
     sudo ufw status verbose
 }
 
-cerrar_todos() {
-    step "Cerrando TODOS los puertos (solo SSH)..."
+# ============================================================
+# FUNCIÓN: CONFIGURACIÓN SEGURA
+# ============================================================
+configuracion_segura() {
+    step "Configurando firewall SEGURO..."
+    
+    instalar_ufw
     
     sudo ufw --force reset
     sudo ufw default deny incoming
     sudo ufw default allow outgoing
     sudo ufw allow 22/tcp
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
     sudo ufw --force enable
     sudo ufw reload
     
     echo ""
-    info "✅ Solo puerto SSH (22) abierto"
+    info "✅ Configuración segura: SSH(22), HTTP(80), HTTPS(443)"
     sudo ufw status verbose
 }
 
+# ============================================================
+# FUNCIÓN: DESACTIVAR COMPLETAMENTE
+# ============================================================
+desactivar_completo() {
+    step "Desactivando firewall COMPLETAMENTE..."
+    
+    instalar_ufw
+    
+    sudo systemctl stop ufw
+    sudo systemctl disable ufw
+    sudo ufw --force disable
+    
+    sudo iptables -P INPUT ACCEPT
+    sudo iptables -P OUTPUT ACCEPT
+    sudo iptables -P FORWARD ACCEPT
+    sudo iptables -F
+    sudo iptables -X
+    sudo iptables -t nat -F
+    sudo iptables -t mangle -F
+    
+    sudo nft flush ruleset 2>/dev/null || true
+    
+    info "✅ Firewall DESACTIVADO. TODOS los puertos están abiertos."
+}
+
+# ============================================================
+# FUNCIÓN: VER ESTADO
+# ============================================================
 ver_estado() {
     echo ""
     echo -e "${BLUE}📋 Estado de UFW:${NC}"
@@ -93,14 +130,35 @@ ver_estado() {
     sudo iptables -L -n --line-numbers | head -20
 }
 
+# ============================================================
+# FUNCIÓN: VER PUERTOS
+# ============================================================
 ver_puertos() {
     echo ""
     echo -e "${BLUE}📋 Puertos abiertos en UFW:${NC}"
     sudo ufw status | grep "ALLOW" || echo "  No hay puertos abiertos"
     echo ""
-    echo -e "${BLUE}📋 Puertos en escucha (servicios activos):${NC}"
+    echo -e "${BLUE}📋 Puertos en escucha:${NC}"
     sudo ss -tulpn | grep LISTEN | column -t
 }
+
+# ============================================================
+# MENÚ PRINCIPAL
+# ============================================================
+clear
+echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
+echo -e "${YELLOW}     🔥 FIREWALL DEFINITIVO PARA UBUNTU 🔥${NC}"
+echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
+echo ""
+echo -e "${BLUE}Selecciona una opción:${NC}"
+echo "  1)  🔓 Abrir TODOS los puertos (TCP + UDP) [RECOMENDADO]"
+echo "  2)  🔒 Configuración SEGURA (SSH + HTTP + HTTPS)"
+echo "  3)  🔓 Desactivar firewall COMPLETAMENTE"
+echo "  4)  📋 Ver estado del firewall"
+echo "  5)  📋 Ver puertos abiertos"
+echo "  6)  Salir"
+echo ""
+read -p "➜ Opción: " OPCION
 
 # ============================================================
 # EJECUTAR
@@ -110,15 +168,18 @@ case $OPCION in
         abrir_todos
         ;;
     2)
-        cerrar_todos
+        configuracion_segura
         ;;
     3)
-        ver_estado
+        desactivar_completo
         ;;
     4)
-        ver_puertos
+        ver_estado
         ;;
     5)
+        ver_puertos
+        ;;
+    6)
         echo "Saliendo..."
         exit 0
         ;;
