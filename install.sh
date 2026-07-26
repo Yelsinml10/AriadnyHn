@@ -377,19 +377,28 @@ caddy_menu() {
 # 4. MÓDULO: V2RAY (VMESS) - ADMINISTRACIÓN COMPLETA
 # =============================================
 v2ray_menu() {
-  # Si V2Ray no está instalado o no existe config, ejecuta tu instalador oficial del repositorio
-  if ! command -v v2ray >/dev/null 2>&1 || [[ ! -f "/usr/local/etc/v2ray/config.json" ]]; then
+  # Si V2Ray no está instalado en el sistema, ejecuta install-v2ray.sh de tu repositorio
+  if ! command -v v2ray >/dev/null 2>&1 && [[ ! -f "/usr/local/v2ray/config.json" && ! -f "/usr/local/etc/v2ray/config.json" ]]; then
     echo -e "\n  ${YELLOW}⚠️ V2Ray no está instalado en el sistema.${NC}"
+    echo -e "  ${CYAN}Iniciando instalación desde install-v2ray.sh...${NC}"
     download_and_execute "install-v2ray.sh"
-    if ! command -v v2ray >/dev/null 2>&1 || [[ ! -f "/usr/local/etc/v2ray/config.json" ]]; then
+    if ! command -v v2ray >/dev/null 2>&1 && [[ ! -f "/usr/local/v2ray/config.json" && ! -f "/usr/local/etc/v2ray/config.json" ]]; then
       warn "No se pudo completar la instalación de V2Ray."
       return 1
     fi
   fi
 
   if ! command -v jq >/dev/null 2>&1; then apt-get install -y jq -qq || true; fi
-  V2RAY_CONF="/usr/local/etc/v2ray/config.json"
-  
+
+  # Detección dinámica de la ruta del config.json según el panel instalado
+  if [[ -f "/usr/local/v2ray/config.json" ]]; then
+    V2RAY_CONF="/usr/local/v2ray/config.json"
+  elif [[ -f "/usr/local/etc/v2ray/config.json" ]]; then
+    V2RAY_CONF="/usr/local/etc/v2ray/config.json"
+  else
+    V2RAY_CONF="/usr/local/v2ray/config.json"
+  fi
+
   while true; do
     if systemctl is-active --quiet v2ray; then 
       V2RAY_STATUS=" ${BG_GREEN} ● ACTIVO ${NC}"
@@ -411,14 +420,15 @@ v2ray_menu() {
     echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${V2RAY_STATUS}"
     echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
 
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📋 Listar Usuarios (UUIDs)${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}➕ Añadir nuevo usuario${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🗑️  Eliminar usuario${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔌 Cambiar puerto local${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔀 Cambiar PATH (Ruta Websocket)${NC}"
-    echo -e "  ${CYAN}[6]${NC} ${WHITE}📜 Ver logs en tiempo real${NC}"
-    echo -e "  ${CYAN}[7]${NC} ${WHITE}🔄 Reiniciar V2Ray${NC}"
-    echo -e "  ${RED}[8]${NC} ${RED}🗑️  Desinstalar V2Ray por completo${NC}"
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}🚀 Abrir Panel Completo V2Ray (menuV2)${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}📋 Listar Usuarios (UUIDs)${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}➕ Añadir nuevo usuario${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🗑️  Eliminar usuario${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔌 Cambiar puerto local${NC}"
+    echo -e "  ${CYAN}[6]${NC} ${WHITE}🔀 Cambiar PATH (Ruta Websocket)${NC}"
+    echo -e "  ${CYAN}[7]${NC} ${WHITE}📜 Ver logs en tiempo real${NC}"
+    echo -e "  ${CYAN}[8]${NC} ${WHITE}🔄 Reinstalar / Ejecutar install-v2ray.sh${NC}"
+    echo -e "  ${RED}[9]${NC} ${RED}🗑️  Desinstalar V2Ray por completo${NC}"
     echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
     echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
     echo -e "  ${GRAY}─────────────────────────────────────────────────────────${NC}"
@@ -426,13 +436,23 @@ v2ray_menu() {
     read -r opt_v2ray
 
     case "$opt_v2ray" in
-      1) echo -e "\n  ${YELLOW}=== USUARIOS CONFIGURADOS ===${NC}"; jq -r '.inbounds[0].settings.clients | to_entries[] | "  [\(.key)] UUID: \(.value.id)"' "$V2RAY_CONF" 2>/dev/null || true; pause ;;
-      2) 
-        NUEVO_UUID=$(cat /proc/sys/kernel/random/uuid)
+      1) 
+        if [[ -x "/usr/local/bin/v2ray" ]]; then
+          /usr/local/bin/v2ray
+        elif [[ -x "/usr/local/bin/menuV2" ]]; then
+          /usr/local/bin/menuV2
+        else
+          warn "No se encontró ejecutable interactivo en /usr/local/bin/v2ray."
+          pause
+        fi
+        ;;
+      2) echo -e "\n  ${YELLOW}=== USUARIOS CONFIGURADOS ===${NC}"; jq -r '.inbounds[0].settings.clients | to_entries[] | "  [\(.key)] UUID: \(.value.id)"' "$V2RAY_CONF" 2>/dev/null || true; pause ;;
+      3) 
+        NUEVO_UUID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
         jq --arg uuid "$NUEVO_UUID" '.inbounds[0].settings.clients += [{"id": $uuid, "alterId": 0}]' "$V2RAY_CONF" > /tmp/v2.json 2>/dev/null && mv /tmp/v2.json "$V2RAY_CONF" 2>/dev/null || true
         systemctl restart v2ray || true
         info "Nuevo UUID añadido: $NUEVO_UUID"; pause ;;
-      3) 
+      4) 
         jq -r '.inbounds[0].settings.clients | to_entries[] | "  [\(.key)] \(.value.id)"' "$V2RAY_CONF" 2>/dev/null || true
         read -r -p "  ➜ Ingresa el número [#] a eliminar (q para salir): " IDX
         if [[ "$IDX" =~ ^[0-9]+$ ]]; then
@@ -441,7 +461,7 @@ v2ray_menu() {
           info "Usuario eliminado exitosamente."
         fi
         pause ;;
-      4) 
+      5) 
         echo -e "\n  ${YELLOW}Puerto actual:${NC} ${WHITE}$V2RAY_PORT${NC}"
         read -r -p "  ➜ Ingresa el nuevo puerto: " NUEVO_PUE
         if [[ "$NUEVO_PUE" =~ ^[0-9]+$ ]]; then
@@ -452,7 +472,7 @@ v2ray_menu() {
           warn "Puerto inválido."
         fi
         pause ;;
-      5) 
+      6) 
         echo -e "\n  ${YELLOW}Path actual:${NC} ${WHITE}$V2RAY_PATH${NC}"
         read -r -p "  ➜ Ingresa el nuevo path (Ej: /v2ray o /): " NUEVO_PATH
         if [[ -n "$NUEVO_PATH" ]]; then
@@ -463,15 +483,18 @@ v2ray_menu() {
           warn "Path no válido."
         fi
         pause ;;
-      6) clear; journalctl -u v2ray -f || true; pause ;;
-      7) systemctl restart v2ray || true; info "V2Ray reiniciado."; sleep 1 ;;
+      7) clear; journalctl -u v2ray -f || true; pause ;;
       8) 
+        echo -e "\n  ${CYAN}Reinstalando / Ejecutando install-v2ray.sh...${NC}"
+        download_and_execute "install-v2ray.sh"
+        ;;
+      9) 
         echo -e "\n  ${RED}⚠️ ¿Estás seguro de desinstalar V2Ray por completo? (s/N)${NC}"
         read -r -p "  ➜ " conf_v2
         if [[ "$conf_v2" =~ ^[sS]$ ]]; then
           systemctl stop v2ray 2>/dev/null || true
           systemctl disable v2ray 2>/dev/null || true
-          rm -rf /usr/local/etc/v2ray /usr/local/share/v2ray /var/log/v2ray /etc/systemd/system/v2ray.service /usr/local/bin/v2ray 2>/dev/null || true
+          rm -rf /usr/local/v2ray /usr/local/etc/v2ray /usr/local/share/v2ray /var/log/v2ray /etc/systemd/system/v2ray.service /usr/local/bin/v2ray /usr/local/bin/menuV2 2>/dev/null || true
           systemctl daemon-reload 2>/dev/null || true
           info "V2Ray desinstalado por completo."
           pause
