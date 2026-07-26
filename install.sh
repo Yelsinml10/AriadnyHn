@@ -94,14 +94,14 @@ get_vps_info() {
   VPS_CPU=$(uptime 2>/dev/null | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | xargs)
 }
 
-draw_banner() {
+draw_header() {
   clear
   echo -e "\n  ${PURPLE}${BOLD}🚀 PANEL MAESTRO VPN${NC} ${GRAY}• [ PRO EDITION ]${NC}\n"
 }
 
 display_header_main() {
   get_vps_info
-  draw_banner
+  draw_header
   echo -e "${L_CYAN}  ╭─────────────────────────────────────────────────────────╮${NC}"
   echo -e "  ${L_CYAN}│${NC}  ${BOLD}${WHITE}🖥️  SISTEMA  :${NC} ${GREEN}${VPS_OS}${NC}"
   echo -e "  ${L_CYAN}│${NC}  ${BOLD}${WHITE}🌐 IP VPS   :${NC} ${YELLOW}${VPS_IP}${NC}"
@@ -134,7 +134,7 @@ caddy_menu() {
       PUERTOS_HTTP="N/A"
     fi
 
-    draw_banner
+    draw_header
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🌐 ADMINISTRADOR DE CADDY SERVER${NC}          ${PURPLE}│${NC}"
     echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
@@ -146,8 +146,8 @@ caddy_menu() {
 
     echo -e "  ${CYAN}[1]${NC} ${WHITE}📊 Estado del servicio${NC}"
     echo -e "  ${CYAN}[2]${NC} ${WHITE}✏️  Cambiar dominio actual${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔌 Cambiar puertos HTTP${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔒 Cambiar puertos HTTPS${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔌 Gestionar puertos HTTP (Agregar/Quitar/Cambiar)${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔒 Gestionar puertos HTTPS (Agregar/Quitar/Cambiar)${NC}"
     echo -e "  ${CYAN}[5]${NC} ${WHITE}📜 Ver logs en tiempo real${NC}"
     echo -e "  ${CYAN}[6]${NC} ${WHITE}🔄 Reiniciar Caddy${NC}"
     echo -e "  ${RED}[7]${NC} ${RED}🗑️  Desinstalar Caddy por completo${NC}"
@@ -169,56 +169,189 @@ caddy_menu() {
         fi
         pause ;;
       3) 
-        echo -e "\n  ${YELLOW}=== CAMBIAR PUERTOS HTTP DE CADDY ===${NC}"
-        echo -e "  ${GRAY}Introduce los nuevos puertos HTTP separados por comas (Ej: 80, 8880, 2052)${NC}"
-        read -r -p "  ➜ Nuevos puertos HTTP: " NUEVOS_HTTP
-        if [[ -n "$NUEVOS_HTTP" && -f "$CADDY_CONF" ]]; then
-            IFS=',' read -ra ADDR <<< "$NUEVOS_HTTP"
-            FORMATTED_HTTP=""
-            for i in "${ADDR[@]}"; do
-                cp_clean=$(echo "$i" | xargs)
-                if [[ -n "$cp_clean" ]]; then
-                    if [[ -z "$FORMATTED_HTTP" ]]; then
-                        FORMATTED_HTTP=":${cp_clean}"
-                    else
-                        FORMATTED_HTTP="${FORMATTED_HTTP}, :${cp_clean}"
-                    fi
+        echo -e "\n  ${YELLOW}=== GESTIÓN DE PUERTOS HTTP (CADDY) ===${NC}"
+        echo -e "  Puertos HTTP actuales: ${WHITE}$PUERTOS_HTTP${NC}\n"
+        echo -e "  ${CYAN}[1]${NC} ${WHITE}➕ Agregar un puerto${NC}"
+        echo -e "  ${CYAN}[2]${NC} ${WHITE}➖ Quitar un puerto${NC}"
+        echo -e "  ${CYAN}[3]${NC} ${WHITE}✏️  Reemplazar todos los puertos${NC}"
+        read -r -p "  ➜ Selecciona una sub-opción: " opt_p_http
+
+        case "$opt_p_http" in
+          1)
+            read -r -p "  ➜ Puerto HTTP a agregar: " ADD_P
+            if [[ "$ADD_P" =~ ^[0-9]+$ ]]; then
+              LIST_HTTP=$(echo "$PUERTOS_HTTP" | tr ',' ' ')
+              FORMATTED_HTTP=""
+              EXISTS=0
+              for p in $LIST_HTTP; do
+                p_clean=$(echo "$p" | xargs)
+                if [[ "$p_clean" == "$ADD_P" ]]; then EXISTS=1; fi
+                if [[ -n "$p_clean" && "$p_clean" != "N/A" ]]; then
+                  if [[ -z "$FORMATTED_HTTP" ]]; then
+                    FORMATTED_HTTP=":${p_clean}"
+                  else
+                    FORMATTED_HTTP="${FORMATTED_HTTP}, :${p_clean}"
+                  fi
                 fi
-            done
-            if [[ -n "$FORMATTED_HTTP" ]]; then
+              done
+              if [[ $EXISTS -eq 0 ]]; then
+                if [[ -z "$FORMATTED_HTTP" ]]; then
+                  FORMATTED_HTTP=":${ADD_P}"
+                else
+                  FORMATTED_HTTP="${FORMATTED_HTTP}, :${ADD_P}"
+                fi
+              fi
+              sed -i -E "s/^:[0-9]+(,[[:space:]]*:[0-9]+)*[[:space:]]*\{/$FORMATTED_HTTP {/g" "$CADDY_CONF" 2>/dev/null || true
+              systemctl restart caddy 2>/dev/null || true
+              info "Puerto HTTP $ADD_P agregado correctamente."
+            else
+              warn "Puerto no válido."
+            fi
+            ;;
+          2)
+            read -r -p "  ➜ Puerto HTTP a quitar: " DEL_P
+            if [[ "$DEL_P" =~ ^[0-9]+$ ]]; then
+              LIST_HTTP=$(echo "$PUERTOS_HTTP" | tr ',' ' ')
+              FORMATTED_HTTP=""
+              for p in $LIST_HTTP; do
+                p_clean=$(echo "$p" | xargs)
+                if [[ "$p_clean" != "$DEL_P" && -n "$p_clean" && "$p_clean" != "N/A" ]]; then
+                  if [[ -z "$FORMATTED_HTTP" ]]; then
+                    FORMATTED_HTTP=":${p_clean}"
+                  else
+                    FORMATTED_HTTP="${FORMATTED_HTTP}, :${p_clean}"
+                  fi
+                fi
+              done
+              if [[ -n "$FORMATTED_HTTP" ]]; then
                 sed -i -E "s/^:[0-9]+(,[[:space:]]*:[0-9]+)*[[:space:]]*\{/$FORMATTED_HTTP {/g" "$CADDY_CONF" 2>/dev/null || true
                 systemctl restart caddy 2>/dev/null || true
-                info "Puertos HTTP actualizados correctamente."
+                info "Puerto HTTP $DEL_P eliminado correctamente."
+              else
+                warn "No se puede dejar Caddy sin puertos HTTP."
+              fi
             else
-                warn "Formato de puertos HTTP inválido."
+              warn "Puerto no válido."
             fi
-        fi
+            ;;
+          3)
+            read -r -p "  ➜ Nuevos puertos HTTP (separados por comas): " NUEVOS_HTTP
+            if [[ -n "$NUEVOS_HTTP" && -f "$CADDY_CONF" ]]; then
+                IFS=',' read -ra ADDR <<< "$NUEVOS_HTTP"
+                FORMATTED_HTTP=""
+                for i in "${ADDR[@]}"; do
+                    cp_clean=$(echo "$i" | xargs)
+                    if [[ -n "$cp_clean" ]]; then
+                        if [[ -z "$FORMATTED_HTTP" ]]; then
+                            FORMATTED_HTTP=":${cp_clean}"
+                        else
+                            FORMATTED_HTTP="${FORMATTED_HTTP}, :${cp_clean}"
+                        fi
+                    fi
+                done
+                if [[ -n "$FORMATTED_HTTP" ]]; then
+                    sed -i -E "s/^:[0-9]+(,[[:space:]]*:[0-9]+)*[[:space:]]*\{/$FORMATTED_HTTP {/g" "$CADDY_CONF" 2>/dev/null || true
+                    systemctl restart caddy 2>/dev/null || true
+                    info "Puertos HTTP actualizados correctamente."
+                else
+                    warn "Formato de puertos HTTP inválido."
+                fi
+            fi
+            ;;
+        esac
         pause ;;
       4) 
-        echo -e "\n  ${YELLOW}=== CAMBIAR PUERTOS HTTPS DE CADDY ===${NC}"
-        echo -e "  ${GRAY}Introduce la nueva lista de puertos separados por comas (Ej: 443, 8443, 2053)${NC}"
-        read -r -p "  ➜ Nuevos puertos HTTPS: " NUEVOS_PUERTOS
-        if [[ -n "$NUEVOS_PUERTOS" && -f "$CADDY_CONF" ]]; then
-            IFS=',' read -ra ADDR <<< "$NUEVOS_PUERTOS"
-            FORMATTED_PORTS=""
-            for i in "${ADDR[@]}"; do
-                clean_port=$(echo "$i" | xargs)
-                if [[ -n "$clean_port" ]]; then
-                    if [[ -z "$FORMATTED_PORTS" ]]; then
-                        FORMATTED_PORTS="${DOMINIO_ACTUAL}:${clean_port}"
-                    else
-                        FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${clean_port}"
-                    fi
+        echo -e "\n  ${YELLOW}=== GESTIÓN DE PUERTOS HTTPS (CADDY) ===${NC}"
+        echo -e "  Dominio: ${WHITE}$DOMINIO_ACTUAL${NC}"
+        echo -e "  Puertos HTTPS actuales: ${WHITE}$PUERTOS_HTTPS${NC}\n"
+        echo -e "  ${CYAN}[1]${NC} ${WHITE}➕ Agregar un puerto${NC}"
+        echo -e "  ${CYAN}[2]${NC} ${WHITE}➖ Quitar un puerto${NC}"
+        echo -e "  ${CYAN}[3]${NC} ${WHITE}✏️  Reemplazar todos los puertos${NC}"
+        read -r -p "  ➜ Selecciona una sub-opción: " opt_p_https
+
+        case "$opt_p_https" in
+          1)
+            read -r -p "  ➜ Puerto HTTPS a agregar: " ADD_P
+            if [[ "$ADD_P" =~ ^[0-9]+$ && "$DOMINIO_ACTUAL" != "No detectado" ]]; then
+              LIST_HTTPS=$(echo "$PUERTOS_HTTPS" | tr ',' ' ')
+              FORMATTED_PORTS=""
+              EXISTS=0
+              for p in $LIST_HTTPS; do
+                p_clean=$(echo "$p" | xargs)
+                if [[ "$p_clean" == "$ADD_P" ]]; then EXISTS=1; fi
+                if [[ -n "$p_clean" && "$p_clean" != "N/A" ]]; then
+                  if [[ -z "$FORMATTED_PORTS" ]]; then
+                    FORMATTED_PORTS="${DOMINIO_ACTUAL}:${p_clean}"
+                  else
+                    FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${p_clean}"
+                  fi
                 fi
-            done
-            if [[ -n "$FORMATTED_PORTS" ]]; then
+              done
+              if [[ $EXISTS -eq 0 ]]; then
+                if [[ -z "$FORMATTED_PORTS" ]]; then
+                  FORMATTED_PORTS="${DOMINIO_ACTUAL}:${ADD_P}"
+                else
+                  FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${ADD_P}"
+                fi
+              fi
+              sed -i -E "s/^[a-zA-Z0-9.-]+:[0-9]+.*\{/$FORMATTED_PORTS {/g" "$CADDY_CONF" 2>/dev/null || true
+              systemctl restart caddy 2>/dev/null || true
+              info "Puerto HTTPS $ADD_P agregado correctamente."
+            else
+              warn "Puerto o dominio no válido."
+            fi
+            ;;
+          2)
+            read -r -p "  ➜ Puerto HTTPS a quitar: " DEL_P
+            if [[ "$DEL_P" =~ ^[0-9]+$ && "$DOMINIO_ACTUAL" != "No detectado" ]]; then
+              LIST_HTTPS=$(echo "$PUERTOS_HTTPS" | tr ',' ' ')
+              FORMATTED_PORTS=""
+              for p in $LIST_HTTPS; do
+                p_clean=$(echo "$p" | xargs)
+                if [[ "$p_clean" != "$DEL_P" && -n "$p_clean" && "$p_clean" != "N/A" ]]; then
+                  if [[ -z "$FORMATTED_PORTS" ]]; then
+                    FORMATTED_PORTS="${DOMINIO_ACTUAL}:${p_clean}"
+                  else
+                    FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${p_clean}"
+                  fi
+                fi
+              done
+              if [[ -n "$FORMATTED_PORTS" ]]; then
                 sed -i -E "s/^[a-zA-Z0-9.-]+:[0-9]+.*\{/$FORMATTED_PORTS {/g" "$CADDY_CONF" 2>/dev/null || true
                 systemctl restart caddy 2>/dev/null || true
-                info "Puertos HTTPS actualizados correctamente."
+                info "Puerto HTTPS $DEL_P eliminado correctamente."
+              else
+                warn "No se puede dejar Caddy sin puertos HTTPS."
+              fi
             else
-                warn "Formato de puertos HTTPS inválido."
+              warn "Puerto o dominio no válido."
             fi
-        fi
+            ;;
+          3)
+            read -r -p "  ➜ Nuevos puertos HTTPS (separados por comas): " NUEVOS_PUERTOS
+            if [[ -n "$NUEVOS_PUERTOS" && -f "$CADDY_CONF" ]]; then
+                IFS=',' read -ra ADDR <<< "$NUEVOS_PUERTOS"
+                FORMATTED_PORTS=""
+                for i in "${ADDR[@]}"; do
+                    clean_port=$(echo "$i" | xargs)
+                    if [[ -n "$clean_port" ]]; then
+                        if [[ -z "$FORMATTED_PORTS" ]]; then
+                            FORMATTED_PORTS="${DOMINIO_ACTUAL}:${clean_port}"
+                        else
+                            FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${clean_port}"
+                        fi
+                    fi
+                done
+                if [[ -n "$FORMATTED_PORTS" ]]; then
+                    sed -i -E "s/^[a-zA-Z0-9.-]+:[0-9]+.*\{/$FORMATTED_PORTS {/g" "$CADDY_CONF" 2>/dev/null || true
+                    systemctl restart caddy 2>/dev/null || true
+                    info "Puertos HTTPS actualizados correctamente."
+                else
+                    warn "Formato de puertos HTTPS inválido."
+                fi
+            fi
+            ;;
+        esac
         pause ;;
       5) clear; journalctl -u caddy -f || true; pause ;;
       6) systemctl restart caddy || true; info "Caddy reiniciado."; sleep 1 ;;
@@ -258,7 +391,7 @@ v2ray_menu() {
     V2RAY_PATH=$(jq -r '.inbounds[0].streamSettings.wsSettings.path' "$V2RAY_CONF" 2>/dev/null || echo "N/A")
     V2RAY_USERS=$(jq '.inbounds[0].settings.clients | length' "$V2RAY_CONF" 2>/dev/null || echo "0")
 
-    draw_banner
+    draw_header
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}⚡ ADMINISTRADOR V2RAY (VMESS)${NC}            ${PURPLE}│${NC}"
     echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
@@ -360,7 +493,7 @@ sshgo_menu() {
       PUERTOS_ACTUALES="No instalado"
     fi
 
-    draw_banner
+    draw_header
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🚀 ADMINISTRADOR SSH-GO PROXY${NC}            ${PURPLE}│${NC}"
     echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
@@ -368,7 +501,7 @@ sshgo_menu() {
     echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${PROXY_STATUS}"
     echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
 
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}⚙️  Agregar / Quitar / Cambiar Puertos${NC}"
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}⚙️  Gestionar Puertos (Agregar/Quitar/Cambiar)${NC}"
     echo -e "  ${CYAN}[2]${NC} ${WHITE}🧪 Prueba de Conexión (Test HTTP/SSH)${NC}"
     echo -e "  ${CYAN}[3]${NC} ${WHITE}📜 Ver logs en tiempo real${NC}"
     echo -e "  ${CYAN}[4]${NC} ${WHITE}🔄 Reiniciar Proxy${NC}"
@@ -382,33 +515,68 @@ sshgo_menu() {
     case "$opt_sshgo" in
       1) 
         echo -e "\n  ${YELLOW}=== GESTIÓN DE PUERTOS SSH-GO ===${NC}"
-        echo -e "  Puertos actuales: ${WHITE}$PUERTOS_ACTUALES${NC}"
-        read -r -p "  ➜ Ingresa los nuevos puertos separados por comas (Ej: 8080, 80, 443): " NUEVOS_PUERTOS
-        if [[ -n "$NUEVOS_PUERTOS" && -f "$PROXY_DIR/main.go" ]]; then
-            FORMATTED_ARRAY=""
-            IFS=',' read -ra ADDR <<< "$NUEVOS_PUERTOS"
-            for i in "${ADDR[@]}"; do
+        echo -e "  Puertos actuales: ${WHITE}$PUERTOS_ACTUALES${NC}\n"
+        echo -e "  ${CYAN}[1]${NC} ${WHITE}➕ Agregar un puerto${NC}"
+        echo -e "  ${CYAN}[2]${NC} ${WHITE}➖ Quitar un puerto${NC}"
+        echo -e "  ${CYAN}[3]${NC} ${WHITE}✏️  Reemplazar todos los puertos${NC}"
+        read -r -p "  ➜ Selecciona una sub-opción: " opt_p_sshgo
+
+        NEW_PORTS_LIST=""
+        case "$opt_p_sshgo" in
+          1)
+            read -r -p "  ➜ Puerto a agregar: " ADD_P
+            if [[ "$ADD_P" =~ ^[0-9]+$ && -f "$PROXY_DIR/main.go" ]]; then
+              CURRENT_LIST=$(echo "$PUERTOS_ACTUALES" | tr ',' ' ')
+              EXISTS=0
+              for p in $CURRENT_LIST; do
+                p_clean=$(echo "$p" | xargs)
+                if [[ "$p_clean" == "$ADD_P" ]]; then EXISTS=1; fi
+                if [[ -n "$p_clean" && "$p_clean" != "No" ]]; then
+                  if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$p_clean"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $p_clean"; fi
+                fi
+              done
+              if [[ $EXISTS -eq 0 ]]; then
+                if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$ADD_P"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $ADD_P"; fi
+              fi
+            fi
+            ;;
+          2)
+            read -r -p "  ➜ Puerto a quitar: " DEL_P
+            if [[ "$DEL_P" =~ ^[0-9]+$ && -f "$PROXY_DIR/main.go" ]]; then
+              CURRENT_LIST=$(echo "$PUERTOS_ACTUALES" | tr ',' ' ')
+              for p in $CURRENT_LIST; do
+                p_clean=$(echo "$p" | xargs)
+                if [[ "$p_clean" != "$DEL_P" && -n "$p_clean" && "$p_clean" != "No" ]]; then
+                  if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$p_clean"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $p_clean"; fi
+                fi
+              done
+            fi
+            ;;
+          3)
+            read -r -p "  ➜ Nuevos puertos (separados por comas): " NUEVOS_PUERTOS
+            if [[ -n "$NUEVOS_PUERTOS" && -f "$PROXY_DIR/main.go" ]]; then
+              IFS=',' read -ra ADDR <<< "$NUEVOS_PUERTOS"
+              for i in "${ADDR[@]}"; do
                 clean_p=$(echo "$i" | xargs)
                 if [[ "$clean_p" =~ ^[0-9]+$ ]]; then
-                    if [[ -z "$FORMATTED_ARRAY" ]]; then
-                        FORMATTED_ARRAY="$clean_p"
-                    else
-                        FORMATTED_ARRAY="${FORMATTED_ARRAY}, $clean_p"
-                    fi
+                  if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_p"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_p"; fi
                 fi
-            done
-            if [[ -n "$FORMATTED_ARRAY" ]]; then
-                echo -e "  ${CYAN}Actualizando código fuente y recompilando binario...${NC}"
-                sed -i -E "s/puertos\s*:=\s*\[\]int\{[^}]+\}/puertos := []int{$FORMATTED_ARRAY}/g" "$PROXY_DIR/main.go" 2>/dev/null
-                cd "$PROXY_DIR"
-                export PATH=$PATH:/usr/local/go/bin
-                go build -ldflags="-s -w" -o vpn-proxy main.go 2>/dev/null
-                chmod +x vpn-proxy
-                systemctl restart "$PROXY_SVC" 2>/dev/null || true
-                info "Puertos actualizados y binario recompilado."
-            else
-                warn "Puertos no válidos."
+              done
             fi
+            ;;
+        esac
+
+        if [[ -n "$NEW_PORTS_LIST" && -f "$PROXY_DIR/main.go" ]]; then
+            echo -e "  ${CYAN}Actualizando código fuente y recompilando binario...${NC}"
+            sed -i -E "s/puertos\s*:=\s*\[\]int\{[^}]+\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
+            cd "$PROXY_DIR"
+            export PATH=$PATH:/usr/local/go/bin
+            go build -ldflags="-s -w" -o vpn-proxy main.go 2>/dev/null
+            chmod +x vpn-proxy
+            systemctl restart "$PROXY_SVC" 2>/dev/null || true
+            info "Puertos actualizados ($NEW_PORTS_LIST) y binario recompilado."
+        elif [[ -z "$NEW_PORTS_LIST" && "$opt_p_sshgo" =~ ^[123]$ ]]; then
+            warn "No se pudo actualizar la lista de puertos (inválido o quedaba vacía)."
         fi
         pause ;;
       2) 
@@ -446,7 +614,7 @@ firewall_menu() {
       FW_STATUS=" ${BG_RED} ● INACTIVO (Abierto) ${NC}"
     fi
 
-    draw_banner
+    draw_header
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  ADMINISTRADOR DE FIREWALL UFW${NC}          ${PURPLE}│${NC}"
     echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
