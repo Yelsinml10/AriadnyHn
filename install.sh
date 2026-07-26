@@ -33,26 +33,46 @@ require_root() {
   fi
 }
 
-# Esta función instala el script como el comando 'menu' globalmente
+# Configuración del comando global 'menu'
 setup_menu_command() {
   local script_path
   script_path=$(readlink -f "$0")
-  # Si el script no se está ejecutando ya desde el destino
   if [[ "$script_path" != "/usr/local/bin/menu" ]]; then
     cp "$script_path" /usr/local/bin/menu
     chmod +x /usr/local/bin/menu
   fi
 }
 
-# Diseño del Header visual
+# Obtener información de la VPS
+get_vps_info() {
+  # Sistema Operativo
+  if [ -f /etc/os-release ]; then
+      VPS_OS=$(grep -w PRETTY_NAME /etc/os-release | cut -d '"' -f 2)
+  else
+      VPS_OS=$(uname -srm)
+  fi
+
+  # IP Pública
+  VPS_IP=$(curl -sS ifconfig.me || curl -sS ipv4.icanhazip.com || hostname -I | awk '{print $1}')
+
+  # Memoria RAM (Uso / Total)
+  VPS_RAM=$(free -m | awk 'NR==2{printf "%sMB / %sMB", $3, $2}')
+
+  # Carga de CPU (Último minuto)
+  VPS_CPU=$(uptime | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | xargs)
+}
+
+# Diseño del Header visual con datos de la VPS
 display_header() {
+  get_vps_info # Actualiza los datos antes de imprimir
   clear
   echo -e "${L_RED}──────────────────────────────────────────────────${NC}"
   echo -e "           ${WHITE}${TITLE}${NC}"
   echo -e "${L_RED}──────────────────────────────────────────────────${NC}"
-  echo -e "${CYAN}BASE_URL:${NC} ${GREEN}$BASE_URL${NC}"
-  echo -e "${L_RED}──────────────────────────────────────────────────${NC}"
-  echo -e " ${GREEN}● SERVICIO: ACTIVO${NC}"
+  echo -e "${CYAN} OS  :${NC} ${GREEN}${VPS_OS}${NC}"
+  echo -e "${CYAN} IP  :${NC} ${GREEN}${VPS_IP}${NC}"
+  echo -e "${CYAN} RAM :${NC} ${GREEN}${VPS_RAM}${NC}"
+  echo -e "${CYAN} CPU :${NC} ${GREEN}${VPS_CPU} (Load)${NC}"
   echo -e "${L_RED}──────────────────────────────────────────────────${NC}"
   echo ""
 }
@@ -117,7 +137,6 @@ main_menu() {
         curl -fsSL "https://raw.githubusercontent.com/Yelsinml10/AriadnyHn/main/sshpanel.sh" -o /usr/local/bin/sshpanel.sh
         chmod +x /usr/local/bin/sshpanel.sh
         
-        # Evita duplicar el alias en el .bashrc si ya fue instalado
         if ! grep -q "alias sshpanel=" ~/.bashrc; then
             echo "alias sshpanel='sudo /usr/local/bin/sshpanel.sh'" >> ~/.bashrc
         fi
@@ -148,4 +167,3 @@ require_root
 check_dependencies
 setup_menu_command
 main_menu
-
