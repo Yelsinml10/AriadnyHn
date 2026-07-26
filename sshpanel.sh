@@ -18,10 +18,9 @@ c_reset="\e[0m"
 function encabezado() {
     clear
     mem_usage=$(free -m | awk 'NR==2{printf "%.0f%%", $3*100/$2}')
-    ip_address=$(curl -s ifconfig.me || echo "Sin conexión")
+    ip_address=$(curl -s --max-time 3 ifconfig.me || echo "Sin conexión")
     
     echo -e "${c_green}Memory usage: ${mem_usage}               IPv4 address: ${ip_address}${c_reset}\n"
-    
     echo -e "${c_red}============================================================${c_reset}"
     echo -e " ${c_yellow}>>>>>>${c_white} SCRIPT MOD YELSIN ${c_yellow}<<<<<<${c_white}      [Version ${c_cyan}2.3${c_white}]"
     echo -e "${c_red}============================================================${c_reset}"
@@ -35,10 +34,10 @@ function encabezado() {
 # ==========================================
 function crear_usuario() {
     echo -e "\n${c_yellow}--- CREANDO NUEVO USUARIO VPN ---${c_reset}"
-    read -p "$(echo -e ${c_white}Nombre de usuario: ${c_reset})" user
-    read -p "$(echo -e ${c_white}Contraseña: ${c_reset})" pass
-    read -p "$(echo -e ${c_white}Días de duración: ${c_reset})" dias
-    read -p "$(echo -e ${c_white}Límite de conexiones simultáneas: ${c_reset})" limite
+    read -p "$(echo -e ${c_white}"Nombre de usuario: "${c_reset})" user
+    read -p "$(echo -e ${c_white}"Contraseña: "${c_reset})" pass
+    read -p "$(echo -e ${c_white}"Días de duración: "${c_reset})" dias
+    read -p "$(echo -e ${c_white}"Límite de conexiones simultáneas: "${c_reset})" limite
 
     if id "$user" &>/dev/null; then
         echo -e "${c_red}Error: El usuario '$user' ya existe.${c_reset}"
@@ -64,11 +63,11 @@ function crear_usuario() {
 }
 
 # ==========================================
-# 2. Remover Usuario (Forzado y limpieza de límite)
+# 2. Remover Usuario
 # ==========================================
 function remover_usuario() {
     echo -e "\n${c_yellow}--- REMOVER USUARIO VPN ---${c_reset}"
-    read -p "$(echo -e ${c_white}Nombre de usuario a eliminar: ${c_reset})" user
+    read -p "$(echo -e ${c_white}"Nombre de usuario a eliminar: "${c_reset})" user
     
     if id "$user" &>/dev/null; then
         echo -e "${c_cyan}Desconectando usuario...${c_reset}"
@@ -92,10 +91,10 @@ function remover_usuario() {
 # ==========================================
 function renovar_usuario() {
     echo -e "\n${c_yellow}--- RENOVAR USUARIO VPN ---${c_reset}"
-    read -p "$(echo -e ${c_white}Nombre de usuario: ${c_reset})" user
+    read -p "$(echo -e ${c_white}"Nombre de usuario: "${c_reset})" user
     
     if id "$user" &>/dev/null; then
-        read -p "$(echo -e ${c_white}Días a agregar: ${c_reset})" dias
+        read -p "$(echo -e ${c_white}"Días a agregar: "${c_reset})" dias
         exp_date=$(date -d "+$dias days" +%Y-%m-%d)
         sudo usermod -e "$exp_date" "$user"
         echo -e "${c_green}Usuario '$user' renovado exitosamente hasta: $exp_date${c_reset}"
@@ -123,7 +122,7 @@ function mostrar_cuentas() {
 }
 
 # ==========================================
-# 9. Eliminar Usuarios Vencidos (Forzado y limpieza)
+# 9. Eliminar Usuarios Vencidos
 # ==========================================
 function eliminar_vencidos() {
     echo -e "\n${c_yellow}--- ELIMINANDO USUARIOS VENCIDOS ---${c_reset}"
@@ -151,7 +150,7 @@ function eliminar_vencidos() {
 }
 
 # ==========================================
-# Función: Menú Principal (Limpio)
+# Menú Principal
 # ==========================================
 function menu() {
     while true; do
