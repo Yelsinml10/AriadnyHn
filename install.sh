@@ -377,20 +377,9 @@ caddy_menu() {
 # 4. MÓDULO: V2RAY (VMESS) - ADMINISTRACIÓN COMPLETA
 # =============================================
 v2ray_menu() {
-  # Si V2Ray no está instalado en el sistema, ejecuta install-v2ray.sh de tu repositorio
-  if ! command -v v2ray >/dev/null 2>&1 && [[ ! -f "/usr/local/v2ray/config.json" && ! -f "/usr/local/etc/v2ray/config.json" ]]; then
-    echo -e "\n  ${YELLOW}⚠️ V2Ray no está instalado en el sistema.${NC}"
-    echo -e "  ${CYAN}Iniciando instalación desde install-v2ray.sh...${NC}"
-    download_and_execute "install-v2ray.sh"
-    if ! command -v v2ray >/dev/null 2>&1 && [[ ! -f "/usr/local/v2ray/config.json" && ! -f "/usr/local/etc/v2ray/config.json" ]]; then
-      warn "No se pudo completar la instalación de V2Ray."
-      return 1
-    fi
-  fi
-
   if ! command -v jq >/dev/null 2>&1; then apt-get install -y jq -qq || true; fi
 
-  # Detección dinámica de la ruta del config.json según el panel instalado
+  # Detección dinámica de la ruta del config.json
   if [[ -f "/usr/local/v2ray/config.json" ]]; then
     V2RAY_CONF="/usr/local/v2ray/config.json"
   elif [[ -f "/usr/local/etc/v2ray/config.json" ]]; then
@@ -512,17 +501,6 @@ v2ray_menu() {
 sshgo_menu() {
   PROXY_DIR="/opt/vpn-proxy"
   PROXY_SVC="vpn-proxy"
-
-  # Verificación previa: Si SSH-Go no está instalado, se instala primero
-  if [[ ! -f "$PROXY_DIR/vpn-proxy" ]]; then
-    echo -e "\n  ${YELLOW}⚠️ SSH-Go Proxy no está instalado en el sistema.${NC}"
-    echo -e "  ${CYAN}Iniciando instalación automática de SSH-Go...${NC}"
-    download_and_execute "install-sshgo.sh"
-    if [[ ! -f "$PROXY_DIR/vpn-proxy" ]]; then
-      warn "No se pudo completar la instalación de SSH-Go Proxy."
-      return 1
-    fi
-  fi
 
   while true; do
     if systemctl is-active --quiet "$PROXY_SVC"; then 
@@ -713,9 +691,24 @@ main_menu() {
     read -r option
 
     case "$option" in
-      1) caddy_menu ;;
-      2) v2ray_menu ;;
-      3) sshgo_menu ;;
+      1) 
+        if command -v caddy >/dev/null 2>&1; then 
+          caddy_menu 
+        else 
+          download_and_execute "install-caddy.sh"
+        fi ;;
+      2) 
+        if command -v v2ray >/dev/null 2>&1 || [[ -f "/usr/local/v2ray/config.json" || -f "/usr/local/etc/v2ray/config.json" ]]; then 
+          v2ray_menu 
+        else 
+          download_and_execute "install-v2ray.sh"
+        fi ;;
+      3) 
+        if [[ -f /opt/vpn-proxy/vpn-proxy ]]; then 
+          sshgo_menu 
+        else 
+          download_and_execute "install-sshgo.sh"
+        fi ;;
       4)
         echo -e "\n  ${CYAN}📦 Instalando todos los servicios en secuencia...${NC}"
         download_and_execute "install-caddy.sh"
