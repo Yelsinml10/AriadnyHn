@@ -96,13 +96,7 @@ get_vps_info() {
 
 draw_banner() {
   clear
-  echo -e "${PURPLE}"
-  echo '  ██████╗  █████╗ ███╗   ██╗███████╗██╗     ███╗   ███╗██████╗ '
-  echo '  ██╔══██╗██╔══██╗████╗  ██║██╔════╝██║     ████╗ ████║██╔══██╗'
-  echo '  ██████╔╝███████║██╔██╗ ██║█████╗  ██║     ██╔████╔██║██████╔╝'
-  echo '  ██╔═══╝ ██╔══██║██║╚██╗██║██╔══╝  ██║     ██║╚██╔╝██║██╔═══╝ '
-  echo '  ██║     ██║  ██║██║ ╚████║███████╗███████╗██║ ╚═╝ ██║██║     '
-  echo -e "${NC}"
+  echo -e "\n  ${PURPLE}${BOLD}🚀 PANEL MAESTRO VPN${NC} ${GRAY}• [ PRO EDITION ]${NC}\n"
 }
 
 display_header_main() {
@@ -140,7 +134,6 @@ caddy_menu() {
       PUERTOS_HTTP="N/A"
     fi
 
-    clear
     draw_banner
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🌐 ADMINISTRADOR DE CADDY SERVER${NC}          ${PURPLE}│${NC}"
@@ -265,7 +258,6 @@ v2ray_menu() {
     V2RAY_PATH=$(jq -r '.inbounds[0].streamSettings.wsSettings.path' "$V2RAY_CONF" 2>/dev/null || echo "N/A")
     V2RAY_USERS=$(jq '.inbounds[0].settings.clients | length' "$V2RAY_CONF" 2>/dev/null || echo "0")
 
-    clear
     draw_banner
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}⚡ ADMINISTRADOR V2RAY (VMESS)${NC}            ${PURPLE}│${NC}"
@@ -368,7 +360,6 @@ sshgo_menu() {
       PUERTOS_ACTUALES="No instalado"
     fi
 
-    clear
     draw_banner
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🚀 ADMINISTRADOR SSH-GO PROXY${NC}            ${PURPLE}│${NC}"
@@ -455,7 +446,6 @@ firewall_menu() {
       FW_STATUS=" ${BG_RED} ● INACTIVO (Abierto) ${NC}"
     fi
 
-    clear
     draw_banner
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  ADMINISTRADOR DE FIREWALL UFW${NC}          ${PURPLE}│${NC}"
