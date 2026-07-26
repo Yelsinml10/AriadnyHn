@@ -377,6 +377,16 @@ caddy_menu() {
 # 4. MÓDULO: V2RAY (VMESS) - ADMINISTRACIÓN COMPLETA
 # =============================================
 v2ray_menu() {
+  # Si V2Ray no está instalado o no existe config, ejecuta tu instalador oficial del repositorio
+  if ! command -v v2ray >/dev/null 2>&1 || [[ ! -f "/usr/local/etc/v2ray/config.json" ]]; then
+    echo -e "\n  ${YELLOW}⚠️ V2Ray no está instalado en el sistema.${NC}"
+    download_and_execute "install-v2ray.sh"
+    if ! command -v v2ray >/dev/null 2>&1 || [[ ! -f "/usr/local/etc/v2ray/config.json" ]]; then
+      warn "No se pudo completar la instalación de V2Ray."
+      return 1
+    fi
+  fi
+
   if ! command -v jq >/dev/null 2>&1; then apt-get install -y jq -qq || true; fi
   V2RAY_CONF="/usr/local/etc/v2ray/config.json"
   
@@ -461,7 +471,7 @@ v2ray_menu() {
         if [[ "$conf_v2" =~ ^[sS]$ ]]; then
           systemctl stop v2ray 2>/dev/null || true
           systemctl disable v2ray 2>/dev/null || true
-          rm -rf /usr/local/etc/v2ray /usr/local/share/v2ray /var/log/v2ray /etc/systemd/system/v2ray.service 2>/dev/null || true
+          rm -rf /usr/local/etc/v2ray /usr/local/share/v2ray /var/log/v2ray /etc/systemd/system/v2ray.service /usr/local/bin/v2ray 2>/dev/null || true
           systemctl daemon-reload 2>/dev/null || true
           info "V2Ray desinstalado por completo."
           pause
@@ -479,6 +489,18 @@ v2ray_menu() {
 sshgo_menu() {
   PROXY_DIR="/opt/vpn-proxy"
   PROXY_SVC="vpn-proxy"
+
+  # Verificación previa: Si SSH-Go no está instalado, se instala primero
+  if [[ ! -f "$PROXY_DIR/vpn-proxy" ]]; then
+    echo -e "\n  ${YELLOW}⚠️ SSH-Go Proxy no está instalado en el sistema.${NC}"
+    echo -e "  ${CYAN}Iniciando instalación automática de SSH-Go...${NC}"
+    download_and_execute "install-sshgo.sh"
+    if [[ ! -f "$PROXY_DIR/vpn-proxy" ]]; then
+      warn "No se pudo completar la instalación de SSH-Go Proxy."
+      return 1
+    fi
+  fi
+
   while true; do
     if systemctl is-active --quiet "$PROXY_SVC"; then 
       PROXY_STATUS=" ${BG_GREEN} ● ACTIVO ${NC}"
@@ -487,7 +509,7 @@ sshgo_menu() {
     fi
 
     if [[ -f "$PROXY_DIR/main.go" ]]; then
-      PUERTOS_ACTUALES=$(grep -E 'puertos\s*:=\s*\[\]int' "$PROXY_DIR/main.go" 2>/dev/null | grep -o '{[^}]*}' | tr -d '{} ' || echo "8080")
+      PUERTOS_ACTUALES=$(grep -E 'puertos\s*}:=\s*\[\]int' "$PROXY_DIR/main.go" 2>/dev/null | grep -o '{[^}]*}' | tr -d '{} ' || echo "8080")
       [[ -z "$PUERTOS_ACTUALES" ]] && PUERTOS_ACTUALES="8080"
     else
       PUERTOS_ACTUALES="No instalado"
@@ -568,7 +590,7 @@ sshgo_menu() {
 
         if [[ -n "$NEW_PORTS_LIST" && -f "$PROXY_DIR/main.go" ]]; then
             echo -e "  ${CYAN}Actualizando código fuente y recompilando binario...${NC}"
-            sed -i -E "s/puertos\s*:=\s*\[\]int\{[^}]+\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
+            sed -i -E "s/puertos\s*}:=\s*\[\]int\{[^}]+\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
             cd "$PROXY_DIR"
             export PATH=$PATH:/usr/local/go/bin
             go build -ldflags="-s -w" -o vpn-proxy main.go 2>/dev/null
@@ -668,18 +690,9 @@ main_menu() {
     read -r option
 
     case "$option" in
-      1) 
-        if command -v caddy >/dev/null 2>&1; then caddy_menu; else 
-          download_and_execute "install-caddy.sh"
-        fi ;;
-      2) 
-        if command -v v2ray >/dev/null 2>&1; then v2ray_menu; else 
-          download_and_execute "install-v2ray.sh"
-        fi ;;
-      3) 
-        if [[ -f /opt/vpn-proxy/vpn-proxy ]]; then sshgo_menu; else 
-          download_and_execute "install-sshgo.sh"
-        fi ;;
+      1) caddy_menu ;;
+      2) v2ray_menu ;;
+      3) sshgo_menu ;;
       4)
         echo -e "\n  ${CYAN}📦 Instalando todos los servicios en secuencia...${NC}"
         download_and_execute "install-caddy.sh"
