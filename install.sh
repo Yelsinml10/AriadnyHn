@@ -626,27 +626,34 @@ sshgo_menu() {
 }
 
 # =============================================
-# 6. MÓDULO: FIREWALL UFW
+# 6. MÓDULO: FIREWALL (DESDE REPOSITORIO)
 # =============================================
 firewall_menu() {
   while true; do
-    if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then 
-      FW_STATUS=" ${BG_GREEN} ● ACTIVO (Filtrando) ${NC}"
-    else 
-      FW_STATUS=" ${BG_RED} ● INACTIVO (Abierto) ${NC}"
+    # Verificar si el firewall está instalado y activo
+    if [[ -f "/usr/local/bin/firewall" ]]; then
+      if systemctl is-active --quiet firewall 2>/dev/null || pgrep -f "firewall" >/dev/null 2>&1; then
+        FW_STATUS=" ${BG_GREEN} ● ACTIVO ${NC}"
+      else
+        FW_STATUS=" ${BG_RED} ● INACTIVO ${NC}"
+      fi
+    else
+      FW_STATUS=" ${BG_RED} ● NO INSTALADO ${NC}"
     fi
 
     draw_header
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  ADMINISTRADOR DE FIREWALL UFW${NC}          ${PURPLE}│${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  ADMINISTRADOR DE FIREWALL${NC}              ${PURPLE}│${NC}"
     echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
     echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${FW_STATUS}"
     echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
 
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}🔍 Ver Estado y Reglas Activas${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}🔓 Abrir Todos los Puertos (TCP/UDP)${NC} ${YELLOW}[Recomendado]${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🛡️  Configuración Segura (Solo 22, 80, 443)${NC}"
-    echo -e "  ${RED}[4]${NC} ${RED}🚫 Desactivar Firewall por Completo${NC}"
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar Firewall desde Repositorio${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}🔍 Ver Estado del Firewall${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔓 Abrir Todos los Puertos${NC} ${YELLOW}[Recomendado]${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🛡️  Configuración Segura (Puertos Esenciales)${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔄 Reiniciar Firewall${NC}"
+    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar Firewall${NC}"
     echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
     echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
     echo -e "  ${GRAY}─────────────────────────────────────────────────────────${NC}"
@@ -654,17 +661,76 @@ firewall_menu() {
     read -r opt_fw
 
     case "$opt_fw" in
-      1) clear; ufw status verbose || echo "UFW no está instalado."; pause ;;
-      2) ufw --force disable >/dev/null 2>&1 || true; info "Todos los puertos abiertos."; pause ;;
+      1) 
+        echo -e "\n  ${CYAN}📥 Descargando e instalando Firewall desde repositorio...${NC}"
+        download_and_execute "firewall.sh"
+        pause
+        ;;
+        
+      2)
+        if [[ -f "/usr/local/bin/firewall" ]]; then
+          clear
+          /usr/local/bin/firewall status
+        else
+          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
+        fi
+        pause
+        ;;
+        
       3) 
-        if ! command -v ufw >/dev/null 2>&1; then apt-get install -y ufw || true; fi
-        ufw allow 22/tcp >/dev/null 2>&1 || true
-        ufw allow 80/tcp >/dev/null 2>&1 || true
-        ufw allow 443/tcp >/dev/null 2>&1 || true
-        ufw --force enable >/dev/null 2>&1 || true
-        info "Configuración Segura Activada."; pause ;;
-      4) ufw --force disable >/dev/null 2>&1 || true; warn "Firewall desactivado por completo."; pause ;;
+        if [[ -f "/usr/local/bin/firewall" ]]; then
+          /usr/local/bin/firewall open
+          info "Todos los puertos abiertos."
+        else
+          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
+        fi
+        pause
+        ;;
+        
+      4)
+        if [[ -f "/usr/local/bin/firewall" ]]; then
+          /usr/local/bin/firewall secure
+          info "Configuración segura activada (SSH, HTTP, HTTPS)."
+        else
+          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
+        fi
+        pause
+        ;;
+        
+      5)
+        if [[ -f "/usr/local/bin/firewall" ]]; then
+          systemctl restart firewall 2>/dev/null || /usr/local/bin/firewall restart
+          info "Firewall reiniciado."
+        else
+          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
+        fi
+        pause
+        ;;
+        
+      6)
+        if [[ -f "/usr/local/bin/firewall" ]]; then
+          echo -e "\n  ${RED}⚠️ ¿Estás seguro de desinstalar el Firewall? (s/N)${NC}"
+          read -r -p "  ➜ " conf_fw
+          if [[ "$conf_fw" =~ ^[sS]$ ]]; then
+            systemctl stop firewall 2>/dev/null
+            systemctl disable firewall 2>/dev/null
+            rm -f /etc/systemd/system/firewall.service 2>/dev/null
+            rm -f /usr/local/bin/firewall 2>/dev/null
+            systemctl daemon-reload 2>/dev/null
+            # Restaurar políticas por defecto
+            iptables -P INPUT ACCEPT 2>/dev/null
+            iptables -P FORWARD ACCEPT 2>/dev/null
+            iptables -F 2>/dev/null
+            info "Firewall desinstalado por completo."
+          fi
+        else
+          echo -e "\n  ${YELLOW}⚠️ Firewall no está instalado.${NC}"
+        fi
+        pause
+        ;;
+        
       0) break ;;
+      *) sleep 1 ;;
     esac
   done
 }
@@ -680,7 +746,7 @@ main_menu() {
     echo -e "  ${CYAN}[2]${NC} ${WHITE}⚡ V2Ray VMess${NC}           ${GRAY}(Instalar / Administrar)${NC}"
     echo -e "  ${CYAN}[3]${NC} ${WHITE}🚀 SSH-Go Proxy${NC}          ${GRAY}(Instalar / Administrar)${NC}"
     echo -e "  ${CYAN}[4]${NC} ${WHITE}📦 Instalar TODO de una vez${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🛡️  Firewall UFW${NC}           ${GRAY}(Administrar Seguridad)${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}🛡️  Firewall${NC}               ${GRAY}(Administrar Seguridad)${NC}"
     echo -e "  ${CYAN}[6]${NC} ${WHITE}👥 SSH Panel${NC}               ${GRAY}(Gestión de usuarios SSH)${NC}"
     echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
     echo -e "  ${RED}[0]${NC} ${WHITE}🚪 SALIR DEL PANEL${NC}"
