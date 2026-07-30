@@ -384,7 +384,7 @@ sshgo_menu() {
     fi
 
     if [[ -f "$PROXY_DIR/main.go" ]]; then
-      PUERTOS_ACTUALES=$(grep -E 'puertos\s*}:=\s*\[\]int' "$PROXY_DIR/main.go" 2>/dev/null | grep -o '{[^}]*}' | tr -d '{} ' || echo "8080")
+      PUERTOS_ACTUALES=$(grep -E 'puertos\s*:?=\s*\[\]int' "$PROXY_DIR/main.go" 2>/dev/null | grep -o '{[^}]*}' | tr -d '{} ' || echo "8080")
       [[ -z "$PUERTOS_ACTUALES" ]] && PUERTOS_ACTUALES="8080"
     else
       PUERTOS_ACTUALES="No instalado"
@@ -398,11 +398,12 @@ sshgo_menu() {
     echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${PROXY_STATUS}"
     echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
 
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}⚙️  Gestionar Puertos${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}🧪 Prueba de Conexión${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}📜 Ver logs${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔄 Reiniciar Proxy${NC}"
-    echo -e "  ${RED}[5]${NC} ${RED}🗑️  Desinstalar${NC}"
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}➕ Agregar Puertos${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}➖ Quitar Puertos${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}🧪 Prueba de Conexión${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}📜 Ver logs${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔄 Reiniciar Proxy${NC}"
+    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar${NC}"
     echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
     echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
     echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
@@ -411,33 +412,66 @@ sshgo_menu() {
     case "$opt_sshgo" in
       1) 
         echo -e "\n  ${YELLOW}Puertos actuales: ${WHITE}$PUERTOS_ACTUALES${NC}"
-        read -r -p "  ➜ Nuevos puertos (separados por comas): " NUEVOS_PUERTOS
-        if [[ -n "$NUEVOS_PUERTOS" && -f "$PROXY_DIR/main.go" ]]; then
-          IFS=',' read -ra ADDR <<< "$NUEVOS_PUERTOS"
-          NEW_PORTS_LIST=""
-          for i in "${ADDR[@]}"; do
-            clean_p=$(echo "$i" | xargs)
-            if [[ "$clean_p" =~ ^[0-9]+$ ]]; then
-              if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_p"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_p"; fi
-            fi
-          done
+        read -r -p "  ➜ Puertos a AGREGAR (separados por comas): " PUERTOS_ADD
+        if [[ -n "$PUERTOS_ADD" && -f "$PROXY_DIR/main.go" ]]; then
+          # Combinar puertos actuales y nuevos, limpiar espacios, separar por líneas, 
+          # quitar duplicados y volver a unir con comas
+          COMBINADOS="${PUERTOS_ACTUALES}, ${PUERTOS_ADD}"
+          NEW_PORTS_LIST=$(echo "$COMBINADOS" | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | sort -u | paste -sd "," - | sed 's/,/, /g')
+          
           if [[ -n "$NEW_PORTS_LIST" ]]; then
-            sed -i -E "s/puertos\s*}:=\s*\[\]int\{[^}]+\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
+            sed -i -E "s/puertos\s*:?=\s*\[\]int\{[^}]*\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
             cd "$PROXY_DIR"
             export PATH=$PATH:/usr/local/go/bin
             go build -ldflags="-s -w" -o vpn-proxy main.go 2>/dev/null
             chmod +x vpn-proxy
             systemctl restart "$PROXY_SVC" 2>/dev/null || true
-            info "Puertos actualizados: $NEW_PORTS_LIST"
+            info "Puertos actualizados a: $NEW_PORTS_LIST"
           fi
         fi
         pause ;;
-      2) 
+      2)
+        echo -e "\n  ${YELLOW}Puertos actuales: ${WHITE}$PUERTOS_ACTUALES${NC}"
+        read -r -p "  ➜ Puertos a QUITAR (separados por comas): " PUERTOS_DEL
+        if [[ -n "$PUERTOS_DEL" && -f "$PROXY_DIR/main.go" ]]; then
+          IFS=',' read -ra ARR_ACT <<< "$PUERTOS_ACTUALES"
+          IFS=',' read -ra ARR_DEL <<< "$PUERTOS_DEL"
+          
+          NEW_PORTS_LIST=""
+          for act_p in "${ARR_ACT[@]}"; do
+            clean_act=$(echo "$act_p" | xargs)
+            mantener=true
+            for del_p in "${ARR_DEL[@]}"; do
+              clean_del=$(echo "$del_p" | xargs)
+              if [[ "$clean_act" == "$clean_del" ]]; then
+                mantener=false
+                break
+              fi
+            done
+            if $mantener; then
+              if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_act"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_act"; fi
+            fi
+          done
+
+          if [[ -n "$NEW_PORTS_LIST" ]]; then
+            sed -i -E "s/puertos\s*:?=\s*\[\]int\{[^}]*\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
+            cd "$PROXY_DIR"
+            export PATH=$PATH:/usr/local/go/bin
+            go build -ldflags="-s -w" -o vpn-proxy main.go 2>/dev/null
+            chmod +x vpn-proxy
+            systemctl restart "$PROXY_SVC" 2>/dev/null || true
+            info "Puertos actualizados a: $NEW_PORTS_LIST"
+          else
+            warn "No puedes dejar el proxy sin puertos. Operación cancelada."
+          fi
+        fi
+        pause ;;
+      3) 
         RESP=$(curl -s -i -H 'X-Real-Host: 127.0.0.1:22' http://localhost:8080 2>/dev/null | head -n 1 || echo "Error")
         echo -e "\n  ${WHITE}Respuesta:${NC} ${GREEN}$RESP${NC}"; pause ;;
-      3) clear; journalctl -u "$PROXY_SVC" -f || true; pause ;;
-      4) systemctl restart "$PROXY_SVC" || true; info "Proxy reiniciado."; sleep 1 ;;
-      5) 
+      4) clear; journalctl -u "$PROXY_SVC" -f || true; pause ;;
+      5) systemctl restart "$PROXY_SVC" || true; info "Proxy reiniciado."; sleep 1 ;;
+      6) 
         echo -e "\n  ${RED}⚠️ ¿Desinstalar SSH-Go? (s/N)${NC}"
         read -r -p "  ➜ " conf_s
         if [[ "$conf_s" =~ ^[sS]$ ]]; then
