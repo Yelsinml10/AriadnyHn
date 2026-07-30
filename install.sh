@@ -139,6 +139,19 @@ display_header_main() {
 # 3. MÓDULO: CADDY SERVER
 # =============================================
 caddy_menu() {
+  # --- VALIDACIÓN DE INSTALACIÓN AGREGADA ---
+  if ! command -v caddy >/dev/null 2>&1 || [[ ! -f "/etc/caddy/Caddyfile" ]]; then
+    echo -e "\n  ${YELLOW}⚠️ Caddy Server no está instalado o falta configuración.${NC}"
+    echo -e "  ${CYAN}Iniciando instalación...${NC}"
+    download_and_execute "install-caddy.sh"
+    
+    if ! command -v caddy >/dev/null 2>&1 || [[ ! -f "/etc/caddy/Caddyfile" ]]; then
+      warn "No se pudo instalar Caddy Server."
+      return 1
+    fi
+  fi
+  # ------------------------------------------
+
   CADDY_CONF="/etc/caddy/Caddyfile"
   while true; do
     if systemctl is-active --quiet caddy; then 
@@ -788,7 +801,7 @@ udp_menu() {
     fi
     
     echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${udp_status}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯\n"
 
     echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar/Actualizar UDP${NC}"
     echo -e "  ${CYAN}[2]${NC} ${WHITE}📊 Abrir Menú UDP (menuUDP)${NC}"
