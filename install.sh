@@ -64,6 +64,14 @@ setup_menu_command() {
   if [[ "$script_path" != "/usr/local/bin/menu" ]]; then
     cp "$script_path" /usr/local/bin/menu 2>/dev/null || true
     chmod +x /usr/local/bin/menu 2>/dev/null || true
+    # Crear acceso directo para XRay
+    ln -sf /usr/local/bin/menu /usr/local/bin/menuV2 2>/dev/null
+    ln -sf /usr/local/bin/menu /usr/local/bin/v2ray 2>/dev/null
+    ln -sf /usr/local/bin/menu /usr/bin/menuV2 2>/dev/null
+    ln -sf /usr/local/bin/menu /usr/bin/v2ray 2>/dev/null
+    # Crear acceso directo para UDP
+    ln -sf /usr/local/bin/menu /usr/local/bin/menuUDP 2>/dev/null
+    ln -sf /usr/local/bin/menu /usr/bin/menuUDP 2>/dev/null
   fi
 }
 
@@ -377,7 +385,6 @@ caddy_menu() {
 # 4. MÓDULO: V2RAY (VMESS) - ADMINISTRACIÓN COMPLETA
 # =============================================
 v2ray_menu() {
-  # Si V2Ray no está instalado o no existe config, ejecuta tu instalador oficial del repositorio
   if ! command -v v2ray >/dev/null 2>&1 || [[ ! -f "/usr/local/etc/v2ray/config.json" ]]; then
     echo -e "\n  ${YELLOW}⚠️ V2Ray no está instalado en el sistema.${NC}"
     download_and_execute "install-v2ray.sh"
@@ -490,7 +497,6 @@ sshgo_menu() {
   PROXY_DIR="/opt/vpn-proxy"
   PROXY_SVC="vpn-proxy"
 
-  # Verificación previa: Si SSH-Go no está instalado, se instala primero
   if [[ ! -f "$PROXY_DIR/vpn-proxy" ]]; then
     echo -e "\n  ${YELLOW}⚠️ SSH-Go Proxy no está instalado en el sistema.${NC}"
     echo -e "  ${CYAN}Iniciando instalación automática de SSH-Go...${NC}"
@@ -626,10 +632,9 @@ sshgo_menu() {
 }
 
 # =============================================
-# 6. MÓDULO: FIREWALL - CONECTADO A TU SCRIPT
+# 6. MÓDULO: FIREWALL (CONECTADO A TU SCRIPT)
 # =============================================
 firewall_menu() {
-  # Verificar si el firewall está instalado
   if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
     FW_STATUS=" ${BG_GREEN} ● INSTALADO ${NC}"
   else
@@ -677,7 +682,6 @@ firewall_menu() {
         if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
           clear
           echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 1...${NC}\n"
-          # Ejecutar el script con la opción 1 (Abrir todos los puertos)
           echo "1" | /usr/local/bin/firewall.sh
           echo -e "\n  ${GREEN}✅ Todos los puertos han sido abiertos.${NC}"
         else
@@ -690,7 +694,6 @@ firewall_menu() {
         if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
           clear
           echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 2...${NC}\n"
-          # Ejecutar el script con la opción 2 (Configuración segura)
           echo "2" | /usr/local/bin/firewall.sh
           echo -e "\n  ${GREEN}✅ Configuración segura activada.${NC}"
         else
@@ -703,7 +706,6 @@ firewall_menu() {
         if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
           clear
           echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 3...${NC}\n"
-          # Ejecutar el script con la opción 3 (Desactivar firewall)
           echo "3" | /usr/local/bin/firewall.sh
           echo -e "\n  ${YELLOW}⚠️ Firewall desactivado completamente.${NC}"
         else
@@ -716,7 +718,6 @@ firewall_menu() {
         if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
           clear
           echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 4...${NC}\n"
-          # Ejecutar el script con la opción 4 (Ver estado)
           echo "4" | /usr/local/bin/firewall.sh
         else
           echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
@@ -728,7 +729,6 @@ firewall_menu() {
         if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
           clear
           echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 5...${NC}\n"
-          # Ejecutar el script con la opción 5 (Ver puertos)
           echo "5" | /usr/local/bin/firewall.sh
         else
           echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
@@ -742,7 +742,6 @@ firewall_menu() {
           read -r -p "  ➜ " conf_fw
           if [[ "$conf_fw" =~ ^[sS]$ ]]; then
             rm -f /usr/local/bin/firewall.sh
-            # Restaurar políticas por defecto
             iptables -P INPUT ACCEPT 2>/dev/null
             iptables -P FORWARD ACCEPT 2>/dev/null
             iptables -P OUTPUT ACCEPT 2>/dev/null
@@ -764,7 +763,510 @@ firewall_menu() {
 }
 
 # =============================================
-# 7. MENÚ PRINCIPAL DEL SISTEMA
+# 7. MÓDULO: XRAY PANEL (DESDE REPOSITORIO)
+# =============================================
+xray_menu() {
+  # Verificar si XRay está instalado
+  if ! command -v xray >/dev/null 2>&1 && [[ ! -x "/usr/local/bin/v2ray" ]]; then
+    echo -e "\n  ${YELLOW}⚠️ XRay no está instalado en el sistema.${NC}"
+    download_and_execute "xray/xray.sh"
+    if ! command -v xray >/dev/null 2>&1 && [[ ! -x "/usr/local/bin/v2ray" ]]; then
+      warn "No se pudo completar la instalación de XRay."
+      return 1
+    fi
+  fi
+
+  while true; do
+    draw_header
+    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🔰 ADMINISTRADOR XRAY${NC}                     ${PURPLE}│${NC}"
+    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
+    
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
+      echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${BG_GREEN} ● ACTIVO ${NC}"
+    elif command -v xray >/dev/null 2>&1; then
+      echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${BG_RED} ● INACTIVO ${NC}"
+    else
+      echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${BG_RED} ● NO INSTALADO ${NC}"
+    fi
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar/Actualizar XRay${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}📊 Abrir Menú XRay${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}📋 Ver estado del servicio${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}📜 Ver logs en tiempo real${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔄 Reiniciar servicio${NC}"
+    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar XRay${NC}"
+    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
+    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
+    echo -e "  ${GRAY}─────────────────────────────────────────────────────────${NC}"
+    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
+    read -r opt_xray
+
+    case "$opt_xray" in
+      1) 
+        echo -e "\n  ${CYAN}📥 Instalando XRay desde repositorio...${NC}"
+        download_and_execute "xray/xray.sh"
+        ;;
+      2) 
+        if [[ -x "/usr/local/bin/v2ray" ]]; then
+          echo -e "\n  ${CYAN}📊 Abriendo menú XRay...${NC}"
+          /usr/local/bin/v2ray
+        elif [[ -x "/usr/local/bin/xray" ]]; then
+          echo -e "\n  ${CYAN}📊 Abriendo menú XRay...${NC}"
+          /usr/local/bin/xray
+        else
+          echo -e "\n  ${YELLOW}⚠️ XRay no instalado. Usa opción [1] para instalar.${NC}"
+          pause
+        fi
+        ;;
+      3) 
+        if systemctl list-units --full -all | grep -q "v2ray.service"; then
+          clear; systemctl status v2ray --no-pager
+        elif systemctl list-units --full -all | grep -q "xray.service"; then
+          clear; systemctl status xray --no-pager
+        else
+          echo -e "\n  ${YELLOW}⚠️ Servicio no encontrado.${NC}"
+        fi
+        pause
+        ;;
+      4) 
+        if systemctl list-units --full -all | grep -q "v2ray.service"; then
+          clear; journalctl -u v2ray -f -n 20
+        elif systemctl list-units --full -all | grep -q "xray.service"; then
+          clear; journalctl -u xray -f -n 20
+        else
+          echo -e "\n  ${YELLOW}⚠️ Servicio no encontrado.${NC}"
+          pause
+        fi
+        ;;
+      5) 
+        if systemctl list-units --full -all | grep -q "v2ray.service"; then
+          systemctl restart v2ray
+          info "XRay reiniciado"
+        elif systemctl list-units --full -all | grep -q "xray.service"; then
+          systemctl restart xray
+          info "XRay reiniciado"
+        else
+          echo -e "\n  ${YELLOW}⚠️ Servicio no encontrado.${NC}"
+        fi
+        pause
+        ;;
+      6) 
+        echo -e "\n  ${RED}⚠️ ¿Estás seguro de desinstalar XRay por completo? (s/N)${NC}"
+        read -r -p "  ➜ " conf_xray
+        if [[ "$conf_xray" =~ ^[sS]$ ]]; then
+          systemctl stop v2ray 2>/dev/null
+          systemctl disable v2ray 2>/dev/null
+          rm -rf /usr/local/bin/v2ray /usr/local/bin/xray /usr/local/v2ray /usr/local/xray
+          rm -f /etc/systemd/system/v2ray.service /etc/systemd/system/xray.service
+          systemctl daemon-reload
+          info "XRay desinstalado por completo."
+          pause
+          break
+        fi
+        ;;
+      0) break ;;
+    esac
+  done
+}
+
+# =============================================
+# 8. MÓDULO: UDP PANEL (DESDE REPOSITORIO)
+# =============================================
+udp_menu() {
+  # Verificar si UDP está instalado
+  if [[ ! -f "/usr/local/bin/udp-custom" ]] && [[ ! -d "/etc/hysteria" ]]; then
+    echo -e "\n  ${YELLOW}⚠️ UDP no está instalado en el sistema.${NC}"
+    echo -e "\n  ${CYAN}📥 Descargando UDP desde repositorio...${NC}"
+    download_and_execute "udp/udp.sh"
+    if [[ ! -f "/usr/local/bin/udp-custom" ]] && [[ ! -d "/etc/hysteria" ]]; then
+      warn "No se pudo completar la instalación de UDP."
+      return 1
+    fi
+  fi
+
+  while true; do
+    draw_header
+    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}⚡ ADMINISTRADOR UDP${NC}                       ${PURPLE}│${NC}"
+    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
+    
+    # Verificar servicios UDP
+    local udp_status=""
+    if systemctl is-active --quiet udp-hysteria 2>/dev/null; then
+      udp_status="${udp_status} ${BG_GREEN}HYSTERIA ACTIVO${NC}"
+    fi
+    if systemctl is-active --quiet udp-custom 2>/dev/null; then
+      udp_status="${udp_status} ${BG_GREEN}CUSTOM ACTIVO${NC}"
+    fi
+    if systemctl is-active --quiet zivpn 2>/dev/null; then
+      udp_status="${udp_status} ${BG_GREEN}ZI VPN ACTIVO${NC}"
+    fi
+    if [[ -z "$udp_status" ]]; then
+      udp_status="${BG_RED} ● SIN SERVICIOS ACTIVOS${NC}"
+    fi
+    
+    echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${udp_status}"
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar/Actualizar UDP${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}📊 Abrir Menú UDP${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}📋 Ver servicios activos${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔄 Reiniciar servicios UDP${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}📜 Ver logs${NC}"
+    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar UDP${NC}"
+    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
+    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
+    echo -e "  ${GRAY}─────────────────────────────────────────────────────────${NC}"
+    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
+    read -r opt_udp
+
+    case "$opt_udp" in
+      1) 
+        echo -e "\n  ${CYAN}📥 Instalando UDP desde repositorio...${NC}"
+        download_and_execute "udp/udp.sh"
+        ;;
+      2) 
+        if [[ -x "/usr/bin/menuUDP" ]]; then
+          echo -e "\n  ${CYAN}📊 Abriendo menú UDP...${NC}"
+          /usr/bin/menuUDP
+        elif [[ -x "/usr/local/bin/menuUDP" ]]; then
+          echo -e "\n  ${CYAN}📊 Abriendo menú UDP...${NC}"
+          /usr/local/bin/menuUDP
+        else
+          echo -e "\n  ${YELLOW}⚠️ UDP no instalado. Usa opción [1] para instalar.${NC}"
+          pause
+        fi
+        ;;
+      3) 
+        clear
+        echo -e "\n  ${YELLOW}📋 Servicios UDP:${NC}"
+        echo -e "  ${CYAN}• Hysteria:${NC} $(systemctl is-active udp-hysteria 2>/dev/null || echo 'inactivo')"
+        echo -e "  ${CYAN}• UDP Custom:${NC} $(systemctl is-active udp-custom 2>/dev/null || echo 'inactivo')"
+        echo -e "  ${CYAN}• ZI VPN:${NC} $(systemctl is-active zivpn 2>/dev/null || echo 'inactivo')"
+        pause
+        ;;
+      4) 
+        echo -e "\n  ${CYAN}🔄 Reiniciando servicios UDP...${NC}"
+        systemctl restart udp-hysteria 2>/dev/null && info "Hysteria reiniciado"
+        systemctl restart udp-custom 2>/dev/null && info "UDP Custom reiniciado"
+        systemctl restart zivpn 2>/dev/null && info "ZI VPN reiniciado"
+        pause
+        ;;
+      5) 
+        echo -e "\n  ${CYAN}📜 Logs de UDP (últimas 20 líneas):${NC}"
+        journalctl -u udp-hysteria -u udp-custom -u zivpn -n 20 --no-pager 2>/dev/null || echo "No hay logs disponibles"
+        pause
+        ;;
+      6) 
+        echo -e "\n  ${RED}⚠️ ¿Estás seguro de desinstalar UDP por completo? (s/N)${NC}"
+        read -r -p "  ➜ " conf_udp
+        if [[ "$conf_udp" =~ ^[sS]$ ]]; then
+          systemctl stop udp-hysteria udp-custom zivpn 2>/dev/null
+          systemctl disable udp-hysteria udp-custom zivpn 2>/dev/null
+          rm -rf /etc/hysteria /etc/udp-custom /etc/zivpn
+          rm -f /usr/local/bin/udp-custom /usr/local/bin/hysteria /usr/local/bin/zivpn
+          rm -f /usr/bin/menuUDP /usr/local/bin/menuUDP
+          rm -f /etc/systemd/system/udp-hysteria.service /etc/systemd/system/udp-custom.service /etc/systemd/system/zivpn.service
+          systemctl daemon-reload
+          info "UDP desinstalado por completo."
+          pause
+          break
+        fi
+        ;;
+      0) break ;;
+    esac
+  done
+}
+
+# =============================================
+# 9. MÓDULO: MONITOREO DEL SISTEMA
+# =============================================
+monitoreo_menu() {
+  while true; do
+    draw_header
+    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}📊 MONITOREO DEL SISTEMA${NC}                  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
+    echo -e "  ${PURPLE}│${NC} ${CYAN}🖥️  CPU    :${NC} ${WHITE}$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)%%${NC}"
+    echo -e "  ${PURPLE}│${NC} ${CYAN}🧠 RAM    :${NC} ${WHITE}$(free -m | awk 'NR==2{printf "%sMB / %sMB (%.1f%%)", $3, $2, $3*100/$2}')${NC}"
+    echo -e "  ${PURPLE}│${NC} ${CYAN}💾 DISCO  :${NC} ${WHITE}$(df -h / | awk 'NR==2{printf "%s / %s (%s)", $3, $2, $5}')${NC}"
+    echo -e "  ${PURPLE}│${NC} ${CYAN}📶 RED    :${NC} ${WHITE}$(vnstat -h 2>/dev/null | grep "today" | awk '{print $3, $4}' || echo "N/A")${NC}"
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}📊 Estadísticas en tiempo real${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}📈 Historial de uso de red${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔍 Procesos activos${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}💾 Estado de discos${NC}"
+    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
+    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
+    read -r opt_mon
+
+    case "$opt_mon" in
+      1) clear; htop || top ;;
+      2) clear; vnstat -d || nethogs ;;
+      3) clear; ps aux --sort=-%cpu | head -20 ;;
+      4) clear; df -h ;;
+      0) break ;;
+    esac
+    pause
+  done
+}
+
+# =============================================
+# 10. MÓDULO: BACKUP DE CONFIGURACIONES
+# =============================================
+backup_menu() {
+  BACKUP_DIR="/root/backups"
+  mkdir -p "$BACKUP_DIR"
+  
+  while true; do
+    draw_header
+    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}💾 BACKUP Y RESTAURACIÓN${NC}                  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
+    echo -e "  ${PURPLE}│${NC} ${CYAN}📁 Directorio :${NC} ${WHITE}$BACKUP_DIR${NC}"
+    echo -e "  ${PURPLE}│${NC} ${CYAN}📦 Backups   :${NC} ${WHITE}$(ls -1 $BACKUP_DIR/*.tar.gz 2>/dev/null | wc -l)${NC}"
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}📦 Crear Backup completo${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}📂 Listar Backups disponibles${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔄 Restaurar Backup${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🗑️  Eliminar Backup antiguo${NC}"
+    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
+    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
+    read -r opt_backup
+
+    case "$opt_backup" in
+      1)
+        FECHA=$(date +%Y%m%d_%H%M%S)
+        echo -e "\n  ${CYAN}📦 Creando backup: backup_$FECHA.tar.gz${NC}"
+        tar -czf "$BACKUP_DIR/backup_$FECHA.tar.gz" \
+          /etc/caddy/Caddyfile \
+          /usr/local/etc/v2ray/config.json \
+          /opt/vpn-proxy/main.go \
+          /etc/hysteria \
+          /etc/udp-custom \
+          /etc/zivpn 2>/dev/null
+        info "✅ Backup creado: backup_$FECHA.tar.gz"
+        ;;
+      2)
+        echo -e "\n  ${YELLOW}📂 Backups disponibles:${NC}"
+        ls -lh "$BACKUP_DIR"/*.tar.gz 2>/dev/null || echo "  No hay backups"
+        ;;
+      3)
+        echo -e "\n  ${YELLOW}📂 Backups disponibles:${NC}"
+        ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | nl
+        read -r -p "  ➜ Selecciona número de backup a restaurar: " num
+        BACKUP_FILE=$(ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | sed -n "${num}p")
+        if [[ -f "$BACKUP_FILE" ]]; then
+          tar -xzf "$BACKUP_FILE" -C /
+          info "✅ Backup restaurado: $(basename $BACKUP_FILE)"
+        else
+          warn "Backup no encontrado"
+        fi
+        ;;
+      4)
+        echo -e "\n  ${YELLOW}📂 Backups disponibles:${NC}"
+        ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | nl
+        read -r -p "  ➜ Selecciona número de backup a eliminar: " num
+        BACKUP_FILE=$(ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | sed -n "${num}p")
+        if [[ -f "$BACKUP_FILE" ]]; then
+          rm -f "$BACKUP_FILE"
+          info "✅ Backup eliminado: $(basename $BACKUP_FILE)"
+        else
+          warn "Backup no encontrado"
+        fi
+        ;;
+      0) break ;;
+    esac
+    pause
+  done
+}
+
+# =============================================
+# 11. MÓDULO: CERTIFICADOS SSL
+# =============================================
+ssl_menu() {
+  while true; do
+    draw_header
+    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🔐 CERTIFICADOS SSL${NC}                       ${PURPLE}│${NC}"
+    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
+    
+    if [[ -f "/etc/ssl/certs/caddy.pem" ]]; then
+      EXPIRA=$(openssl x509 -enddate -noout -in /etc/ssl/certs/caddy.pem 2>/dev/null | cut -d= -f2)
+      echo -e "  ${PURPLE}│${NC} ${CYAN}📜 Certificado :${NC} ${GREEN}Instalado${NC}"
+      echo -e "  ${PURPLE}│${NC} ${CYAN}⏰ Expira     :${NC} ${WHITE}$EXPIRA${NC}"
+    else
+      echo -e "  ${PURPLE}│${NC} ${CYAN}📜 Certificado :${NC} ${RED}No instalado${NC}"
+    fi
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Generar certificado SSL${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}🔍 Verificar certificado${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔄 Renovar certificado${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}📋 Ver detalles del certificado${NC}"
+    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
+    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
+    read -r opt_ssl
+
+    case "$opt_ssl" in
+      1)
+        read -r -p "  ➜ Dominio para el certificado: " DOMINIO_SSL
+        if [[ -n "$DOMINIO_SSL" ]]; then
+          apt-get install -y certbot 2>/dev/null
+          certbot certonly --standalone -d "$DOMINIO_SSL" --non-interactive --agree-tos -m admin@"$DOMINIO_SSL"
+          info "✅ Certificado generado para $DOMINIO_SSL"
+        fi
+        ;;
+      2)
+        echo -e "\n  ${CYAN}🔍 Verificando certificados...${NC}"
+        certbot certificates 2>/dev/null || echo "No hay certificados"
+        ;;
+      3)
+        certbot renew --dry-run
+        info "✅ Renovación verificada"
+        ;;
+      4)
+        if [[ -f "/etc/letsencrypt/live/$DOMINIO_ACTUAL/fullchain.pem" ]]; then
+          openssl x509 -in "/etc/letsencrypt/live/$DOMINIO_ACTUAL/fullchain.pem" -text -noout
+        else
+          echo "No hay certificado disponible"
+        fi
+        ;;
+      0) break ;;
+    esac
+    pause
+  done
+}
+
+# =============================================
+# 12. MÓDULO: SEGURIDAD AVANZADA
+# =============================================
+seguridad_menu() {
+  while true; do
+    draw_header
+    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  SEGURIDAD AVANZADA${NC}                    ${PURPLE}│${NC}"
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}🔐 Cambiar puerto SSH${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}🚫 Bloquear IP sospechosa${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}📋 Ver intentos de conexión fallidos${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔄 Configurar fail2ban${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}📊 Ver logs de seguridad${NC}"
+    echo -e "  ${CYAN}[6]${NC} ${WHITE}🔍 Escanear puertos abiertos${NC}"
+    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
+    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
+    read -r opt_sec
+
+    case "$opt_sec" in
+      1)
+        read -r -p "  ➜ Nuevo puerto SSH (ej: 2222): " NEW_SSH_PORT
+        if [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] && [[ "$NEW_SSH_PORT" -ge 1 ]] && [[ "$NEW_SSH_PORT" -le 65535 ]]; then
+          sed -i "s/#Port 22/Port $NEW_SSH_PORT/g" /etc/ssh/sshd_config
+          sed -i "s/Port 22/Port $NEW_SSH_PORT/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          info "✅ Puerto SSH cambiado a $NEW_SSH_PORT"
+          echo -e "  ${YELLOW}⚠️ Recuerda abrir este puerto en el firewall${NC}"
+        else
+          warn "Puerto inválido (debe ser 1-65535)"
+        fi
+        ;;
+      2)
+        read -r -p "  ➜ IP a bloquear: " IP_BLOCK
+        if [[ -n "$IP_BLOCK" ]]; then
+          iptables -A INPUT -s $IP_BLOCK -j DROP
+          iptables -A FORWARD -s $IP_BLOCK -j DROP
+          info "✅ IP $IP_BLOCK bloqueada"
+        fi
+        ;;
+      3)
+        echo -e "\n  ${YELLOW}📋 Últimos intentos fallidos:${NC}"
+        grep "Failed password" /var/log/auth.log | tail -10 || echo "No hay intentos fallidos recientes"
+        ;;
+      4)
+        apt-get install -y fail2ban 2>/dev/null
+        systemctl enable fail2ban
+        systemctl start fail2ban
+        info "✅ fail2ban instalado y configurado"
+        echo -e "  ${CYAN}📋 Estado de fail2ban:${NC}"
+        fail2ban-client status
+        ;;
+      5)
+        echo -e "\n  ${YELLOW}📊 Logs de seguridad (últimas 20 líneas):${NC}"
+        tail -20 /var/log/auth.log
+        ;;
+      6)
+        echo -e "\n  ${CYAN}🔍 Escaneando puertos abiertos...${NC}"
+        netstat -tulpn | grep LISTEN | column -t
+        ;;
+      0) break ;;
+    esac
+    pause
+  done
+}
+
+# =============================================
+# 13. MÓDULO: LIMPIEZA DEL SISTEMA
+# =============================================
+limpieza_menu() {
+  while true; do
+    draw_header
+    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
+    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🧹 LIMPIEZA DEL SISTEMA${NC}                    ${PURPLE}│${NC}"
+    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+
+    echo -e "  ${CYAN}[1]${NC} ${WHITE}🗑️  Limpiar caché de APT${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}📁 Limpiar logs antiguos${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}💾 Liberar espacio en disco${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🧹 Limpiar paquetes huérfanos${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}📊 Ver uso de disco${NC}"
+    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
+    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
+    read -r opt_clean
+
+    case "$opt_clean" in
+      1)
+        echo -e "\n  ${CYAN}🗑️  Limpiando caché de APT...${NC}"
+        apt-get clean
+        apt-get autoclean
+        info "✅ Caché de APT limpiado"
+        ;;
+      2)
+        echo -e "\n  ${CYAN}📁 Limpiando logs antiguos...${NC}"
+        journalctl --vacuum-time=3d
+        find /var/log -type f -name "*.log" -mtime +30 -delete 2>/dev/null
+        info "✅ Logs antiguos eliminados"
+        ;;
+      3)
+        echo -e "\n  ${CYAN}💾 Liberando espacio en disco...${NC}"
+        apt-get autoremove -y
+        docker system prune -f 2>/dev/null || true
+        info "✅ Espacio liberado"
+        ;;
+      4)
+        echo -e "\n  ${CYAN}🧹 Limpiando paquetes huérfanos...${NC}"
+        apt-get autoremove -y
+        deborphan | xargs apt-get remove -y 2>/dev/null || true
+        info "✅ Paquetes huérfanos eliminados"
+        ;;
+      5)
+        echo -e "\n  ${CYAN}📊 Uso de disco:${NC}"
+        df -h
+        echo -e "\n  ${CYAN}📊 Directorios más pesados:${NC}"
+        du -sh /* 2>/dev/null | sort -hr | head -10
+        ;;
+      0) break ;;
+    esac
+    pause
+  done
+}
+
+# =============================================
+# 14. MENÚ PRINCIPAL DEL SISTEMA (ACTUALIZADO)
 # =============================================
 main_menu() {
   while true; do
@@ -776,6 +1278,14 @@ main_menu() {
     echo -e "  ${CYAN}[4]${NC} ${WHITE}📦 Instalar TODO de una vez${NC}"
     echo -e "  ${CYAN}[5]${NC} ${WHITE}🛡️  Firewall${NC}               ${GRAY}(Administrar Seguridad)${NC}"
     echo -e "  ${CYAN}[6]${NC} ${WHITE}👥 SSH Panel${NC}               ${GRAY}(Gestión de usuarios SSH)${NC}"
+    echo -e "  ${CYAN}[7]${NC} ${WHITE}📊 Monitoreo${NC}               ${GRAY}(Estado del sistema)${NC}"
+    echo -e "  ${CYAN}[8]${NC} ${WHITE}💾 Backup${NC}                   ${GRAY}(Copias de seguridad)${NC}"
+    echo -e "  ${CYAN}[9]${NC} ${WHITE}🔐 SSL Certificados${NC}        ${GRAY}(SSL/HTTPS)${NC}"
+    echo -e "  ${CYAN}[10]${NC} ${WHITE}🛡️  Seguridad Avanzada${NC}     ${GRAY}(Protección extra)${NC}"
+    echo -e "  ${CYAN}[11]${NC} ${WHITE}🧹 Limpieza del Sistema${NC}    ${GRAY}(Liberar espacio)${NC}"
+    echo -e "  ${CYAN}[12]${NC} ${WHITE}🔰 XRay Panel${NC}              ${GRAY}(VLESS/VMess/Trojan)${NC}"
+    echo -e "  ${CYAN}[13]${NC} ${WHITE}⚡ UDP Panel${NC}                ${GRAY}(Hysteria/Custom/ZI)${NC}"
+    echo -e "  ${CYAN}[14]${NC} ${WHITE}🔄 Actualizar Panel${NC}       ${GRAY}(Última versión)${NC}"
     echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
     echo -e "  ${RED}[0]${NC} ${WHITE}🚪 SALIR DEL PANEL${NC}"
     echo -e "  ${GRAY}─────────────────────────────────────────────────────────${NC}\n"
@@ -801,6 +1311,25 @@ main_menu() {
         chmod +x /usr/local/bin/sshpanel.sh || true
         if ! grep -q "alias sshpanel=" ~/.bashrc 2>/dev/null; then echo "alias sshpanel='sudo /usr/local/bin/sshpanel.sh'" >> ~/.bashrc; fi
         info "SSH Panel listo para usar. Puedes ejecutar: sshpanel"
+        pause
+        ;;
+      7) monitoreo_menu ;;
+      8) backup_menu ;;
+      9) ssl_menu ;;
+      10) seguridad_menu ;;
+      11) limpieza_menu ;;
+      12) xray_menu ;;
+      13) udp_menu ;;
+      14)
+        echo -e "\n  ${CYAN}🔄 Actualizando panel...${NC}"
+        curl -fsSL "$BASE_URL/menu.sh" -o /tmp/menu_update.sh
+        if [[ -f /tmp/menu_update.sh ]]; then
+          chmod +x /tmp/menu_update.sh
+          mv /tmp/menu_update.sh /usr/local/bin/menu
+          info "✅ Panel actualizado correctamente"
+        else
+          warn "Error al actualizar el panel"
+        fi
         pause
         ;;
       0) 
