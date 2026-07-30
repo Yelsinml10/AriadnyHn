@@ -626,21 +626,17 @@ sshgo_menu() {
 }
 
 # =============================================
-# 6. MÓDULO: FIREWALL (DESDE REPOSITORIO)
+# 6. MÓDULO: FIREWALL - CONECTADO A TU SCRIPT
 # =============================================
 firewall_menu() {
-  while true; do
-    # Verificar si el firewall está instalado y activo
-    if [[ -f "/usr/local/bin/firewall" ]]; then
-      if systemctl is-active --quiet firewall 2>/dev/null || pgrep -f "firewall" >/dev/null 2>&1; then
-        FW_STATUS=" ${BG_GREEN} ● ACTIVO ${NC}"
-      else
-        FW_STATUS=" ${BG_RED} ● INACTIVO ${NC}"
-      fi
-    else
-      FW_STATUS=" ${BG_RED} ● NO INSTALADO ${NC}"
-    fi
+  # Verificar si el firewall está instalado
+  if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
+    FW_STATUS=" ${BG_GREEN} ● INSTALADO ${NC}"
+  else
+    FW_STATUS=" ${BG_RED} ● NO INSTALADO ${NC}"
+  fi
 
+  while true; do
     draw_header
     echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
     echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  ADMINISTRADOR DE FIREWALL${NC}              ${PURPLE}│${NC}"
@@ -649,11 +645,12 @@ firewall_menu() {
     echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
 
     echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar Firewall desde Repositorio${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}🔍 Ver Estado del Firewall${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔓 Abrir Todos los Puertos${NC} ${YELLOW}[Recomendado]${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🛡️  Configuración Segura (Puertos Esenciales)${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔄 Reiniciar Firewall${NC}"
-    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar Firewall${NC}"
+    echo -e "  ${CYAN}[2]${NC} ${WHITE}🔓 Abrir TODOS los puertos (TCP+UDP)${NC} ${YELLOW}[Recomendado]${NC}"
+    echo -e "  ${CYAN}[3]${NC} ${WHITE}🛡️  Configuración SEGURA (SSH+HTTP+HTTPS)${NC}"
+    echo -e "  ${CYAN}[4]${NC} ${WHITE}🚫 Desactivar Firewall COMPLETAMENTE${NC}"
+    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔍 Ver estado del firewall${NC}"
+    echo -e "  ${CYAN}[6]${NC} ${WHITE}📋 Ver puertos abiertos${NC}"
+    echo -e "  ${RED}[7]${NC} ${RED}🗑️  Desinstalar Firewall${NC}"
     echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
     echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
     echo -e "  ${GRAY}─────────────────────────────────────────────────────────${NC}"
@@ -662,25 +659,40 @@ firewall_menu() {
 
     case "$opt_fw" in
       1) 
-        echo -e "\n  ${CYAN}📥 Descargando e instalando Firewall desde repositorio...${NC}"
-        download_and_execute "firewall.sh"
-        pause
+        echo -e "\n  ${CYAN}📥 Descargando Firewall desde repositorio...${NC}"
+        if curl -fsSL "$BASE_URL/firewall.sh" -o /usr/local/bin/firewall.sh; then
+          chmod +x /usr/local/bin/firewall.sh
+          FW_STATUS=" ${BG_GREEN} ● INSTALADO ${NC}"
+          info "✅ Firewall instalado correctamente en /usr/local/bin/firewall.sh"
+          echo -e "\n  ${CYAN}Ejecutando instalación inicial...${NC}"
+          /usr/local/bin/firewall.sh
+          pause
+        else
+          echo -e "\n  ${RED}✖ Error al descargar firewall.sh${NC}"
+          pause
+        fi
         ;;
         
       2)
-        if [[ -f "/usr/local/bin/firewall" ]]; then
+        if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
           clear
-          /usr/local/bin/firewall status
+          echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 1...${NC}\n"
+          # Ejecutar el script con la opción 1 (Abrir todos los puertos)
+          echo "1" | /usr/local/bin/firewall.sh
+          echo -e "\n  ${GREEN}✅ Todos los puertos han sido abiertos.${NC}"
         else
           echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
         fi
         pause
         ;;
         
-      3) 
-        if [[ -f "/usr/local/bin/firewall" ]]; then
-          /usr/local/bin/firewall open
-          info "Todos los puertos abiertos."
+      3)
+        if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
+          clear
+          echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 2...${NC}\n"
+          # Ejecutar el script con la opción 2 (Configuración segura)
+          echo "2" | /usr/local/bin/firewall.sh
+          echo -e "\n  ${GREEN}✅ Configuración segura activada.${NC}"
         else
           echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
         fi
@@ -688,9 +700,12 @@ firewall_menu() {
         ;;
         
       4)
-        if [[ -f "/usr/local/bin/firewall" ]]; then
-          /usr/local/bin/firewall secure
-          info "Configuración segura activada (SSH, HTTP, HTTPS)."
+        if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
+          clear
+          echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 3...${NC}\n"
+          # Ejecutar el script con la opción 3 (Desactivar firewall)
+          echo "3" | /usr/local/bin/firewall.sh
+          echo -e "\n  ${YELLOW}⚠️ Firewall desactivado completamente.${NC}"
         else
           echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
         fi
@@ -698,9 +713,11 @@ firewall_menu() {
         ;;
         
       5)
-        if [[ -f "/usr/local/bin/firewall" ]]; then
-          systemctl restart firewall 2>/dev/null || /usr/local/bin/firewall restart
-          info "Firewall reiniciado."
+        if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
+          clear
+          echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 4...${NC}\n"
+          # Ejecutar el script con la opción 4 (Ver estado)
+          echo "4" | /usr/local/bin/firewall.sh
         else
           echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
         fi
@@ -708,20 +725,31 @@ firewall_menu() {
         ;;
         
       6)
-        if [[ -f "/usr/local/bin/firewall" ]]; then
+        if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
+          clear
+          echo -e "\n  ${CYAN}🔄 Ejecutando firewall.sh con opción 5...${NC}\n"
+          # Ejecutar el script con la opción 5 (Ver puertos)
+          echo "5" | /usr/local/bin/firewall.sh
+        else
+          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado. Usa opción [1] para instalar.${NC}"
+        fi
+        pause
+        ;;
+        
+      7)
+        if [[ -f "/usr/local/bin/firewall.sh" ]]; then
           echo -e "\n  ${RED}⚠️ ¿Estás seguro de desinstalar el Firewall? (s/N)${NC}"
           read -r -p "  ➜ " conf_fw
           if [[ "$conf_fw" =~ ^[sS]$ ]]; then
-            systemctl stop firewall 2>/dev/null
-            systemctl disable firewall 2>/dev/null
-            rm -f /etc/systemd/system/firewall.service 2>/dev/null
-            rm -f /usr/local/bin/firewall 2>/dev/null
-            systemctl daemon-reload 2>/dev/null
+            rm -f /usr/local/bin/firewall.sh
             # Restaurar políticas por defecto
             iptables -P INPUT ACCEPT 2>/dev/null
             iptables -P FORWARD ACCEPT 2>/dev/null
+            iptables -P OUTPUT ACCEPT 2>/dev/null
             iptables -F 2>/dev/null
-            info "Firewall desinstalado por completo."
+            iptables -X 2>/dev/null
+            FW_STATUS=" ${BG_RED} ● NO INSTALADO ${NC}"
+            info "Firewall desinstalado y políticas restauradas."
           fi
         else
           echo -e "\n  ${YELLOW}⚠️ Firewall no está instalado.${NC}"
