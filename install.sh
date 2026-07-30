@@ -139,7 +139,6 @@ display_header_main() {
 # 3. MÓDULO: CADDY SERVER
 # =============================================
 caddy_menu() {
-  # --- VALIDACIÓN DE INSTALACIÓN AGREGADA ---
   if ! command -v caddy >/dev/null 2>&1 || [[ ! -f "/etc/caddy/Caddyfile" ]]; then
     echo -e "\n  ${YELLOW}⚠️ Caddy Server no está instalado o falta configuración.${NC}"
     echo -e "  ${CYAN}Iniciando instalación...${NC}"
@@ -150,7 +149,6 @@ caddy_menu() {
       return 1
     fi
   fi
-  # ------------------------------------------
 
   CADDY_CONF="/etc/caddy/Caddyfile"
   while true; do
@@ -206,47 +204,111 @@ caddy_menu() {
         pause ;;
       3) 
         echo -e "\n  ${YELLOW}Puertos HTTP actuales: ${WHITE}$PUERTOS_HTTP${NC}"
-        read -r -p "  ➜ Nuevos puertos HTTP (separados por comas): " NUEVOS_HTTP
-        if [[ -n "$NUEVOS_HTTP" && -f "$CADDY_CONF" ]]; then
-            IFS=',' read -ra ADDR <<< "$NUEVOS_HTTP"
-            FORMATTED_HTTP=""
-            for i in "${ADDR[@]}"; do
-                cp_clean=$(echo "$i" | xargs)
-                if [[ -n "$cp_clean" ]]; then
-                    if [[ -z "$FORMATTED_HTTP" ]]; then
-                        FORMATTED_HTTP=":${cp_clean}"
-                    else
-                        FORMATTED_HTTP="${FORMATTED_HTTP}, :${cp_clean}"
+        read -r -p "  ➜ Puertos a AGREGAR (separados por comas, enter para omitir): " PUERTOS_ADD
+        read -r -p "  ➜ Puertos a QUITAR (separados por comas, enter para omitir): " PUERTOS_DEL
+        
+        if [[ -n "$PUERTOS_ADD" || -n "$PUERTOS_DEL" ]] && [[ -f "$CADDY_CONF" ]]; then
+            [[ "$PUERTOS_HTTP" == "N/A" ]] && PUERTOS_HTTP=""
+            
+            COMBINADOS="${PUERTOS_HTTP}, ${PUERTOS_ADD}"
+            
+            IFS=',' read -ra ARR_ACT <<< "$COMBINADOS"
+            IFS=',' read -ra ARR_DEL <<< "$PUERTOS_DEL"
+            
+            NEW_PORTS_LIST=""
+            for p in "${ARR_ACT[@]}"; do
+                clean_p=$(echo "$p" | xargs)
+                [[ -z "$clean_p" ]] && continue
+                
+                mantener=true
+                for d in "${ARR_DEL[@]}"; do
+                    clean_d=$(echo "$d" | xargs)
+                    if [[ "$clean_p" == "$clean_d" ]]; then
+                        mantener=false
+                        break
                     fi
+                done
+                
+                if $mantener; then
+                    if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_p"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_p"; fi
                 fi
             done
+            
+            UNIQUE_PORTS=$(echo "$NEW_PORTS_LIST" | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | sort -u | paste -sd "," - | sed 's/,/, /g')
+            
+            FORMATTED_HTTP=""
+            IFS=',' read -ra FINAL_ARR <<< "$UNIQUE_PORTS"
+            for i in "${FINAL_ARR[@]}"; do
+                clean_i=$(echo "$i" | xargs)
+                [[ -z "$clean_i" ]] && continue
+                if [[ -z "$FORMATTED_HTTP" ]]; then
+                    FORMATTED_HTTP=":${clean_i}"
+                else
+                    FORMATTED_HTTP="${FORMATTED_HTTP}, :${clean_i}"
+                fi
+            done
+            
             if [[ -n "$FORMATTED_HTTP" ]]; then
-                sed -i -E "s/^:[0-9]+(,[[:space:]]*:[0-9]+)*[[:space:]]*\{/$FORMATTED_HTTP {/g" "$CADDY_CONF" 2>/dev/null || true
+                sed -i -E "s/^:[0-9]+.*\{/$FORMATTED_HTTP {/g" "$CADDY_CONF" 2>/dev/null || true
                 systemctl restart caddy 2>/dev/null || true
-                info "Puertos HTTP actualizados."
+                info "Puertos HTTP actualizados a: $UNIQUE_PORTS"
+            else
+                warn "Caddy requiere al menos un puerto HTTP."
             fi
         fi
         pause ;;
       4) 
         echo -e "\n  ${YELLOW}Puertos HTTPS actuales: ${WHITE}$PUERTOS_HTTPS${NC}"
-        read -r -p "  ➜ Nuevos puertos HTTPS (separados por comas): " NUEVOS_PUERTOS
-        if [[ -n "$NUEVOS_PUERTOS" && -f "$CADDY_CONF" ]]; then
-            IFS=',' read -ra ADDR <<< "$NUEVOS_PUERTOS"
-            FORMATTED_PORTS=""
-            for i in "${ADDR[@]}"; do
-                clean_port=$(echo "$i" | xargs)
-                if [[ -n "$clean_port" ]]; then
-                    if [[ -z "$FORMATTED_PORTS" ]]; then
-                        FORMATTED_PORTS="${DOMINIO_ACTUAL}:${clean_port}"
-                    else
-                        FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${clean_port}"
+        read -r -p "  ➜ Puertos HTTPS a AGREGAR (separados por comas, enter para omitir): " PUERTOS_ADD
+        read -r -p "  ➜ Puertos HTTPS a QUITAR (separados por comas, enter para omitir): " PUERTOS_DEL
+        
+        if [[ -n "$PUERTOS_ADD" || -n "$PUERTOS_DEL" ]] && [[ -f "$CADDY_CONF" ]]; then
+            [[ "$PUERTOS_HTTPS" == "N/A" ]] && PUERTOS_HTTPS=""
+            
+            COMBINADOS="${PUERTOS_HTTPS}, ${PUERTOS_ADD}"
+            
+            IFS=',' read -ra ARR_ACT <<< "$COMBINADOS"
+            IFS=',' read -ra ARR_DEL <<< "$PUERTOS_DEL"
+            
+            NEW_PORTS_LIST=""
+            for p in "${ARR_ACT[@]}"; do
+                clean_p=$(echo "$p" | xargs)
+                [[ -z "$clean_p" ]] && continue
+                
+                mantener=true
+                for d in "${ARR_DEL[@]}"; do
+                    clean_d=$(echo "$d" | xargs)
+                    if [[ "$clean_p" == "$clean_d" ]]; then
+                        mantener=false
+                        break
                     fi
+                done
+                
+                if $mantener; then
+                    if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_p"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_p"; fi
                 fi
             done
+            
+            UNIQUE_PORTS=$(echo "$NEW_PORTS_LIST" | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | sort -u | paste -sd "," - | sed 's/,/, /g')
+            
+            FORMATTED_PORTS=""
+            IFS=',' read -ra FINAL_ARR <<< "$UNIQUE_PORTS"
+            for i in "${FINAL_ARR[@]}"; do
+                clean_i=$(echo "$i" | xargs)
+                [[ -z "$clean_i" ]] && continue
+                if [[ -z "$FORMATTED_PORTS" ]]; then
+                    FORMATTED_PORTS="${DOMINIO_ACTUAL}:${clean_i}"
+                else
+                    FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${clean_i}"
+                fi
+            done
+            
             if [[ -n "$FORMATTED_PORTS" ]]; then
                 sed -i -E "s/^[a-zA-Z0-9.-]+:[0-9]+.*\{/$FORMATTED_PORTS {/g" "$CADDY_CONF" 2>/dev/null || true
                 systemctl restart caddy 2>/dev/null || true
-                info "Puertos HTTPS actualizados."
+                info "Puertos HTTPS actualizados a: $UNIQUE_PORTS"
+            else
+                 warn "Caddy requiere al menos un puerto HTTPS."
             fi
         fi
         pause ;;
