@@ -40,7 +40,7 @@ fi
 echo -e "\n${C_YELLOW}[1/5] Actualizando el sistema e instalando dependencias...${C_RESET}"
 apt update -y && apt install -y python3 python3-pip curl wget net-tools openssh-server systemd > /dev/null 2>&1
 
-# 2. Configuración Interactiva Simplificada
+# 2. Configuración Interactiva (Puerto de Escucha)
 echo -e "${C_YELLOW}[2/5] Configurando el protocolo Proxy WebSocket Custom...${C_RESET}"
 
 echo -e "\n${C_RED}======================================================${C_RESET}"
@@ -50,11 +50,8 @@ echo -e "${C_RED}======================================================${C_RESET
 read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE SU PUERTO: ${C_RESET}")" LISTEN_PORT
 LISTEN_PORT=${LISTEN_PORT:-8080}
 
-read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Digite Un Puerto SSH/DROPBEAR activo [22]: ${C_RESET}")" SSH_PORT
-SSH_PORT=${SSH_PORT:-22}
-
-read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Escribe El HTTP Response? 101|200|300 [101]: ${C_RESET}")" HTTP_CODE
-HTTP_CODE=${HTTP_CODE:-101}
+SSH_PORT=22
+HTTP_CODE="101"
 
 CONFIG_FILE="/root/socks_config.json"
 cat > "$CONFIG_FILE" << EOF
@@ -65,8 +62,8 @@ cat > "$CONFIG_FILE" << EOF
 }
 EOF
 
-# 3. Backend de Python
-echo -e "\n${C_YELLOW}[3/5] Instalando Engine de Proxy en Python...${C_RESET}"
+# 3. Backend de Python (Traducción Exacta 1:1 de SSH-Go)
+echo -e "\n${C_YELLOW}[3/5] Instalando Engine de Proxy en Python (SSH-Go Logic)...${C_RESET}"
 cat > /root/proxy.py << 'EOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -81,7 +78,8 @@ import sys
 import signal
 
 CONFIG_FILE = "/root/socks_config.json"
-BUFLEN = 4096 * 8
+BUFLEN = 4096 * 4
+DEFAULT_HOST = ("127.0.0.1", 22)
 
 def log(msg):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
@@ -95,115 +93,88 @@ def load_config():
             log(f"Error cargando config: {e}")
     return {"ports": [8080], "ssh_port": 22, "http_code": "101"}
 
-def build_response(code):
-    c = str(code).strip()
-    if c == "101":
-        return b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
-    elif c == "200":
-        return b'HTTP/1.1 200 Connection Established\r\n\r\n'
-    elif c == "200-WS":
-        return b'HTTP/1.1 200 OK\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
-    elif c == "300":
-        return b'HTTP/1.1 300 Multiple Choices\r\n\r\n'
-    else:
-        return b'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1\r\n\r\n'
-
-def parse_target_host(data, default_ssh_port):
-    target_host = '127.0.0.1'
-    target_port = default_ssh_port
-    is_http = False
-
-    try:
-        header_text = data.decode('utf-8', errors='ignore')
-        lines = header_text.split('\r\n')
-        if not lines or not lines[0]:
-            lines = header_text.split('\n')
-        
-        first_line = lines[0].strip().split()
-        
-        if len(first_line) >= 2:
-            method = first_line[0].upper()
-            uri = first_line[1]
-            
-            if method in ['GET', 'POST', 'CONNECT', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH', 'TRACE', 'PROPPROMPT']:
-                is_http = True
-
-            if method == 'CONNECT':
-                if ':' in uri:
-                    h, p = uri.split(':', 1)
-                    target_host = h
-                    try: target_port = int(p)
-                    except: pass
-                else:
-                    target_host = uri
-            else:
-                for line in lines[1:]:
-                    if line.lower().startswith('host:'):
-                        host_val = line.split(':', 1)[1].strip()
-                        if ':' in host_val:
-                            h, p = host_val.split(':', 1)
-                            target_host = h
-                            try: target_port = int(p)
-                            except: pass
-                        else:
-                            target_host = host_val
-                        break
-    except Exception:
-        pass
-
-    return target_host, target_port, is_http
+def find_header(head, header_name):
+    key = header_name + ": "
+    idx = head.find(key)
+    if idx == -1:
+        return ""
+    start = idx + len(key)
+    end = head.find("\r\n", start)
+    if end == -1:
+        return ""
+    return head[start:end].strip()
 
 class ConnectionHandler(threading.Thread):
-    def __init__(self, client, addr, ssh_port, response):
+    def __init__(self, client, addr, ssh_port):
         super().__init__()
         self.client = client
         self.addr = addr
         self.ssh_port = ssh_port
-        self.response = response
         self.daemon = True
 
     def run(self):
         try:
-            data = self.client.recv(BUFLEN)
-            if not data:
+            self.client.settimeout(15.0)
+            buf = self.client.recv(BUFLEN)
+            if not buf:
+                self.client.close()
                 return
 
-            target_host, target_port, is_http = parse_target_host(data, self.ssh_port)
+            client_buffer = buf.decode('utf-8', errors='ignore')
 
+            # 1. Parsear X-Real-Host igual que en SSH-Go
+            target_host_str = find_header(client_buffer, "X-Real-Host")
+            if target_host_str:
+                if ":" in target_host_str:
+                    h, p = target_host_str.split(":", 1)
+                    target_host = h
+                    try: target_port = int(p)
+                    except: target_port = self.ssh_port
+                else:
+                    target_host = target_host_str
+                    target_port = self.ssh_port
+            else:
+                target_host = "127.0.0.1"
+                target_port = self.ssh_port
+
+            # 2. Conectar al host destino
             remote_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            remote_sock.settimeout(10)
+            remote_sock.settimeout(10.0)
             
             connected = False
             try:
                 remote_sock.connect((target_host, target_port))
                 connected = True
-            except:
+            except Exception:
                 try:
                     remote_sock.connect(('127.0.0.1', self.ssh_port))
                     connected = True
-                except:
+                except Exception:
                     pass
 
             if not connected:
-                if is_http:
-                    self.client.send(b'HTTP/1.1 502 Bad Gateway\r\n\r\n')
                 self.client.close()
                 return
 
             remote_sock.settimeout(None)
+            self.client.settimeout(None)
 
-            if is_http:
-                self.client.send(self.response)
+            # 3. Respuesta HTTP exactamente igual a SSH-Go
+            if "Upgrade: websocket" in client_buffer:
+                resp = b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
             else:
-                remote_sock.send(data)
+                resp = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 
+            self.client.sendall(resp)
+
+            # 4. Copia bidireccional directa de sockets
             self.tunnel(self.client, remote_sock)
 
         except Exception:
             pass
         finally:
             try: self.client.close()
-            except: pass
+            except Exception: pass
 
     def tunnel(self, client, remote):
         sockets = [client, remote]
@@ -217,18 +188,17 @@ class ConnectionHandler(threading.Thread):
                     if not data:
                         return
                     if sock is client:
-                        remote.send(data)
+                        remote.sendall(data)
                     else:
-                        client.send(data)
-            except:
+                        client.sendall(data)
+            except Exception:
                 break
 
 class ProxyServer(threading.Thread):
-    def __init__(self, port, ssh_port, response):
+    def __init__(self, port, ssh_port):
         super().__init__()
         self.port = port
         self.ssh_port = ssh_port
-        self.response = response
         self.running = True
         self.daemon = True
         self.sock = None
@@ -244,9 +214,9 @@ class ProxyServer(threading.Thread):
             while self.running:
                 try:
                     client, addr = self.sock.accept()
-                    handler = ConnectionHandler(client, addr, self.ssh_port, self.response)
+                    handler = ConnectionHandler(client, addr, self.ssh_port)
                     handler.start()
-                except:
+                except Exception:
                     if not self.running:
                         break
         except Exception as e:
@@ -259,7 +229,7 @@ class ProxyServer(threading.Thread):
         self.running = False
         if self.sock:
             try: self.sock.close()
-            except: pass
+            except Exception: pass
 
 servers = []
 
@@ -268,12 +238,10 @@ def main():
     cfg = load_config()
     ports = cfg.get("ports", [8080])
     ssh_port = cfg.get("ssh_port", 22)
-    code = cfg.get("http_code", "101")
-    response = build_response(code)
 
-    log("Iniciando SOCKS Proxy Engine...")
+    log("Iniciando Proxy Engine SSH-Go Python...")
     for port in ports:
-        server = ProxyServer(port, ssh_port, response)
+        server = ProxyServer(port, ssh_port)
         server.start()
         servers.append(server)
 
