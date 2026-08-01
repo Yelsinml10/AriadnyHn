@@ -1344,6 +1344,18 @@ udp_menu() {
     pause_screen
 }
 
+rust_menu() {
+    panel_header "SOCKS PROXY RUST" "🦀"
+    download_and_execute "rust.sh"
+    pause_screen
+}
+
+python_menu() {
+    panel_header "SOCKS PROXY PYTHON" "🐍"
+    download_and_execute "Python.sh"
+    pause_screen
+}
+
 ssh_panel_menu() {
     local ssh_panel="/usr/local/bin/sshpanel.sh"
 
@@ -1463,14 +1475,16 @@ main_menu() {
         printf "  %b[6]%b  🛡️  Firewall\n" "$CYAN" "$RESET"
         printf "  %b[7]%b  🔰 XRay Panel\n" "$CYAN" "$RESET"
         printf "  %b[8]%b  ⚡ UDP Panel\n" "$CYAN" "$RESET"
+        printf "  %b[9]%b  🦀 SOCKS Proxy Rust\n" "$CYAN" "$RESET"
+        printf "  %b[10]%b 🐍 SOCKS Proxy Python\n" "$CYAN" "$RESET"
 
         line
 
-        printf "  %b[9]%b  📊 Monitoreo del sistema\n" "$BLUE" "$RESET"
-        printf "  %b[10]%b 💾 Backup de configuraciones\n" "$BLUE" "$RESET"
-        printf "  %b[11]%b 🔐 Configurar SSH\n" "$CYAN" "$RESET"
-        printf "  %b[12]%b 📋 Estado general\n" "$BLUE" "$RESET"
-        printf "  %b[13]%b 🔄 Actualizar panel\n" "$BLUE" "$RESET"
+        printf "  %b[11]%b 📊 Monitoreo del sistema\n" "$BLUE" "$RESET"
+        printf "  %b[12]%b 💾 Backup de configuraciones\n" "$BLUE" "$RESET"
+        printf "  %b[13]%b 🔐 Configurar SSH\n" "$CYAN" "$RESET"
+        printf "  %b[14]%b 📋 Estado general\n" "$BLUE" "$RESET"
+        printf "  %b[15]%b 🔄 Actualizar panel\n" "$BLUE" "$RESET"
 
         line
 
@@ -1487,11 +1501,13 @@ main_menu() {
             6) firewall_menu ;;
             7) xray_menu ;;
             8) udp_menu ;;
-            9) monitor_menu ;;
-            10) backup_menu ;;
-            11) configure_ssh ;;
-            12) status_menu ;;
-            13) update_panel ;;
+            9) rust_menu ;;
+            10) python_menu ;;
+            11) monitor_menu ;;
+            12) backup_menu ;;
+            13) configure_ssh ;;
+            14) status_menu ;;
+            15) update_panel ;;
             0)
                 clear_screen
                 printf "\n  %b¡Gracias por usar el panel VPN!%b\n\n" "$GREEN" "$RESET"
