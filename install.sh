@@ -155,6 +155,357 @@ is_caddy_installed() {
     command_exists caddy || [[ -f /etc/caddy/Caddyfile ]]
 }
 
+is_v2ray_installed() {
+    command_exists v2ray || [[ -f /usr/local/etc/v2ray/config.json || -f /etc/v2ray/config.json ]]
+}
+
+# ==============================================================================
+# FUNCIONES PARA V2RAY
+# ==============================================================================
+
+get_v2ray_cfg_path() {
+    for path in /usr/local/etc/v2ray/config.json /etc/v2ray/config.json /etc/v2ray/config.yml; do
+        if [[ -f "$path" ]]; then
+            echo "$path"
+            return 0
+        fi
+    done
+    echo "/usr/local/etc/v2ray/config.json"
+}
+
+show_v2ray_status() {
+    printf "\n  %bServicio V2Ray:%b " "$CYAN" "$RESET"
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
+        info "ACTIVO ✅"
+    else
+        warn "INACTIVO ❌"
+    fi
+
+    local cfg=$(get_v2ray_cfg_path)
+    if [[ -f "$cfg" ]]; then
+        local info_out=$(python3 -c '
+import json, sys
+cfg = sys.argv[1]
+try:
+    with open(cfg, "r") as f:
+        data = json.load(f)
+    inbounds = data.get("inbounds", [])
+    if isinstance(data, dict) and "inbounds" not in data and "inbound" in data:
+        inbounds = [data["inbound"]]
+    ports, paths, uuids = set(), set(), set()
+    for inb in inbounds:
+        if "port" in inb: ports.add(str(inb["port"]))
+        clients = inb.get("settings", {}).get("clients", [])
+        for c in clients:
+            if "id" in c: uuids.add(str(c["id"]))
+        p = inb.get("streamSettings", {}).get("wsSettings", {}).get("path")
+        if p: paths.add(str(p))
+    print("PORTS|" + " ".join(sorted(ports)))
+    print("PATHS|" + " ".join(sorted(paths)))
+    print("UUIDS|" + " ".join(sorted(uuids)))
+except Exception:
+    pass
+' "$cfg" 2>/dev/null)
+
+        local ports=$(echo "$info_out" | grep '^PORTS|' | cut -d'|' -f2)
+        local paths=$(echo "$info_out" | grep '^PATHS|' | cut -d'|' -f2)
+        local uuids=$(echo "$info_out" | grep '^UUIDS|' | cut -d'|' -f2)
+
+        printf "\n  %bPuertos configurados:%b " "$BLUE" "$RESET"
+        if [[ -n "$ports" ]]; then
+            echo "$ports"
+        else
+            warn "Ninguno"
+        fi
+
+        printf "  %bPaths configurados:%b " "$GREEN" "$RESET"
+        if [[ -n "$paths" ]]; then
+            echo "$paths"
+        else
+            warn "Ninguno"
+        fi
+
+        printf "\n  %bIDs / UUIDs registrados:%b\n" "$YELLOW" "$RESET"
+        if [[ -n "$uuids" ]]; then
+            for u in $uuids; do
+                printf "    • %s\n" "$u"
+            done
+        else
+            warn "  No hay IDs registrados"
+        fi
+    else
+        warn "\n  No se encontró el archivo de configuración config.json"
+    fi
+    echo ""
+}
+
+add_v2ray_id() {
+    panel_header "AGREGAR ID / UUID V2RAY" "🔑"
+    
+    local cfg=$(get_v2ray_cfg_path)
+    if [[ ! -f "$cfg" ]]; then
+        error_msg "V2Ray no está instalado o no se encuentra config.json"
+        pause_screen
+        return 1
+    fi
+
+    local new_uuid
+    read -r -p "  Ingresa el nuevo UUID (ENTER para auto-generar): " new_uuid
+    if [[ -z "$new_uuid" ]]; then
+        new_uuid=$(python3 -c "import uuid; print(uuid.uuid4())")
+    fi
+
+    cp "$cfg" "${cfg}.bak" 2>/dev/null
+
+    python3 -c "
+import json, sys
+cfg_path, new_id = sys.argv[1], sys.argv[2]
+try:
+    with open(cfg_path, 'r') as f:
+        data = json.load(f)
+    inbounds = data.get('inbounds', [])
+    added = False
+    for inb in inbounds:
+        if 'settings' in inb:
+            if 'clients' not in inb['settings']:
+                inb['settings']['clients'] = []
+            clients = inb['settings']['clients']
+            if not any(c.get('id') == new_id for c in clients):
+                clients.append({'id': new_id, 'alterId': 0})
+                added = True
+    if added:
+        with open(cfg_path, 'w') as f:
+            json.dump(data, f, indent=4)
+    else:
+        sys.exit(0)
+except Exception:
+    sys.exit(1)
+" "$cfg" "$new_uuid"
+
+    if [[ $? -eq 0 ]]; then
+        systemctl restart v2ray 2>/dev/null
+        info "UUID registrado exitosamente: $new_uuid"
+    else
+        error_msg "Ocurrió un error al agregar el UUID"
+    fi
+    pause_screen
+}
+
+remove_v2ray_id() {
+    panel_header "QUITAR ID / UUID V2RAY" "🔑"
+    
+    local cfg=$(get_v2ray_cfg_path)
+    if [[ ! -f "$cfg" ]]; then
+        error_msg "V2Ray no está instalado"
+        pause_screen
+        return 1
+    fi
+
+    local info_out=$(python3 -c '
+import json, sys
+cfg = sys.argv[1]
+try:
+    with open(cfg, "r") as f:
+        data = json.load(f)
+    uuids = []
+    for inb in data.get("inbounds", []):
+        for c in inb.get("settings", {}).get("clients", []):
+            if "id" in c and c["id"] not in uuids:
+                uuids.append(c["id"])
+    print(" ".join(uuids))
+except Exception:
+    pass
+' "$cfg" 2>/dev/null)
+
+    local uuids=($info_out)
+    if [[ ${#uuids[@]} -eq 0 ]]; then
+        warn "No hay UUIDs configurados para eliminar"
+        pause_screen
+        return 1
+    fi
+
+    echo "  IDs / UUIDs actuales:"
+    local i=1
+    for u in "${uuids[@]}"; do
+        printf "  %b[%d]%b %s\n" "$CYAN" "$i" "$RESET" "$u"
+        ((i++))
+    done
+    echo ""
+
+    read -r -p "  Selecciona el número de ID a quitar: " selection
+    if [[ ! "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt ${#uuids[@]} ]]; then
+        error_msg "Selección inválida"
+        pause_screen
+        return 1
+    fi
+
+    local rem_uuid=${uuids[$selection-1]}
+    cp "$cfg" "${cfg}.bak" 2>/dev/null
+
+    python3 -c "
+import json, sys
+cfg_path, rem_id = sys.argv[1], sys.argv[2]
+try:
+    with open(cfg_path, 'r') as f:
+        data = json.load(f)
+    inbounds = data.get('inbounds', [])
+    for inb in inbounds:
+        clients = inb.get('settings', {}).get('clients', [])
+        inb['settings']['clients'] = [c for c in clients if c.get('id') != rem_id]
+    with open(cfg_path, 'w') as f:
+        json.dump(data, f, indent=4)
+except Exception:
+    sys.exit(1)
+" "$cfg" "$rem_uuid"
+
+    if [[ $? -eq 0 ]]; then
+        systemctl restart v2ray 2>/dev/null
+        info "ID $rem_uuid eliminado correctamente"
+    else
+        error_msg "Error al eliminar el ID"
+    fi
+    pause_screen
+}
+
+change_v2ray_path() {
+    panel_header "CAMBIAR PATH V2RAY" "🔀"
+    
+    local cfg=$(get_v2ray_cfg_path)
+    if [[ ! -f "$cfg" ]]; then
+        error_msg "V2Ray no está instalado"
+        pause_screen
+        return 1
+    fi
+
+    read -r -p "  Ingresa el nuevo Path (ej: /v2ray o /vmess): " new_path
+    if [[ -z "$new_path" ]]; then
+        error_msg "El Path no puede estar vacío"
+        pause_screen
+        return 1
+    fi
+
+    if [[ "$new_path" != /* ]]; then
+        new_path="/$new_path"
+    fi
+
+    cp "$cfg" "${cfg}.bak" 2>/dev/null
+
+    python3 -c "
+import json, sys
+cfg_path, n_path = sys.argv[1], sys.argv[2]
+try:
+    with open(cfg_path, 'r') as f:
+        data = json.load(f)
+    for inb in data.get('inbounds', []):
+        stream = inb.get('streamSettings', {})
+        if 'wsSettings' in stream:
+            stream['wsSettings']['path'] = n_path
+    with open(cfg_path, 'w') as f:
+        json.dump(data, f, indent=4)
+except Exception:
+    sys.exit(1)
+" "$cfg" "$new_path"
+
+    if [[ $? -eq 0 ]]; then
+        systemctl restart v2ray 2>/dev/null
+        info "Path cambiado a $new_path correctamente"
+    else
+        error_msg "Error al actualizar el Path"
+    fi
+    pause_screen
+}
+
+change_v2ray_port() {
+    panel_header "CAMBIAR PUERTO V2RAY" "🔌"
+    
+    local cfg=$(get_v2ray_cfg_path)
+    if [[ ! -f "$cfg" ]]; then
+        error_msg "V2Ray no está instalado"
+        pause_screen
+        return 1
+    fi
+
+    read -r -p "  Ingresa el nuevo puerto (ej: 10086): " new_port
+    if [[ ! "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1 ]] || [[ "$new_port" -gt 65535 ]]; then
+        error_msg "Puerto inválido"
+        pause_screen
+        return 1
+    fi
+
+    cp "$cfg" "${cfg}.bak" 2>/dev/null
+
+    python3 -c "
+import json, sys
+cfg_path, n_port = sys.argv[1], int(sys.argv[2])
+try:
+    with open(cfg_path, 'r') as f:
+        data = json.load(f)
+    for inb in data.get('inbounds', []):
+        inb['port'] = n_port
+    with open(cfg_path, 'w') as f:
+        json.dump(data, f, indent=4)
+except Exception:
+    sys.exit(1)
+" "$cfg" "$new_port"
+
+    if [[ $? -eq 0 ]]; then
+        systemctl restart v2ray 2>/dev/null
+        info "Puerto cambiado a $new_port correctamente"
+    else
+        error_msg "Error al cambiar el puerto"
+    fi
+    pause_screen
+}
+
+restart_v2ray() {
+    panel_header "REINICIAR V2RAY" "🔄"
+    systemctl restart v2ray 2>/dev/null
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
+        info "V2Ray reiniciado correctamente"
+    else
+        error_msg "Error al reiniciar V2Ray"
+    fi
+    pause_screen
+}
+
+uninstall_v2ray() {
+    panel_header "DESINSTALAR V2RAY" "🗑️"
+    
+    read -r -p "  ¿Seguro que quieres desinstalar V2Ray? (s/N): " confirm
+    if [[ "$confirm" =~ ^[Ss]$ ]]; then
+        systemctl stop v2ray 2>/dev/null
+        systemctl disable v2ray 2>/dev/null
+        rm -rf /usr/local/etc/v2ray /etc/v2ray /usr/local/bin/v2ray /usr/bin/v2ray
+        rm -f /etc/systemd/system/v2ray.service
+        systemctl daemon-reload
+        info "V2Ray desinstalado correctamente"
+    else
+        warn "Desinstalación cancelada"
+    fi
+    pause_screen
+}
+
+install_v2ray_direct() {
+    panel_header "INSTALANDO V2RAY DESDE GITHUB" "⚡"
+    
+    if is_v2ray_installed; then
+        warn "V2Ray ya está instalado"
+        pause_screen
+        return 0
+    fi
+    
+    info "Ejecutando instalador oficial V2Ray..."
+    download_and_execute "install-v2ray.sh"
+    
+    if is_v2ray_installed; then
+        info "V2Ray se instaló correctamente"
+    else
+        error_msg "Ocurrió un inconveniente durante la instalación de V2Ray"
+    fi
+    
+    pause_screen
+}
+
 # ==============================================================================
 # FUNCIONES PARA SSH-GO
 # ==============================================================================
@@ -794,6 +1145,37 @@ install_caddy_direct() {
 # MENÚS ADMINISTRATIVOS
 # ==============================================================================
 
+v2ray_admin_menu() {
+    while true; do
+        panel_header "PANEL V2RAY / VMESS" "⚡"
+        
+        show_v2ray_status
+        
+        printf "\n  %b[1]%b  Instalar V2Ray\n" "$GREEN" "$RESET"
+        printf "  %b[2]%b  Agregar ID (UUID)\n" "$CYAN" "$RESET"
+        printf "  %b[3]%b  Quitar ID (UUID)\n" "$CYAN" "$RESET"
+        printf "  %b[4]%b  Cambiar Path\n" "$CYAN" "$RESET"
+        printf "  %b[5]%b  Cambiar Puerto\n" "$CYAN" "$RESET"
+        printf "  %b[6]%b  Reiniciar V2Ray\n" "$CYAN" "$RESET"
+        printf "  %b[7]%b  Desinstalar V2Ray\n" "$RED" "$RESET"
+        printf "  %b[0]%b  Volver\n\n" "$GRAY" "$RESET"
+        
+        read -r -p "  ❯ Selecciona una opción: " option
+        
+        case "$option" in
+            1) install_v2ray_direct ;;
+            2) add_v2ray_id ;;
+            3) remove_v2ray_id ;;
+            4) change_v2ray_path ;;
+            5) change_v2ray_port ;;
+            6) restart_v2ray ;;
+            7) uninstall_v2ray ;;
+            0) break ;;
+            *) warn "Opción inválida"; sleep 1 ;;
+        esac
+    done
+}
+
 sshgo_admin_menu() {
     while true; do
         panel_header "PANEL SSH-GO PROXY" "🚀"
@@ -853,7 +1235,7 @@ caddy_admin_menu() {
 }
 
 # ==============================================================================
-# ENTRADAS PRINCIPALES: INSTALACIÓN PRIMERO Y LUEGO PANEL ADMINISTRATIVO
+# ENTRADAS PRINCIPALES DE LOS MÓDULOS
 # ==============================================================================
 
 caddy_menu() {
@@ -873,17 +1255,11 @@ sshgo_menu() {
 }
 
 v2ray_menu() {
-    panel_header "V2RAY / VMESS" "⚡"
-
-    if ! command_exists v2ray && [[ ! -f /usr/local/etc/v2ray/config.json ]]; then
-        warn "V2Ray no está instalado."
-        download_and_execute "install-v2ray.sh"
-    else
-        info "V2Ray ya está instalado."
-        systemctl status v2ray --no-pager 2>/dev/null || warn "No se pudo consultar el estado de V2Ray."
+    if ! is_v2ray_installed; then
+        warn "V2Ray no está instalado. Iniciando instalación directa desde GitHub..."
+        install_v2ray_direct
     fi
-
-    pause_screen
+    v2ray_admin_menu
 }
 
 install_all() {
@@ -1043,7 +1419,7 @@ update_panel() {
 
     panel_header "ACTUALIZAR PANEL" "🔄"
 
-    if curl -fSL "$BASE_URL/menu.sh" -o "$temporary"; then
+    if curl -fsSL "$BASE_URL/menu.sh" -o "$temporary"; then
         chmod +x "$temporary"
         mv "$temporary" /usr/local/bin/menu
         info "Panel actualizado en /usr/local/bin/menu."
