@@ -572,7 +572,7 @@ echo -e "${C_GREEN}└───────────────────�
 echo -e "\n📌 Puedes abrir el panel administrativo escribiendo cualquiera de estas palabras:"
 echo -e "   - ${C_BOLD}${C_YELLOW}python${C_RESET}"
 echo -e "   - ${C_BOLD}${C_YELLOW}proxy${C_RESET}"
-echo -e "   - ${C_BOLD}${C_YELLOW}menu${C_RESET}\n"
+echo -e "   - ${C_BOLD}${C_YELLOW}menu2${C_RESET}\n"
 
 read -p "$(echo -e "${C_BOLD}${C_CYAN}¿Deseas abrir el Panel Administrativo ahora? (S/n): ${C_RESET}")" RUN_NOW
 if [[ "$RUN_NOW" =~ ^[sS]$ ]] || [ -z "$RUN_NOW" ]; then
