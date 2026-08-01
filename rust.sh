@@ -9,12 +9,13 @@ C_RED='\033[1;31m'
 C_GREEN='\033[1;32m'
 C_YELLOW='\033[1;33m'
 C_CYAN='\033[1;36m'
+C_WHITE='\033[1;37m'
 BG_BLUE='\033[44m'
 BG_GREEN='\033[42m'
 
 clear
 echo -e "${C_CYAN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
-echo -e "${C_CYAN}│${C_RESET} ${BG_BLUE}\033[1;37m   🦀 INSTALADOR PROXY + PANEL 100% RUST (COMANDO rust) 🦀  ${C_RESET} ${C_CYAN}│${C_RESET}"
+echo -e "${C_CYAN}│${C_RESET} ${BG_BLUE}${C_WHITE}${C_BOLD}   🦀 INSTALADOR PROXY + PANEL 100% RUST (COMANDO rust) 🦀  ${C_RESET} ${C_CYAN}│${C_RESET}"
 echo -e "${C_CYAN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
 
 if [ "$EUID" -ne 0 ]; then
@@ -26,21 +27,33 @@ fi
 echo -e "\n${C_YELLOW}[1/4] Instalando compilador Rust (rustc) y herramientas del sistema...${C_RESET}"
 apt update -y && apt install -y rustc curl wget net-tools openssh-server systemd > /dev/null 2>&1
 
-# 2. Configuración JSON inicial
+# 2. Configuración Interactiva del Proxy
+echo -e "${C_YELLOW}[2/4] Configurando el protocolo Proxy WebSocket Custom...${C_RESET}"
+
+echo -e "\n${C_RED}======================================================${C_RESET}"
+echo -e "${C_RED}${C_BOLD}   SOCKS DIRECTO-PY  |  CUSTOM${C_RESET}"
+echo -e "${C_RED}======================================================${C_RESET}\n"
+
+read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE SU PUERTO: ${C_RESET}")" LISTEN_PORT
+LISTEN_PORT=${LISTEN_PORT:-8080}
+
+read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Digite Un Puerto SSH/DROPBEAR activo [22]: ${C_RESET}")" SSH_PORT
+SSH_PORT=${SSH_PORT:-22}
+
+read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Escribe El HTTP Response? 101|200|300 [101]: ${C_RESET}")" HTTP_CODE
+HTTP_CODE=${HTTP_CODE:-101}
+
 CONFIG_FILE="/root/socks_config.json"
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo -e "${C_YELLOW}[2/4] Creando configuración JSON inicial...${C_RESET}"
-    cat > "$CONFIG_FILE" << 'EOF'
+cat > "$CONFIG_FILE" << EOF
 {
-    "ports": [8080],
-    "ssh_port": 22,
-    "http_code": "101"
+    "ports": [$LISTEN_PORT],
+    "ssh_port": $SSH_PORT,
+    "http_code": "$HTTP_CODE"
 }
 EOF
-fi
 
 # 3. Código Fuente en Rust (Proxy + Panel)
-echo -e "${C_YELLOW}[3/4] Compilando binario nativo principal '/usr/local/bin/rust'...${C_RESET}"
+echo -e "\n${C_YELLOW}[3/4] Compilando binario nativo principal '/usr/local/bin/rust'...${C_RESET}"
 cat > /root/proxy.rs << 'EOF'
 use std::env;
 use std::fs::File;
@@ -512,7 +525,7 @@ fn main() {
 }
 EOF
 
-# Compilar ejecutable binario en /usr/local/bin/rust
+# Compilar ejecutable binario nativo en /usr/local/bin/rust
 rustc -O /root/proxy.rs -o /usr/local/bin/rust
 chmod +x /usr/local/bin/rust
 
@@ -543,7 +556,7 @@ systemctl daemon-reload
 systemctl enable socks-proxy > /dev/null 2>&1
 systemctl restart socks-proxy
 
-# Agregar alias al entorno bash y recargar la sesión actual
+# Agregar alias al entorno bash
 echo "alias rust='/usr/local/bin/rust'" >> /root/.bashrc
 echo "alias proxy='/usr/local/bin/rust'" >> /root/.bashrc
 echo "alias python='/usr/local/bin/rust'" >> /root/.bashrc
@@ -551,7 +564,7 @@ echo "alias menu='/usr/local/bin/rust'" >> /root/.bashrc
 hash -r 2>/dev/null
 
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
-echo -e "${C_GREEN}│${C_RESET} ${BG_GREEN}\033[1;37m    ¡INSTALACIÓN COMPLETADA! COMANDO PRINCIPAL: rust         ${C_RESET} ${C_GREEN}│${C_RESET}"
+echo -e "${C_GREEN}│${C_RESET} ${BG_GREEN}${C_WHITE}${C_BOLD}    ¡INSTALACIÓN COMPLETADA! COMANDO PRINCIPAL: rust         ${C_RESET} ${C_GREEN}│${C_RESET}"
 echo -e "${C_GREEN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
 echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}rust${C_RESET} en tu terminal para abrir el panel en cualquier momento.\n"
 
