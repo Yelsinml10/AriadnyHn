@@ -64,6 +64,22 @@ install_dependencies() {
     fi
 }
 
+setup_menu_shortcut() {
+    local current_script
+    current_script="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+
+    if [[ -f "$current_script" ]]; then
+        if [[ "$current_script" != "/usr/local/bin/menu" ]]; then
+            cp "$current_script" /usr/local/bin/menu 2>/dev/null
+            chmod +x /usr/local/bin/menu 2>/dev/null
+        fi
+        if [[ "$current_script" != "/usr/bin/menu" ]]; then
+            cp "$current_script" /usr/bin/menu 2>/dev/null
+            chmod +x /usr/bin/menu 2>/dev/null
+        fi
+    fi
+}
+
 header() {
     clear_screen
     printf "\n"
@@ -98,7 +114,7 @@ download_to_path() {
     printf "\n  %b⬇ Descargando %s...%b\n" \
         "$CYAN" "$script_name" "$RESET"
 
-    if curl -fSL --connect-timeout 15 --max-time 300 \
+    if curl -fsSL --connect-timeout 15 --max-time 300 \
         "$BASE_URL/$script_name" -o "$destination"; then
         chmod 700 "$destination"
         info "Archivo instalado en $destination"
@@ -117,7 +133,7 @@ download_and_execute() {
     printf "\n  %b⬇ Descargando %s...%b\n" \
         "$CYAN" "$script_name" "$RESET"
 
-    if ! curl -fSL --connect-timeout 15 --max-time 300 \
+    if ! curl -fsSL --connect-timeout 15 --max-time 300 \
         "$BASE_URL/$script_name" -o "$temporary"; then
         error_msg "No se pudo descargar $script_name."
         rm -f "$temporary"
@@ -1491,4 +1507,5 @@ main_menu() {
 
 require_root
 install_dependencies
+setup_menu_shortcut
 main_menu
