@@ -40,21 +40,33 @@ fi
 echo -e "\n${C_YELLOW}[1/5] Actualizando el sistema e instalando dependencias...${C_RESET}"
 apt update -y && apt install -y python3 python3-pip curl wget net-tools openssh-server systemd > /dev/null 2>&1
 
-# 2. Configuración JSON inicial
+# 2. Configuración Interactiva Simplificada
+echo -e "${C_YELLOW}[2/5] Configurando el protocolo Proxy WebSocket Custom...${C_RESET}"
+
+echo -e "\n${C_RED}======================================================${C_RESET}"
+echo -e "${C_RED}${C_BOLD}   SOCKS DIRECTO-PY  |  CUSTOM${C_RESET}"
+echo -e "${C_RED}======================================================${C_RESET}\n"
+
+read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE SU PUERTO: ${C_RESET}")" LISTEN_PORT
+LISTEN_PORT=${LISTEN_PORT:-8080}
+
+read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Digite Un Puerto SSH/DROPBEAR activo [22]: ${C_RESET}")" SSH_PORT
+SSH_PORT=${SSH_PORT:-22}
+
+read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Escribe El HTTP Response? 101|200|300 [101]: ${C_RESET}")" HTTP_CODE
+HTTP_CODE=${HTTP_CODE:-101}
+
 CONFIG_FILE="/root/socks_config.json"
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo -e "${C_YELLOW}[2/5] Creando archivo de configuración inicial...${C_RESET}"
-    cat > "$CONFIG_FILE" << 'EOF'
+cat > "$CONFIG_FILE" << EOF
 {
-    "ports": [8080],
-    "ssh_port": 22,
-    "http_code": "101"
+    "ports": [$LISTEN_PORT],
+    "ssh_port": $SSH_PORT,
+    "http_code": "$HTTP_CODE"
 }
 EOF
-fi
 
 # 3. Backend de Python
-echo -e "${C_YELLOW}[3/5] Instalando Engine de Proxy en Python...${C_RESET}"
+echo -e "\n${C_YELLOW}[3/5] Instalando Engine de Proxy en Python...${C_RESET}"
 cat > /root/proxy.py << 'EOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -91,6 +103,8 @@ def build_response(code):
         return b'HTTP/1.1 200 Connection Established\r\n\r\n'
     elif c == "200-WS":
         return b'HTTP/1.1 200 OK\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
+    elif c == "300":
+        return b'HTTP/1.1 300 Multiple Choices\r\n\r\n'
     else:
         return b'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1\r\n\r\n'
 
