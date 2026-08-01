@@ -155,7 +155,7 @@ func buildResponse(code string) []byte {
 
 func main() {
 	cfg := loadConfig()
-	defaultHost := fmt.Sprintf("127.0.0.1:%d", cfg.SSHPort)
+	defaultHost := fmt.Sprintf("0.0.0.0:%d", cfg.SSHPort)
 	response := buildResponse(cfg.HTTPCode)
 
 	for _, p := range cfg.Ports {
