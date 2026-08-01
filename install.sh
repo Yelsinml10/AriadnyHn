@@ -1,1283 +1,952 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# =============================================
-# PANEL MAESTRO VPN - INSTALADOR Y ADMINISTRADOR
-# Edición Ultra Visual Pro ✨
-# =============================================
+set -o pipefail
 
-# =============================================
-# 1. PALETA DE COLORES Y ESTILOS (256 COLORES)
-# =============================================
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+ESC='\033['
+RESET="${ESC}0m"
+BOLD="${ESC}1m"
+DIM="${ESC}2m"
+WHITE="${ESC}38;5;255m"
+GRAY="${ESC}38;5;245m"
+DARK="${ESC}38;5;238m"
+PURPLE="${ESC}38;5;141m"
+VIOLET="${ESC}38;5;99m"
+CYAN="${ESC}38;5;51m"
+BLUE="${ESC}38;5;75m"
+GREEN="${ESC}38;5;48m"
+YELLOW="${ESC}38;5;220m"
+RED="${ESC}38;5;196m"
 
-# Colores Neón & Gradients
-PURPLE='\033[38;5;141m'
-CYAN='\033[38;5;51m'
-L_CYAN='\033[38;5;123m'
-GREEN='\033[38;5;48m'
-RED='\033[38;5;196m'
-YELLOW='\033[38;5;220m'
-ORANGE='\033[38;5;208m'
-WHITE='\033[38;5;255m'
-GRAY='\033[38;5;242m'
-MAGENTA='\033[38;5;201m'
-
-# Insignias con Fondo
-BG_GREEN='\033[48;5;34m\033[38;5;255m\033[1m'
-BG_RED='\033[48;5;160m\033[38;5;255m\033[1m'
-BG_PURPLE='\033[48;5;93m\033[38;5;255m\033[1m'
-
-TITLE="PANEL MAESTRO VPN"
-TOKEN="${TOKEN:-}"
+VERSION="PROFESSIONAL EDITION v2.1"
 BASE_URL="https://raw.githubusercontent.com/Yelsinml10/AriadnyHn/main"
 
-# =============================================
-# 2. FUNCIONES DE SISTEMA Y UTILIDADES VISUALES
-# =============================================
-info() { echo -e "  ${GREEN}✔${NC} ${WHITE}$1${NC}"; }
-warn() { echo -e "  ${YELLOW}⚠${NC} ${YELLOW}$1${NC}"; }
-error() { echo -e "  ${RED}✖${NC} ${RED}$1${NC}" >&2; exit 1; }
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
 
-pause() {
-  echo -e "\n  ${GRAY}Presiona ${CYAN}[ENTER]${GRAY} para continuar...${NC}"
-  read -r
+clear_screen() {
+    clear 2>/dev/null || printf '\033c'
+}
+
+pause_screen() {
+    printf "\n  %bPresiona ENTER para continuar...%b" "$GRAY" "$RESET"
+    read -r
+}
+
+info() {
+    printf "  %b✔%b %s\n" "$GREEN" "$RESET" "$1"
+}
+
+warn() {
+    printf "  %b⚠%b %s\n" "$YELLOW" "$RESET" "$1"
+}
+
+error_msg() {
+    printf "  %b✖%b %s\n" "$RED" "$RESET" "$1" >&2
+}
+
+line() {
+    printf "  %b────────────────────────────────────────────────────────────%b\n" \
+        "$DARK" "$RESET"
 }
 
 require_root() {
-  if [[ "$EUID" -ne 0 ]]; then
-    echo -e "\n  ${RED}✖ Ejecuta como root:${NC} ${YELLOW}sudo bash $0${NC}\n"
-    exit 1
-  fi
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        error_msg "Ejecuta el panel como root: sudo bash $0"
+        exit 1
+    fi
 }
 
-check_dependencies() {
-  if ! command -v curl >/dev/null 2>&1; then
-    apt-get update -qq && apt-get install -y curl -qq || true
-  fi
+install_dependencies() {
+    if ! command_exists curl; then
+        apt-get update -qq
+        apt-get install -y curl -qq
+    fi
 }
 
-setup_menu_command() {
-  local script_path
-  script_path=$(readlink -f "$0")
-  if [[ "$script_path" != "/usr/local/bin/menu" ]]; then
-    cp "$script_path" /usr/local/bin/menu 2>/dev/null || true
-    chmod +x /usr/local/bin/menu 2>/dev/null || true
-  fi
+header() {
+    clear_screen
+    printf "\n"
+    printf "  %b╔════════════════════════════════════════════════════════╗%b\n" \
+        "$VIOLET" "$RESET"
+    printf "  %b║%b  %b🚀 PANEL MAESTRO VPN%b  %b◆ PROFESSIONAL%b  %b║%b\n" \
+        "$VIOLET" "$RESET" "$BOLD$WHITE" "$RESET" "$CYAN" "$RESET" "$VIOLET" "$RESET"
+    printf "  %b║%b  %bAdministrador avanzado de servicios VPN%b             %b║%b\n" \
+        "$VIOLET" "$RESET" "$DIM" "$RESET" "$VIOLET" "$RESET"
+    printf "  %b╚════════════════════════════════════════════════════════╝%b\n" \
+        "$VIOLET" "$RESET"
+    printf "  %b%s%b\n\n" "$GRAY" "$VERSION" "$RESET"
+}
+
+panel_header() {
+    local title="$1"
+    local icon="${2:-◆}"
+
+    header
+    printf "  %b╭────────────────────────────────────────────────────────╮%b\n" \
+        "$PURPLE" "$RESET"
+    printf "  %b│%b  %b%s %s%b\n" \
+        "$PURPLE" "$RESET" "$CYAN" "$icon" "$title" "$RESET"
+    printf "  %b╰────────────────────────────────────────────────────────╯%b\n\n" \
+        "$PURPLE" "$RESET"
+}
+
+download_to_path() {
+    local script_name="$1"
+    local destination="$2"
+
+    printf "\n  %b⬇ Descargando %s...%b\n" \
+        "$CYAN" "$script_name" "$RESET"
+
+    if curl -fSL --connect-timeout 15 --max-time 300 \
+        "$BASE_URL/$script_name" -o "$destination"; then
+        chmod 700 "$destination"
+        info "Archivo instalado en $destination"
+        return 0
+    fi
+
+    error_msg "No se pudo descargar $script_name."
+    rm -f "$destination"
+    return 1
 }
 
 download_and_execute() {
-  local script_name="$1"
-  local dest_path="$2"
-  
-  if [[ -z "$dest_path" ]]; then
-    dest_path="./$script_name"
-  fi
-  
-  echo -e "\n  ${CYAN}⬇ Descargando ${WHITE}$script_name${CYAN}...${NC}"
-  if curl -fsSL "$BASE_URL/$script_name" -o "$dest_path"; then
-    chmod +x "$dest_path"
-    echo -e "  ${GREEN}🚀 Ejecutando ${WHITE}$script_name${GREEN}...${NC}\n"
-    "$dest_path"
-    echo -e "\n  ${GREEN}✔ Operación finalizada.${NC}"
-    pause
-  else
-    echo -e "\n  ${RED}✖ Error al descargar $script_name.${NC}"
-    pause
-  fi
+    local script_name="$1"
+    local temporary="/tmp/${script_name##*/}.$$"
+
+    printf "\n  %b⬇ Descargando %s...%b\n" \
+        "$CYAN" "$script_name" "$RESET"
+
+    if ! curl -fSL --connect-timeout 15 --max-time 300 \
+        "$BASE_URL/$script_name" -o "$temporary"; then
+        error_msg "No se pudo descargar $script_name."
+        rm -f "$temporary"
+        return 1
+    fi
+
+    chmod 700 "$temporary"
+
+    printf "  %b🚀 Ejecutando %s...%b\n\n" \
+        "$GREEN" "$script_name" "$RESET"
+
+    bash "$temporary"
+    local result=$?
+
+    rm -f "$temporary"
+
+    if ((result == 0)); then
+        info "$script_name finalizó correctamente."
+    else
+        error_msg "$script_name terminó con errores."
+    fi
+
+    return "$result"
 }
 
-download_script() {
-  local script_name="$1"
-  local dest_path="$2"
-  
-  if [[ -z "$dest_path" ]]; then
-    dest_path="/usr/local/bin/$(basename "$script_name" .sh)"
-  fi
-  
-  echo -e "\n  ${CYAN}⬇ Descargando ${WHITE}$script_name${CYAN}...${NC}"
-  if curl -fsSL "$BASE_URL/$script_name" -o "$dest_path"; then
-    chmod +x "$dest_path"
-    info "✅ Script instalado en $dest_path"
-    return 0
-  else
-    echo -e "\n  ${RED}✖ Error al descargar $script_name.${NC}"
-    return 1
-  fi
+# ==============================================================================
+# FUNCIONES PARA SSH-GO
+# ==============================================================================
+
+get_sshgo_ports() {
+    if [[ -f /opt/vpn-proxy/config.json ]]; then
+        grep -o '"port":[^]]*' /opt/vpn-proxy/config.json 2>/dev/null | grep -oE '[0-9]+' | sort -u
+    fi
 }
 
-get_vps_info() {
-  if [ -f /etc/os-release ]; then
-      VPS_OS=$(grep -w PRETTY_NAME /etc/os-release | cut -d '"' -f 2)
-  else
-      VPS_OS=$(uname -srm)
-  fi
-  VPS_IP=$(curl -sS ifconfig.me 2>/dev/null || curl -sS ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
-  VPS_RAM=$(free -m 2>/dev/null | awk 'NR==2{printf "%sMB / %sMB", $3, $2}')
-  VPS_CPU=$(uptime 2>/dev/null | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | xargs)
+show_sshgo_status() {
+    printf "\n  %bServicio SSH-Go:%b " "$CYAN" "$RESET"
+    if systemctl is-active --quiet vpn-proxy 2>/dev/null; then
+        info "ACTIVO ✅"
+    else
+        warn "INACTIVO ❌"
+    fi
+    
+    printf "\n  %bPuertos activos:%b\n" "$BLUE" "$RESET"
+    local ports=$(get_sshgo_ports)
+    if [[ -n "$ports" ]]; then
+        for port in $ports; do
+            printf "    • Puerto %s\n" "$port"
+        done
+    else
+        warn "  No hay puertos configurados"
+    fi
+    echo ""
 }
 
-draw_header() {
-  clear
-  echo -e "\n  ${PURPLE}${BOLD}🚀 PANEL MAESTRO VPN${NC} ${GRAY}• [ PRO EDITION ]${NC}\n"
+add_sshgo_port() {
+    panel_header "AGREGAR PUERTO SSH-GO" "🔌"
+    
+    read -r -p "  Ingresa el número de puerto (ej: 8080): " port
+    
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
+        error_msg "Puerto inválido"
+        return 1
+    fi
+    
+    if [[ ! -f /opt/vpn-proxy/config.json ]]; then
+        error_msg "SSH-Go no está instalado"
+        return 1
+    fi
+    
+    if grep -q "\"$port\"" /opt/vpn-proxy/config.json; then
+        warn "El puerto $port ya está configurado"
+        pause_screen
+        return 1
+    fi
+    
+    cp /opt/vpn-proxy/config.json /opt/vpn-proxy/config.json.bak
+    
+    sed -i "s/\"port\": \[/\"port\": \[$port, /" /opt/vpn-proxy/config.json
+    
+    systemctl restart vpn-proxy
+    info "Puerto $port agregado correctamente"
+    pause_screen
 }
 
-display_header_main() {
-  get_vps_info
-  draw_header
-  echo -e "${L_CYAN}  ╭─────────────────────────────────────────────────────────╮${NC}"
-  echo -e "  ${L_CYAN}│${NC}  ${BOLD}${WHITE}🖥️  SISTEMA  :${NC} ${GREEN}${VPS_OS}${NC}"
-  echo -e "  ${L_CYAN}│${NC}  ${BOLD}${WHITE}🌐 IP VPS   :${NC} ${YELLOW}${VPS_IP}${NC}"
-  echo -e "  ${L_CYAN}│${NC}  ${BOLD}${WHITE}🧠 MEMORIA  :${NC} ${CYAN}${VPS_RAM}${NC}"
-  echo -e "  ${L_CYAN}│${NC}  ${BOLD}${WHITE}⚡ CARGA CPU:${NC} ${MAGENTA}${VPS_CPU}${NC} ${GRAY}(Load Avg)${NC}"
-  echo -e "${L_CYAN}  ╰─────────────────────────────────────────────────────────╯${NC}"
-  echo ""
+remove_sshgo_port() {
+    panel_header "QUITAR PUERTO SSH-GO" "🔌"
+    
+    local ports=($(get_sshgo_ports))
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        warn "No hay puertos configurados"
+        pause_screen
+        return 1
+    fi
+    
+    echo "  Puertos activos:"
+    local i=1
+    for port in "${ports[@]}"; do
+        printf "  %b[%d]%b Puerto %s\n" "$CYAN" "$i" "$RESET" "$port"
+        ((i++))
+    done
+    echo ""
+    
+    read -r -p "  Selecciona el número de puerto a quitar: " selection
+    if [[ ! "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt ${#ports[@]} ]]; then
+        error_msg "Selección inválida"
+        return 1
+    fi
+    
+    local port_to_remove=${ports[$selection-1]}
+    
+    cp /opt/vpn-proxy/config.json /opt/vpn-proxy/config.json.bak
+    
+    sed -i "s/$port_to_remove, //" /opt/vpn-proxy/config.json
+    sed -i "s/, $port_to_remove//" /opt/vpn-proxy/config.json
+    sed -i "s/\[, /[/" /opt/vpn-proxy/config.json
+    sed -i "s/, ]/]/" /opt/vpn-proxy/config.json
+    
+    systemctl restart vpn-proxy
+    info "Puerto $port_to_remove eliminado"
+    pause_screen
 }
 
-# =============================================
-# 3. MÓDULO: CADDY SERVER
-# =============================================
-caddy_menu() {
-  if ! command -v caddy >/dev/null 2>&1 || [[ ! -f "/etc/caddy/Caddyfile" ]]; then
-    echo -e "\n  ${YELLOW}⚠️ Caddy Server no está instalado o falta configuración.${NC}"
-    echo -e "  ${CYAN}Iniciando instalación...${NC}"
+restart_sshgo() {
+    panel_header "REINICIAR SSH-GO" "🔄"
+    systemctl restart vpn-proxy
+    if systemctl is-active --quiet vpn-proxy; then
+        info "SSH-Go reiniciado correctamente"
+    else
+        error_msg "Error al reiniciar SSH-Go"
+    fi
+    pause_screen
+}
+
+uninstall_sshgo() {
+    panel_header "DESINSTALAR SSH-GO" "🗑️"
+    
+    read -r -p "  ¿Seguro que quieres desinstalar SSH-Go? (s/N): " confirm
+    if [[ "$confirm" =~ ^[Ss]$ ]]; then
+        systemctl stop vpn-proxy
+        systemctl disable vpn-proxy
+        rm -rf /opt/vpn-proxy
+        rm -f /etc/systemd/system/vpn-proxy.service
+        systemctl daemon-reload
+        info "SSH-Go desinstalado"
+    else
+        warn "Desinstalación cancelada"
+    fi
+    pause_screen
+}
+
+install_sshgo_direct() {
+    panel_header "INSTALANDO SSH-GO" "🚀"
+    
+    if [[ -f /opt/vpn-proxy/vpn-proxy ]]; then
+        warn "SSH-Go ya está instalado"
+        pause_screen
+        return 1
+    fi
+    
+    info "Ejecutando instalador SSH-Go..."
+    download_and_execute "install-sshgo.sh"
+    
+    if [[ -f /opt/vpn-proxy/vpn-proxy ]]; then
+        info "SSH-Go instalado correctamente"
+    else
+        error_msg "Error al instalar SSH-Go"
+    fi
+    
+    pause_screen
+}
+
+# ==============================================================================
+# FUNCIONES PARA CADDY - CORREGIDAS
+# ==============================================================================
+
+get_caddy_domains() {
+    if [[ -f /etc/caddy/Caddyfile ]]; then
+        grep -E '^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' /etc/caddy/Caddyfile 2>/dev/null | sed 's/:.*//' | sort -u
+    fi
+}
+
+get_caddy_ports_http() {
+    if [[ -f /etc/caddy/Caddyfile ]]; then
+        grep -E '^:[0-9]+' /etc/caddy/Caddyfile 2>/dev/null | grep -oE '[0-9]+' | sort -u
+    fi
+}
+
+get_caddy_ports_https() {
+    if [[ -f /etc/caddy/Caddyfile ]]; then
+        grep -E '^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:[0-9]+' /etc/caddy/Caddyfile 2>/dev/null | grep -oE ':[0-9]+' | sed 's/://' | sort -u
+    fi
+}
+
+show_caddy_status() {
+    printf "\n  %bServicio Caddy:%b " "$CYAN" "$RESET"
+    if systemctl is-active --quiet caddy 2>/dev/null; then
+        info "ACTIVO ✅"
+    else
+        warn "INACTIVO ❌"
+    fi
+    
+    printf "\n  %bDominios configurados:%b\n" "$BLUE" "$RESET"
+    local domains=$(get_caddy_domains)
+    if [[ -n "$domains" ]]; then
+        for domain in $domains; do
+            printf "    • %s\n" "$domain"
+        done
+    else
+        warn "  No hay dominios configurados"
+    fi
+    
+    printf "\n  %bPuertos HTTP:%b\n" "$GREEN" "$RESET"
+    local http_ports=$(get_caddy_ports_http)
+    if [[ -n "$http_ports" ]]; then
+        for port in $http_ports; do
+            printf "    • %s\n" "$port"
+        done
+    else
+        warn "  No hay puertos HTTP"
+    fi
+    
+    printf "\n  %bPuertos HTTPS:%b\n" "$YELLOW" "$RESET"
+    local https_ports=$(get_caddy_ports_https)
+    if [[ -n "$https_ports" ]]; then
+        for port in $https_ports; do
+            printf "    • %s\n" "$port"
+        done
+    else
+        warn "  No hay puertos HTTPS"
+    fi
+    echo ""
+}
+
+change_caddy_domain() {
+    panel_header "CAMBIAR DOMINIO CADDY" "🌐"
+    
+    if [[ ! -f /etc/caddy/Caddyfile ]]; then
+        error_msg "Caddy no está instalado"
+        return 1
+    fi
+    
+    local domains=$(get_caddy_domains)
+    if [[ -z "$domains" ]]; then
+        warn "No hay dominios configurados"
+        pause_screen
+        return 1
+    fi
+    
+    echo "  Dominios actuales:"
+    local i=1
+    local domains_array=($domains)
+    for domain in "${domains_array[@]}"; do
+        printf "  %b[%d]%b %s\n" "$CYAN" "$i" "$RESET" "$domain"
+        ((i++))
+    done
+    echo ""
+    
+    read -r -p "  Selecciona el dominio a cambiar: " selection
+    if [[ ! "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt ${#domains_array[@]} ]]; then
+        error_msg "Selección inválida"
+        return 1
+    fi
+    
+    local old_domain=${domains_array[$selection-1]}
+    
+    read -r -p "  Nuevo dominio (ej: ejemplo.com): " new_domain
+    
+    if [[ -z "$new_domain" ]]; then
+        error_msg "Dominio no puede estar vacío"
+        return 1
+    fi
+    
+    cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+    sed -i "s/$old_domain/$new_domain/g" /etc/caddy/Caddyfile
+    
+    systemctl restart caddy
+    info "Dominio cambiado de $old_domain a $new_domain"
+    pause_screen
+}
+
+add_caddy_http_port() {
+    panel_header "AGREGAR PUERTO HTTP CADDY" "🔌"
+    
+    read -r -p "  Ingresa el puerto HTTP (ej: 80): " port
+    
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
+        error_msg "Puerto inválido"
+        return 1
+    fi
+    
+    if [[ ! -f /etc/caddy/Caddyfile ]]; then
+        echo ":80 {
+    respond \"Caddy Server\"
+}" > /etc/caddy/Caddyfile
+    fi
+    
+    if grep -q ":$port" /etc/caddy/Caddyfile 2>/dev/null; then
+        warn "El puerto $port ya está configurado"
+        pause_screen
+        return 1
+    fi
+    
+    cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+    
+    sed -i "/^:80,/ s/80/80, $port/" /etc/caddy/Caddyfile
+    
+    systemctl restart caddy
+    info "Puerto HTTP $port agregado"
+    pause_screen
+}
+
+add_caddy_https_port() {
+    panel_header "AGREGAR PUERTO HTTPS CADDY" "🔒"
+    
+    read -r -p "  Ingresa el puerto HTTPS (ej: 443): " port
+    
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
+        error_msg "Puerto inválido"
+        return 1
+    fi
+    
+    local current_domain=$(get_caddy_domains | head -1)
+    if [[ -z "$current_domain" ]]; then
+        read -r -p "  Dominio para HTTPS (ej: ejemplo.com): " domain
+        current_domain="$domain"
+    fi
+    
+    if [[ -z "$current_domain" ]]; then
+        error_msg "Dominio no puede estar vacío"
+        return 1
+    fi
+    
+    if [[ ! -f /etc/caddy/Caddyfile ]]; then
+        echo "$current_domain:$port {
+    respond \"Caddy Server HTTPS\"
+}" > /etc/caddy/Caddyfile
+    else
+        if grep -q "$current_domain:$port" /etc/caddy/Caddyfile 2>/dev/null; then
+            warn "El puerto $port ya está configurado para $current_domain"
+            pause_screen
+            return 1
+        fi
+        
+        cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+        
+        sed -i "/^${current_domain}:443,/ s/443/443, $port/" /etc/caddy/Caddyfile
+    fi
+    
+    systemctl restart caddy
+    info "Puerto HTTPS $port agregado para $current_domain"
+    pause_screen
+}
+
+remove_caddy_port() {
+    panel_header "QUITAR PUERTO CADDY" "🔌"
+    
+    if [[ ! -f /etc/caddy/Caddyfile ]]; then
+        warn "Caddy no está instalado"
+        pause_screen
+        return 1
+    fi
+    
+    local http_ports=$(get_caddy_ports_http)
+    local https_ports=$(get_caddy_ports_https)
+    
+    if [[ -z "$http_ports" && -z "$https_ports" ]]; then
+        warn "No hay puertos configurados"
+        pause_screen
+        return 1
+    fi
+    
+    echo "  Puertos HTTP actuales:"
+    if [[ -n "$http_ports" ]]; then
+        for port in $http_ports; do
+            printf "    • %s (HTTP)\n" "$port"
+        done
+    else
+        echo "    Ninguno"
+    fi
+    
+    echo ""
+    echo "  Puertos HTTPS actuales:"
+    if [[ -n "$https_ports" ]]; then
+        for port in $https_ports; do
+            printf "    • %s (HTTPS)\n" "$port"
+        done
+    else
+        echo "    Ninguno"
+    fi
+    echo ""
+    
+    read -r -p "  Puerto a quitar: " port
+    
+    if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+        error_msg "Puerto inválido"
+        return 1
+    fi
+    
+    cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+    
+    if echo "$http_ports" | grep -q "$port"; then
+        sed -i "s/:$port, //" /etc/caddy/Caddyfile
+        sed -i "s/, :$port//" /etc/caddy/Caddyfile
+    elif echo "$https_ports" | grep -q "$port"; then
+        sed -i "s/:$port, //" /etc/caddy/Caddyfile
+        sed -i "s/, :$port//" /etc/caddy/Caddyfile
+    else
+        warn "Puerto $port no encontrado"
+        pause_screen
+        return 1
+    fi
+    
+    systemctl restart caddy
+    info "Puerto $port eliminado"
+    pause_screen
+}
+
+restart_caddy() {
+    panel_header "REINICIAR CADDY" "🔄"
+    systemctl restart caddy
+    if systemctl is-active --quiet caddy; then
+        info "Caddy reiniciado correctamente"
+    else
+        error_msg "Error al reiniciar Caddy"
+    fi
+    pause_screen
+}
+
+uninstall_caddy() {
+    panel_header "DESINSTALAR CADDY" "🗑️"
+    
+    read -r -p "  ¿Seguro que quieres desinstalar Caddy? (s/N): " confirm
+    if [[ "$confirm" =~ ^[Ss]$ ]]; then
+        systemctl stop caddy
+        systemctl disable caddy
+        apt remove -y caddy 2>/dev/null
+        rm -rf /etc/caddy
+        rm -f /etc/systemd/system/caddy.service
+        systemctl daemon-reload
+        info "Caddy desinstalado"
+    else
+        warn "Desinstalación cancelada"
+    fi
+    pause_screen
+}
+
+install_caddy_direct() {
+    panel_header "INSTALANDO CADDY" "🌐"
+    
+    if command_exists caddy; then
+        warn "Caddy ya está instalado"
+        pause_screen
+        return 1
+    fi
+    
+    info "Ejecutando instalador Caddy..."
     download_and_execute "install-caddy.sh"
     
-    if ! command -v caddy >/dev/null 2>&1 || [[ ! -f "/etc/caddy/Caddyfile" ]]; then
-      warn "No se pudo instalar Caddy Server."
-      return 1
-    fi
-  fi
-
-  CADDY_CONF="/etc/caddy/Caddyfile"
-  while true; do
-    if systemctl is-active --quiet caddy; then 
-      CADDY_STATUS=" ${BG_GREEN} ● ACTIVO ${NC}"
-    else 
-      CADDY_STATUS=" ${BG_RED} ● INACTIVO ${NC}"
-    fi
-
-    if [[ -f "$CADDY_CONF" ]]; then
-      DOMINIO_ACTUAL=$(grep -E '[a-zA-Z0-9.-]+:443' "$CADDY_CONF" 2>/dev/null | head -n 1 | awk -F':' '{print $1}' | tr -d ' ' || echo "No detectado")
-      [[ -z "$DOMINIO_ACTUAL" ]] && DOMINIO_ACTUAL="No detectado"
-      PUERTOS_HTTPS=$(grep -E '^[a-zA-Z0-9.-]+:[0-9]+' "$CADDY_CONF" 2>/dev/null | grep -o ':[0-9]*' | tr -d ':' | paste -sd, - || echo "N/A")
-      PUERTOS_HTTP=$(grep -E '^:[0-9]+' "$CADDY_CONF" 2>/dev/null | grep -o '[0-9]*' | paste -sd, - || echo "N/A")
+    if command_exists caddy; then
+        info "Caddy instalado correctamente"
     else
-      DOMINIO_ACTUAL="Caddyfile no encontrado"
-      PUERTOS_HTTPS="N/A"
-      PUERTOS_HTTP="N/A"
+        error_msg "Error al instalar Caddy"
     fi
-
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🌐 ADMINISTRADOR DE CADDY SERVER${NC}          ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}DOMINIO :${NC} ${WHITE}${DOMINIO_ACTUAL}${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}HTTP    :${NC} ${GREEN}${PUERTOS_HTTP}${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}HTTPS   :${NC} ${GREEN}${PUERTOS_HTTPS}${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO  :${NC}${CADDY_STATUS}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📊 Estado del servicio${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}✏️  Cambiar dominio actual${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔌 Gestionar puertos HTTP${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔒 Gestionar puertos HTTPS${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}📜 Ver logs en tiempo real${NC}"
-    echo -e "  ${CYAN}[6]${NC} ${WHITE}🔄 Reiniciar Caddy${NC}"
-    echo -e "  ${RED}[7]${NC} ${RED}🗑️  Desinstalar Caddy${NC}"
-    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_caddy
-
-    case "$opt_caddy" in
-      1) clear; systemctl status caddy --no-pager || true; pause ;;
-      2) 
-        echo -e "\n  ${YELLOW}Dominio actual:${NC} ${WHITE}$DOMINIO_ACTUAL${NC}"
-        read -r -p "  ➜ Ingresa el NUEVO dominio: " NUEVO_DOMINIO
-        if [[ -n "$NUEVO_DOMINIO" && -f "$CADDY_CONF" ]]; then
-            sed -i "s/$DOMINIO_ACTUAL/$NUEVO_DOMINIO/g" "$CADDY_CONF" 2>/dev/null || true
-            systemctl restart caddy 2>/dev/null || true
-            info "Dominio actualizado a: $NUEVO_DOMINIO"
-        fi
-        pause ;;
-      3) 
-        echo -e "\n  ${YELLOW}Puertos HTTP actuales: ${WHITE}$PUERTOS_HTTP${NC}"
-        read -r -p "  ➜ Puertos a AGREGAR (separados por comas, enter para omitir): " PUERTOS_ADD
-        read -r -p "  ➜ Puertos a QUITAR (separados por comas, enter para omitir): " PUERTOS_DEL
-        
-        if [[ -n "$PUERTOS_ADD" || -n "$PUERTOS_DEL" ]] && [[ -f "$CADDY_CONF" ]]; then
-            [[ "$PUERTOS_HTTP" == "N/A" ]] && PUERTOS_HTTP=""
-            
-            COMBINADOS="${PUERTOS_HTTP}, ${PUERTOS_ADD}"
-            
-            IFS=',' read -ra ARR_ACT <<< "$COMBINADOS"
-            IFS=',' read -ra ARR_DEL <<< "$PUERTOS_DEL"
-            
-            NEW_PORTS_LIST=""
-            for p in "${ARR_ACT[@]}"; do
-                clean_p=$(echo "$p" | xargs)
-                [[ -z "$clean_p" ]] && continue
-                
-                mantener=true
-                for d in "${ARR_DEL[@]}"; do
-                    clean_d=$(echo "$d" | xargs)
-                    if [[ "$clean_p" == "$clean_d" ]]; then
-                        mantener=false
-                        break
-                    fi
-                done
-                
-                if $mantener; then
-                    if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_p"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_p"; fi
-                fi
-            done
-            
-            UNIQUE_PORTS=$(echo "$NEW_PORTS_LIST" | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | sort -u | paste -sd "," - | sed 's/,/, /g')
-            
-            FORMATTED_HTTP=""
-            IFS=',' read -ra FINAL_ARR <<< "$UNIQUE_PORTS"
-            for i in "${FINAL_ARR[@]}"; do
-                clean_i=$(echo "$i" | xargs)
-                [[ -z "$clean_i" ]] && continue
-                if [[ -z "$FORMATTED_HTTP" ]]; then
-                    FORMATTED_HTTP=":${clean_i}"
-                else
-                    FORMATTED_HTTP="${FORMATTED_HTTP}, :${clean_i}"
-                fi
-            done
-            
-            if [[ -n "$FORMATTED_HTTP" ]]; then
-                sed -i -E "s/^:[0-9]+.*\{/$FORMATTED_HTTP {/g" "$CADDY_CONF" 2>/dev/null || true
-                systemctl restart caddy 2>/dev/null || true
-                info "Puertos HTTP actualizados a: $UNIQUE_PORTS"
-            else
-                warn "Caddy requiere al menos un puerto HTTP."
-            fi
-        fi
-        pause ;;
-      4) 
-        echo -e "\n  ${YELLOW}Puertos HTTPS actuales: ${WHITE}$PUERTOS_HTTPS${NC}"
-        read -r -p "  ➜ Puertos HTTPS a AGREGAR (separados por comas, enter para omitir): " PUERTOS_ADD
-        read -r -p "  ➜ Puertos HTTPS a QUITAR (separados por comas, enter para omitir): " PUERTOS_DEL
-        
-        if [[ -n "$PUERTOS_ADD" || -n "$PUERTOS_DEL" ]] && [[ -f "$CADDY_CONF" ]]; then
-            [[ "$PUERTOS_HTTPS" == "N/A" ]] && PUERTOS_HTTPS=""
-            
-            COMBINADOS="${PUERTOS_HTTPS}, ${PUERTOS_ADD}"
-            
-            IFS=',' read -ra ARR_ACT <<< "$COMBINADOS"
-            IFS=',' read -ra ARR_DEL <<< "$PUERTOS_DEL"
-            
-            NEW_PORTS_LIST=""
-            for p in "${ARR_ACT[@]}"; do
-                clean_p=$(echo "$p" | xargs)
-                [[ -z "$clean_p" ]] && continue
-                
-                mantener=true
-                for d in "${ARR_DEL[@]}"; do
-                    clean_d=$(echo "$d" | xargs)
-                    if [[ "$clean_p" == "$clean_d" ]]; then
-                        mantener=false
-                        break
-                    fi
-                done
-                
-                if $mantener; then
-                    if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_p"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_p"; fi
-                fi
-            done
-            
-            UNIQUE_PORTS=$(echo "$NEW_PORTS_LIST" | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | sort -u | paste -sd "," - | sed 's/,/, /g')
-            
-            FORMATTED_PORTS=""
-            IFS=',' read -ra FINAL_ARR <<< "$UNIQUE_PORTS"
-            for i in "${FINAL_ARR[@]}"; do
-                clean_i=$(echo "$i" | xargs)
-                [[ -z "$clean_i" ]] && continue
-                if [[ -z "$FORMATTED_PORTS" ]]; then
-                    FORMATTED_PORTS="${DOMINIO_ACTUAL}:${clean_i}"
-                else
-                    FORMATTED_PORTS="${FORMATTED_PORTS}, ${DOMINIO_ACTUAL}:${clean_i}"
-                fi
-            done
-            
-            if [[ -n "$FORMATTED_PORTS" ]]; then
-                sed -i -E "s/^[a-zA-Z0-9.-]+:[0-9]+.*\{/$FORMATTED_PORTS {/g" "$CADDY_CONF" 2>/dev/null || true
-                systemctl restart caddy 2>/dev/null || true
-                info "Puertos HTTPS actualizados a: $UNIQUE_PORTS"
-            else
-                 warn "Caddy requiere al menos un puerto HTTPS."
-            fi
-        fi
-        pause ;;
-      5) clear; journalctl -u caddy -f || true; pause ;;
-      6) systemctl restart caddy || true; info "Caddy reiniciado."; sleep 1 ;;
-      7) 
-        echo -e "\n  ${RED}⚠️ ¿Desinstalar Caddy? (s/N)${NC}"
-        read -r -p "  ➜ " conf_caddy
-        if [[ "$conf_caddy" =~ ^[sS]$ ]]; then
-          systemctl stop caddy 2>/dev/null || true
-          systemctl disable caddy 2>/dev/null || true
-          apt-get purge -y caddy 2>/dev/null || true
-          rm -rf /etc/caddy 2>/dev/null || true
-          info "Caddy desinstalado."
-          pause
-          break
-        fi
-        ;;
-      0) break ;;
-    esac
-  done
+    
+    pause_screen
 }
 
-# =============================================
-# 4. MÓDULO: V2RAY (VMESS)
-# =============================================
-v2ray_menu() {
-  if ! command -v v2ray >/dev/null 2>&1 || [[ ! -f "/usr/local/etc/v2ray/config.json" ]]; then
-    echo -e "\n  ${YELLOW}⚠️ V2Ray no está instalado.${NC}"
-    download_and_execute "install-v2ray.sh"
-    if ! command -v v2ray >/dev/null 2>&1 || [[ ! -f "/usr/local/etc/v2ray/config.json" ]]; then
-      warn "No se pudo instalar V2Ray."
-      return 1
-    fi
-  fi
+# ==============================================================================
+# MENÚS ADMINISTRATIVOS
+# ==============================================================================
 
-  if ! command -v jq >/dev/null 2>&1; then apt-get install -y jq -qq || true; fi
-  V2RAY_CONF="/usr/local/etc/v2ray/config.json"
-  
-  while true; do
-    if systemctl is-active --quiet v2ray; then 
-      V2RAY_STATUS=" ${BG_GREEN} ● ACTIVO ${NC}"
-    else 
-      V2RAY_STATUS=" ${BG_RED} ● INACTIVO ${NC}"
-    fi
-
-    V2RAY_PORT=$(jq -r '.inbounds[0].port' "$V2RAY_CONF" 2>/dev/null || echo "N/A")
-    V2RAY_PATH=$(jq -r '.inbounds[0].streamSettings.wsSettings.path' "$V2RAY_CONF" 2>/dev/null || echo "N/A")
-    V2RAY_USERS=$(jq '.inbounds[0].settings.clients | length' "$V2RAY_CONF" 2>/dev/null || echo "0")
-
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}⚡ ADMINISTRADOR V2RAY (VMESS)${NC}            ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}PUERTO   :${NC} ${GREEN}${V2RAY_PORT}${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}PATH     :${NC} ${YELLOW}${V2RAY_PATH}${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}USUARIOS :${NC} ${WHITE}${V2RAY_USERS}${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${V2RAY_STATUS}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📋 Listar Usuarios${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}➕ Añadir usuario${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🗑️  Eliminar usuario${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔌 Cambiar puerto${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔀 Cambiar PATH${NC}"
-    echo -e "  ${CYAN}[6]${NC} ${WHITE}📜 Ver logs${NC}"
-    echo -e "  ${CYAN}[7]${NC} ${WHITE}🔄 Reiniciar V2Ray${NC}"
-    echo -e "  ${RED}[8]${NC} ${RED}🗑️  Desinstalar V2Ray${NC}"
-    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_v2ray
-
-    case "$opt_v2ray" in
-      1) echo -e "\n  ${YELLOW}USUARIOS:${NC}"; jq -r '.inbounds[0].settings.clients | to_entries[] | "  [\(.key)] UUID: \(.value.id)"' "$V2RAY_CONF" 2>/dev/null || true; pause ;;
-      2) 
-        NUEVO_UUID=$(cat /proc/sys/kernel/random/uuid)
-        jq --arg uuid "$NUEVO_UUID" '.inbounds[0].settings.clients += [{"id": $uuid, "alterId": 0}]' "$V2RAY_CONF" > /tmp/v2.json 2>/dev/null && mv /tmp/v2.json "$V2RAY_CONF" 2>/dev/null || true
-        systemctl restart v2ray || true
-        info "Nuevo UUID: $NUEVO_UUID"; pause ;;
-      3) 
-        jq -r '.inbounds[0].settings.clients | to_entries[] | "  [\(.key)] \(.value.id)"' "$V2RAY_CONF" 2>/dev/null || true
-        read -r -p "  ➜ Número a eliminar: " IDX
-        if [[ "$IDX" =~ ^[0-9]+$ ]]; then
-          jq "del(.inbounds[0].settings.clients[$IDX])" "$V2RAY_CONF" > /tmp/v2.json 2>/dev/null && mv /tmp/v2.json "$V2RAY_CONF" 2>/dev/null || true
-          systemctl restart v2ray || true
-          info "Usuario eliminado."
-        fi
-        pause ;;
-      4) 
-        read -r -p "  ➜ Nuevo puerto: " NUEVO_PUE
-        if [[ "$NUEVO_PUE" =~ ^[0-9]+$ ]]; then
-          jq --argjson p "$NUEVO_PUE" '.inbounds[0].port = $p' "$V2RAY_CONF" > /tmp/v2.json 2>/dev/null && mv /tmp/v2.json "$V2RAY_CONF" 2>/dev/null || true
-          systemctl restart v2ray || true
-          info "Puerto cambiado a $NUEVO_PUE"
-        fi
-        pause ;;
-      5) 
-        read -r -p "  ➜ Nuevo path: " NUEVO_PATH
-        if [[ -n "$NUEVO_PATH" ]]; then
-          jq --arg path "$NUEVO_PATH" '.inbounds[0].streamSettings.wsSettings.path = $path' "$V2RAY_CONF" > /tmp/v2.json 2>/dev/null && mv /tmp/v2.json "$V2RAY_CONF" 2>/dev/null || true
-          systemctl restart v2ray || true
-          info "Path cambiado a $NUEVO_PATH"
-        fi
-        pause ;;
-      6) clear; journalctl -u v2ray -f || true; pause ;;
-      7) systemctl restart v2ray || true; info "V2Ray reiniciado."; sleep 1 ;;
-      8) 
-        echo -e "\n  ${RED}⚠️ ¿Desinstalar V2Ray? (s/N)${NC}"
-        read -r -p "  ➜ " conf_v2
-        if [[ "$conf_v2" =~ ^[sS]$ ]]; then
-          systemctl stop v2ray 2>/dev/null || true
-          systemctl disable v2ray 2>/dev/null || true
-          rm -rf /usr/local/etc/v2ray /usr/local/share/v2ray /var/log/v2ray /etc/systemd/system/v2ray.service /usr/local/bin/v2ray 2>/dev/null || true
-          systemctl daemon-reload 2>/dev/null || true
-          info "V2Ray desinstalado."
-          pause
-          break
-        fi
-        ;;
-      0) break ;;
-    esac
-  done
+sshgo_admin_menu() {
+    while true; do
+        panel_header "PANEL SSH-GO PROXY" "🚀"
+        
+        show_sshgo_status
+        
+        printf "\n  %b[1]%b  Instalar SSH-Go\n" "$GREEN" "$RESET"
+        printf "  %b[2]%b  Agregar puerto\n" "$CYAN" "$RESET"
+        printf "  %b[3]%b  Quitar puerto\n" "$CYAN" "$RESET"
+        printf "  %b[4]%b  Reiniciar SSH-Go\n" "$CYAN" "$RESET"
+        printf "  %b[5]%b  Desinstalar SSH-Go\n" "$RED" "$RESET"
+        printf "  %b[0]%b  Volver\n\n" "$GRAY" "$RESET"
+        
+        read -r -p "  ❯ Selecciona una opción: " option
+        
+        case "$option" in
+            1) install_sshgo_direct ;;
+            2) add_sshgo_port ;;
+            3) remove_sshgo_port ;;
+            4) restart_sshgo ;;
+            5) uninstall_sshgo ;;
+            0) break ;;
+            *) warn "Opción inválida"; sleep 1 ;;
+        esac
+    done
 }
 
-# =============================================
-# 5. MÓDULO: SSH-GO PROXY
-# =============================================
+caddy_admin_menu() {
+    while true; do
+        panel_header "PANEL CADDY SERVER" "🌐"
+        
+        show_caddy_status
+        
+        printf "\n  %b[1]%b  Instalar Caddy\n" "$GREEN" "$RESET"
+        printf "  %b[2]%b  Cambiar dominio\n" "$CYAN" "$RESET"
+        printf "  %b[3]%b  Agregar puerto HTTP\n" "$CYAN" "$RESET"
+        printf "  %b[4]%b  Agregar puerto HTTPS\n" "$CYAN" "$RESET"
+        printf "  %b[5]%b  Quitar puerto\n" "$CYAN" "$RESET"
+        printf "  %b[6]%b  Reiniciar Caddy\n" "$CYAN" "$RESET"
+        printf "  %b[7]%b  Desinstalar Caddy\n" "$RED" "$RESET"
+        printf "  %b[0]%b  Volver\n\n" "$GRAY" "$RESET"
+        
+        read -r -p "  ❯ Selecciona una opción: " option
+        
+        case "$option" in
+            1) install_caddy_direct ;;
+            2) change_caddy_domain ;;
+            3) add_caddy_http_port ;;
+            4) add_caddy_https_port ;;
+            5) remove_caddy_port ;;
+            6) restart_caddy ;;
+            7) uninstall_caddy ;;
+            0) break ;;
+            *) warn "Opción inválida"; sleep 1 ;;
+        esac
+    done
+}
+
+# ==============================================================================
+# MENÚS PRINCIPALES - CON INSTALACIÓN AUTOMÁTICA
+# ==============================================================================
+
+caddy_menu() {
+    # Si no está instalado, instalar automáticamente
+    if ! command_exists caddy || [[ ! -f /etc/caddy/Caddyfile ]]; then
+        warn "Caddy no está instalado. Instalando automáticamente..."
+        install_caddy_direct
+        # Después de instalar, abrir el panel administrativo
+        if command_exists caddy; then
+            caddy_admin_menu
+        fi
+    else
+        # Si ya está instalado, abrir el panel administrativo directamente
+        caddy_admin_menu
+    fi
+}
+
 sshgo_menu() {
-  PROXY_DIR="/opt/vpn-proxy"
-  PROXY_SVC="vpn-proxy"
-
-  if [[ ! -f "$PROXY_DIR/vpn-proxy" ]]; then
-    echo -e "\n  ${YELLOW}⚠️ SSH-Go Proxy no está instalado.${NC}"
-    echo -e "  ${CYAN}Iniciando instalación...${NC}"
-    download_and_execute "install-sshgo.sh"
-    if [[ ! -f "$PROXY_DIR/vpn-proxy" ]]; then
-      warn "No se pudo instalar SSH-Go Proxy."
-      return 1
-    fi
-  fi
-
-  while true; do
-    if systemctl is-active --quiet "$PROXY_SVC"; then 
-      PROXY_STATUS=" ${BG_GREEN} ● ACTIVO ${NC}"
-    else 
-      PROXY_STATUS=" ${BG_RED} ● INACTIVO ${NC}"
-    fi
-
-    if [[ -f "$PROXY_DIR/main.go" ]]; then
-      PUERTOS_ACTUALES=$(grep -E 'puertos\s*:?=\s*\[\]int' "$PROXY_DIR/main.go" 2>/dev/null | grep -o '{[^}]*}' | tr -d '{} ' || echo "8080")
-      [[ -z "$PUERTOS_ACTUALES" ]] && PUERTOS_ACTUALES="8080"
+    # Si no está instalado, instalar automáticamente
+    if [[ ! -f /opt/vpn-proxy/vpn-proxy ]]; then
+        warn "SSH-Go no está instalado. Instalando automáticamente..."
+        install_sshgo_direct
+        # Después de instalar, abrir el panel administrativo
+        if [[ -f /opt/vpn-proxy/vpn-proxy ]]; then
+            sshgo_admin_menu
+        fi
     else
-      PUERTOS_ACTUALES="No instalado"
+        # Si ya está instalado, abrir el panel administrativo directamente
+        sshgo_admin_menu
     fi
-
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🚀 ADMINISTRADOR SSH-GO PROXY${NC}            ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}PUERTOS  :${NC} ${GREEN}${PUERTOS_ACTUALES}${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${PROXY_STATUS}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}➕ Agregar Puertos${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}➖ Quitar Puertos${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🧪 Prueba de Conexión${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}📜 Ver logs${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔄 Reiniciar Proxy${NC}"
-    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar${NC}"
-    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_sshgo
-
-    case "$opt_sshgo" in
-      1) 
-        echo -e "\n  ${YELLOW}Puertos actuales: ${WHITE}$PUERTOS_ACTUALES${NC}"
-        read -r -p "  ➜ Puertos a AGREGAR (separados por comas): " PUERTOS_ADD
-        if [[ -n "$PUERTOS_ADD" && -f "$PROXY_DIR/main.go" ]]; then
-          # Combinar puertos actuales y nuevos, limpiar espacios, separar por líneas, 
-          # quitar duplicados y volver a unir con comas
-          COMBINADOS="${PUERTOS_ACTUALES}, ${PUERTOS_ADD}"
-          NEW_PORTS_LIST=$(echo "$COMBINADOS" | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | sort -u | paste -sd "," - | sed 's/,/, /g')
-          
-          if [[ -n "$NEW_PORTS_LIST" ]]; then
-            sed -i -E "s/puertos\s*:?=\s*\[\]int\{[^}]*\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
-            cd "$PROXY_DIR"
-            export PATH=$PATH:/usr/local/go/bin
-            go build -ldflags="-s -w" -o vpn-proxy main.go 2>/dev/null
-            chmod +x vpn-proxy
-            systemctl restart "$PROXY_SVC" 2>/dev/null || true
-            info "Puertos actualizados a: $NEW_PORTS_LIST"
-          fi
-        fi
-        pause ;;
-      2)
-        echo -e "\n  ${YELLOW}Puertos actuales: ${WHITE}$PUERTOS_ACTUALES${NC}"
-        read -r -p "  ➜ Puertos a QUITAR (separados por comas): " PUERTOS_DEL
-        if [[ -n "$PUERTOS_DEL" && -f "$PROXY_DIR/main.go" ]]; then
-          IFS=',' read -ra ARR_ACT <<< "$PUERTOS_ACTUALES"
-          IFS=',' read -ra ARR_DEL <<< "$PUERTOS_DEL"
-          
-          NEW_PORTS_LIST=""
-          for act_p in "${ARR_ACT[@]}"; do
-            clean_act=$(echo "$act_p" | xargs)
-            mantener=true
-            for del_p in "${ARR_DEL[@]}"; do
-              clean_del=$(echo "$del_p" | xargs)
-              if [[ "$clean_act" == "$clean_del" ]]; then
-                mantener=false
-                break
-              fi
-            done
-            if $mantener; then
-              if [[ -z "$NEW_PORTS_LIST" ]]; then NEW_PORTS_LIST="$clean_act"; else NEW_PORTS_LIST="${NEW_PORTS_LIST}, $clean_act"; fi
-            fi
-          done
-
-          if [[ -n "$NEW_PORTS_LIST" ]]; then
-            sed -i -E "s/puertos\s*:?=\s*\[\]int\{[^}]*\}/puertos := []int{$NEW_PORTS_LIST}/g" "$PROXY_DIR/main.go" 2>/dev/null
-            cd "$PROXY_DIR"
-            export PATH=$PATH:/usr/local/go/bin
-            go build -ldflags="-s -w" -o vpn-proxy main.go 2>/dev/null
-            chmod +x vpn-proxy
-            systemctl restart "$PROXY_SVC" 2>/dev/null || true
-            info "Puertos actualizados a: $NEW_PORTS_LIST"
-          else
-            warn "No puedes dejar el proxy sin puertos. Operación cancelada."
-          fi
-        fi
-        pause ;;
-      3) 
-        RESP=$(curl -s -i -H 'X-Real-Host: 127.0.0.1:22' http://localhost:8080 2>/dev/null | head -n 1 || echo "Error")
-        echo -e "\n  ${WHITE}Respuesta:${NC} ${GREEN}$RESP${NC}"; pause ;;
-      4) clear; journalctl -u "$PROXY_SVC" -f || true; pause ;;
-      5) systemctl restart "$PROXY_SVC" || true; info "Proxy reiniciado."; sleep 1 ;;
-      6) 
-        echo -e "\n  ${RED}⚠️ ¿Desinstalar SSH-Go? (s/N)${NC}"
-        read -r -p "  ➜ " conf_s
-        if [[ "$conf_s" =~ ^[sS]$ ]]; then
-          systemctl stop "$PROXY_SVC" 2>/dev/null || true
-          systemctl disable "$PROXY_SVC" 2>/dev/null || true
-          rm -f "/etc/systemd/system/${PROXY_SVC}.service" 2>/dev/null
-          systemctl daemon-reload 2>/dev/null || true
-          rm -rf "$PROXY_DIR" 2>/dev/null
-          info "SSH-Go desinstalado."
-          pause
-          break
-        fi
-        ;;
-      0) break ;;
-    esac
-  done
 }
 
-# =============================================
-# 6. MÓDULO: FIREWALL
-# =============================================
-firewall_menu() {
-  if [[ -f "/usr/local/bin/firewall.sh" ]] && [[ -x "/usr/local/bin/firewall.sh" ]]; then
-    FW_STATUS=" ${BG_GREEN} ● INSTALADO ${NC}"
-  else
-    FW_STATUS=" ${BG_RED} ● NO INSTALADO ${NC}"
-  fi
+# ==============================================================================
+# MENÚS ORIGINALES (SIN CAMBIOS)
+# ==============================================================================
 
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  ADMINISTRADOR DE FIREWALL${NC}              ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${FW_STATUS}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
+v2ray_menu() {
+    panel_header "V2RAY / VMESS" "⚡"
 
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar Firewall${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}🔓 Abrir TODOS los puertos${NC} ${YELLOW}[Recomendado]${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🛡️  Configuración SEGURA${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🚫 Desactivar Firewall${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔍 Ver estado${NC}"
-    echo -e "  ${CYAN}[6]${NC} ${WHITE}📋 Ver puertos abiertos${NC}"
-    echo -e "  ${RED}[7]${NC} ${RED}🗑️  Desinstalar${NC}"
-    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_fw
-
-    case "$opt_fw" in
-      1) 
-        echo -e "\n  ${CYAN}📥 Descargando Firewall...${NC}"
-        if curl -fsSL "$BASE_URL/firewall.sh" -o /usr/local/bin/firewall.sh; then
-          chmod +x /usr/local/bin/firewall.sh
-          FW_STATUS=" ${BG_GREEN} ● INSTALADO ${NC}"
-          info "✅ Firewall instalado"
-          /usr/local/bin/firewall.sh
-        else
-          echo -e "\n  ${RED}✖ Error al descargar${NC}"
-        fi
-        pause
-        ;;
-      2)
-        if [[ -f "/usr/local/bin/firewall.sh" ]]; then
-          clear; echo "1" | /usr/local/bin/firewall.sh
-          echo -e "\n  ${GREEN}✅ Todos los puertos abiertos.${NC}"
-        else
-          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado.${NC}"
-        fi
-        pause
-        ;;
-      3)
-        if [[ -f "/usr/local/bin/firewall.sh" ]]; then
-          clear; echo "2" | /usr/local/bin/firewall.sh
-          echo -e "\n  ${GREEN}✅ Configuración segura activada.${NC}"
-        else
-          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado.${NC}"
-        fi
-        pause
-        ;;
-      4)
-        if [[ -f "/usr/local/bin/firewall.sh" ]]; then
-          clear; echo "3" | /usr/local/bin/firewall.sh
-          echo -e "\n  ${YELLOW}⚠️ Firewall desactivado.${NC}"
-        else
-          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado.${NC}"
-        fi
-        pause
-        ;;
-      5)
-        if [[ -f "/usr/local/bin/firewall.sh" ]]; then
-          clear; echo "4" | /usr/local/bin/firewall.sh
-        else
-          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado.${NC}"
-        fi
-        pause
-        ;;
-      6)
-        if [[ -f "/usr/local/bin/firewall.sh" ]]; then
-          clear; echo "5" | /usr/local/bin/firewall.sh
-        else
-          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado.${NC}"
-        fi
-        pause
-        ;;
-      7)
-        if [[ -f "/usr/local/bin/firewall.sh" ]]; then
-          echo -e "\n  ${RED}⚠️ ¿Desinstalar Firewall? (s/N)${NC}"
-          read -r -p "  ➜ " conf_fw
-          if [[ "$conf_fw" =~ ^[sS]$ ]]; then
-            rm -f /usr/local/bin/firewall.sh
-            iptables -P INPUT ACCEPT 2>/dev/null
-            iptables -P FORWARD ACCEPT 2>/dev/null
-            iptables -F 2>/dev/null
-            FW_STATUS=" ${BG_RED} ● NO INSTALADO ${NC}"
-            info "Firewall desinstalado."
-          fi
-        else
-          echo -e "\n  ${YELLOW}⚠️ Firewall no instalado.${NC}"
-        fi
-        pause
-        ;;
-      0) break ;;
-    esac
-  done
-}
-
-# =============================================
-# 7. MÓDULO: XRAY PANEL (DESDE REPOSITORIO)
-# =============================================
-xray_menu() {
-  # Verificar si XRay está instalado (buscar binario)
-  local XRAY_BIN=""
-  if [[ -x "/usr/local/bin/v2ray" ]]; then
-    XRAY_BIN="/usr/local/bin/v2ray"
-  elif [[ -x "/usr/local/bin/xray" ]]; then
-    XRAY_BIN="/usr/local/bin/xray"
-  elif [[ -x "/usr/bin/v2ray" ]]; then
-    XRAY_BIN="/usr/bin/v2ray"
-  fi
-
-  if [[ -z "$XRAY_BIN" ]]; then
-    echo -e "\n  ${YELLOW}⚠️ XRay no está instalado en el sistema.${NC}"
-    echo -e "  ${CYAN}📥 Descargando e instalando XRay...${NC}"
-    
-    # Descargar el script de XRay
-    if curl -fsSL "$BASE_URL/xray.sh" -o /tmp/xray_install.sh; then
-      chmod +x /tmp/xray_install.sh
-      /tmp/xray_install.sh
-      rm -f /tmp/xray_install.sh
-      echo -e "\n  ${GREEN}✅ XRay instalado correctamente.${NC}"
-      echo -e "  ${CYAN}💡 Puedes ejecutar 'menuV2' para acceder al menú XRay.${NC}"
-      pause
-    else
-      echo -e "\n  ${RED}✖ Error al descargar XRay.${NC}"
-      pause
-      return 1
-    fi
-  fi
-
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🔰 ADMINISTRADOR XRAY${NC}                     ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    
-    if systemctl is-active --quiet v2ray 2>/dev/null; then
-      echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${BG_GREEN} ● ACTIVO ${NC}"
-    elif systemctl is-active --quiet xray 2>/dev/null; then
-      echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${BG_GREEN} ● ACTIVO ${NC}"
-    else
-      echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${BG_RED} ● INACTIVO ${NC}"
-    fi
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar/Actualizar XRay${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}📊 Abrir Menú XRay (menuV2)${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}📋 Ver estado del servicio${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}📜 Ver logs en tiempo real${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🔄 Reiniciar servicio${NC}"
-    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar XRay${NC}"
-    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_xray
-
-    case "$opt_xray" in
-      1) 
-        echo -e "\n  ${CYAN}📥 Instalando XRay...${NC}"
-        if curl -fsSL "$BASE_URL/xray.sh" -o /tmp/xray_install.sh; then
-          chmod +x /tmp/xray_install.sh
-          /tmp/xray_install.sh
-          rm -f /tmp/xray_install.sh
-          info "✅ XRay instalado correctamente"
-          echo -e "  ${CYAN}💡 Ejecuta 'menuV2' para acceder al menú.${NC}"
-        else
-          echo -e "\n  ${RED}✖ Error al descargar.${NC}"
-        fi
-        pause
-        ;;
-      2) 
-        # Buscar el binario de XRay
-        local XRAY_CMD=""
-        if [[ -x "/usr/local/bin/v2ray" ]]; then
-          XRAY_CMD="/usr/local/bin/v2ray"
-        elif [[ -x "/usr/local/bin/xray" ]]; then
-          XRAY_CMD="/usr/local/bin/xray"
-        elif [[ -x "/usr/bin/v2ray" ]]; then
-          XRAY_CMD="/usr/bin/v2ray"
-        elif [[ -x "/usr/bin/xray" ]]; then
-          XRAY_CMD="/usr/bin/xray"
-        fi
-        
-        if [[ -n "$XRAY_CMD" ]]; then
-          echo -e "\n  ${CYAN}📊 Abriendo menú XRay...${NC}"
-          "$XRAY_CMD"
-        else
-          echo -e "\n  ${YELLOW}⚠️ XRay no instalado. Usa opción [1] para instalar.${NC}"
-          pause
-        fi
-        ;;
-      3) 
-        if systemctl list-units --full -all | grep -q "v2ray.service"; then
-          clear; systemctl status v2ray --no-pager
-        elif systemctl list-units --full -all | grep -q "xray.service"; then
-          clear; systemctl status xray --no-pager
-        else
-          echo -e "\n  ${YELLOW}⚠️ Servicio no encontrado.${NC}"
-        fi
-        pause
-        ;;
-      4) 
-        if systemctl list-units --full -all | grep -q "v2ray.service"; then
-          clear; journalctl -u v2ray -f -n 20
-        elif systemctl list-units --full -all | grep -q "xray.service"; then
-          clear; journalctl -u xray -f -n 20
-        else
-          echo -e "\n  ${YELLOW}⚠️ Servicio no encontrado.${NC}"
-          pause
-        fi
-        ;;
-      5) 
-        if systemctl list-units --full -all | grep -q "v2ray.service"; then
-          systemctl restart v2ray
-          info "XRay reiniciado"
-        elif systemctl list-units --full -all | grep -q "xray.service"; then
-          systemctl restart xray
-          info "XRay reiniciado"
-        else
-          echo -e "\n  ${YELLOW}⚠️ Servicio no encontrado.${NC}"
-        fi
-        pause
-        ;;
-      6) 
-        echo -e "\n  ${RED}⚠️ ¿Desinstalar XRay? (s/N)${NC}"
-        read -r -p "  ➜ " conf_xray
-        if [[ "$conf_xray" =~ ^[sS]$ ]]; then
-          systemctl stop v2ray xray 2>/dev/null
-          systemctl disable v2ray xray 2>/dev/null
-          rm -rf /usr/local/bin/v2ray /usr/local/bin/xray /usr/local/v2ray /usr/local/xray 2>/dev/null
-          rm -f /usr/bin/v2ray /usr/bin/xray /usr/local/bin/menuV2 /usr/bin/menuV2 2>/dev/null
-          rm -f /etc/systemd/system/v2ray.service /etc/systemd/system/xray.service 2>/dev/null
-          systemctl daemon-reload
-          info "XRay desinstalado."
-          pause
-          break
-        fi
-        ;;
-      0) break ;;
-    esac
-  done
-}
-
-# =============================================
-# 8. MÓDULO: UDP PANEL (DESDE REPOSITORIO)
-# =============================================
-udp_menu() {
-  # Verificar si UDP está instalado
-  if [[ ! -f "/usr/bin/menuUDP" ]] && [[ ! -x "/usr/local/bin/udp-custom" ]] && [[ ! -d "/etc/hysteria" ]]; then
-    echo -e "\n  ${YELLOW}⚠️ UDP no está instalado en el sistema.${NC}"
-    echo -e "  ${CYAN}📥 Descargando e instalando UDP...${NC}"
-    
-    if curl -fsSL "$BASE_URL/Udp.sh" -o /tmp/udp_install.sh; then
-      chmod +x /tmp/udp_install.sh
-      /tmp/udp_install.sh
-      rm -f /tmp/udp_install.sh
-      echo -e "\n  ${GREEN}✅ UDP instalado correctamente.${NC}"
-      echo -e "  ${CYAN}💡 Puedes ejecutar 'menuUDP' para acceder al menú.${NC}"
-      pause
-    else
-      echo -e "\n  ${RED}✖ Error al descargar UDP.${NC}"
-      pause
-      return 1
-    fi
-  fi
-
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}⚡ ADMINISTRADOR UDP${NC}                       ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    
-    local udp_status=""
-    if systemctl is-active --quiet udp-hysteria 2>/dev/null; then
-      udp_status="${udp_status} ${BG_GREEN}HYSTERIA${NC}"
-    fi
-    if systemctl is-active --quiet udp-custom 2>/dev/null; then
-      udp_status="${udp_status} ${BG_GREEN}CUSTOM${NC}"
-    fi
-    if systemctl is-active --quiet zivpn 2>/dev/null; then
-      udp_status="${udp_status} ${BG_GREEN}ZI VPN${NC}"
-    fi
-    if [[ -z "$udp_status" ]]; then
-      udp_status="${BG_RED} ● SIN SERVICIOS${NC}"
-    fi
-    
-    echo -e "  ${PURPLE}│${NC} ${CYAN}ESTADO   :${NC}${udp_status}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Instalar/Actualizar UDP${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}📊 Abrir Menú UDP (menuUDP)${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}📋 Ver servicios activos${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔄 Reiniciar servicios UDP${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}📜 Ver logs${NC}"
-    echo -e "  ${RED}[6]${NC} ${RED}🗑️  Desinstalar UDP${NC}"
-    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_udp
-
-    case "$opt_udp" in
-      1) 
-        echo -e "\n  ${CYAN}📥 Instalando UDP...${NC}"
-        if curl -fsSL "$BASE_URL/Udp.sh" -o /tmp/udp_install.sh; then
-          chmod +x /tmp/udp_install.sh
-          /tmp/udp_install.sh
-          rm -f /tmp/udp_install.sh
-          info "✅ UDP instalado correctamente"
-          echo -e "  ${CYAN}💡 Ejecuta 'menuUDP' para acceder al menú.${NC}"
-        else
-          echo -e "\n  ${RED}✖ Error al descargar.${NC}"
-        fi
-        pause
-        ;;
-      2) 
-        if [[ -x "/usr/bin/menuUDP" ]]; then
-          echo -e "\n  ${CYAN}📊 Abriendo menú UDP...${NC}"
-          /usr/bin/menuUDP
-        elif [[ -x "/usr/local/bin/menuUDP" ]]; then
-          echo -e "\n  ${CYAN}📊 Abriendo menú UDP...${NC}"
-          /usr/local/bin/menuUDP
-        else
-          echo -e "\n  ${YELLOW}⚠️ UDP no instalado. Usa opción [1] para instalar.${NC}"
-          pause
-        fi
-        ;;
-      3) 
-        clear
-        echo -e "\n  ${YELLOW}📋 Servicios UDP:${NC}"
-        echo -e "  ${CYAN}• Hysteria:${NC} $(systemctl is-active udp-hysteria 2>/dev/null || echo 'inactivo')"
-        echo -e "  ${CYAN}• UDP Custom:${NC} $(systemctl is-active udp-custom 2>/dev/null || echo 'inactivo')"
-        echo -e "  ${CYAN}• ZI VPN:${NC} $(systemctl is-active zivpn 2>/dev/null || echo 'inactivo')"
-        pause
-        ;;
-      4) 
-        echo -e "\n  ${CYAN}🔄 Reiniciando servicios UDP...${NC}"
-        systemctl restart udp-hysteria 2>/dev/null && info "Hysteria reiniciado"
-        systemctl restart udp-custom 2>/dev/null && info "UDP Custom reiniciado"
-        systemctl restart zivpn 2>/dev/null && info "ZI VPN reiniciado"
-        pause
-        ;;
-      5) 
-        echo -e "\n  ${CYAN}📜 Logs de UDP:${NC}"
-        journalctl -u udp-hysteria -u udp-custom -u zivpn -n 20 --no-pager 2>/dev/null || echo "No hay logs"
-        pause
-        ;;
-      6) 
-        echo -e "\n  ${RED}⚠️ ¿Desinstalar UDP? (s/N)${NC}"
-        read -r -p "  ➜ " conf_udp
-        if [[ "$conf_udp" =~ ^[sS]$ ]]; then
-          systemctl stop udp-hysteria udp-custom zivpn 2>/dev/null
-          systemctl disable udp-hysteria udp-custom zivpn 2>/dev/null
-          rm -rf /etc/hysteria /etc/udp-custom /etc/zivpn 2>/dev/null
-          rm -f /usr/local/bin/udp-custom /usr/local/bin/hysteria /usr/local/bin/zivpn 2>/dev/null
-          rm -f /usr/bin/menuUDP /usr/local/bin/menuUDP 2>/dev/null
-          rm -f /etc/systemd/system/udp-hysteria.service /etc/systemd/system/udp-custom.service /etc/systemd/system/zivpn.service 2>/dev/null
-          systemctl daemon-reload
-          info "UDP desinstalado."
-          pause
-          break
-        fi
-        ;;
-      0) break ;;
-    esac
-  done
-}
-
-# =============================================
-# 9. MÓDULO: MONITOREO DEL SISTEMA
-# =============================================
-monitoreo_menu() {
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}📊 MONITOREO DEL SISTEMA${NC}                  ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}🖥️  CPU    :${NC} ${WHITE}$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)%%${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}🧠 RAM    :${NC} ${WHITE}$(free -m | awk 'NR==2{printf "%sMB / %sMB (%.1f%%)", $3, $2, $3*100/$2}')${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}💾 DISCO  :${NC} ${WHITE}$(df -h / | awk 'NR==2{printf "%s / %s (%s)", $3, $2, $5}')${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}📶 RED    :${NC} ${WHITE}$(vnstat -h 2>/dev/null | grep "today" | awk '{print $3, $4}' || echo "N/A")${NC}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📊 Estadísticas en tiempo real${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}📈 Historial de uso de red${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔍 Procesos activos${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}💾 Estado de discos${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_mon
-
-    case "$opt_mon" in
-      1) clear; htop || top ;;
-      2) clear; vnstat -d || nethogs ;;
-      3) clear; ps aux --sort=-%cpu | head -20 ;;
-      4) clear; df -h ;;
-      0) break ;;
-    esac
-    pause
-  done
-}
-
-# =============================================
-# 10. MÓDULO: BACKUP DE CONFIGURACIONES
-# =============================================
-backup_menu() {
-  BACKUP_DIR="/root/backups"
-  mkdir -p "$BACKUP_DIR"
-  
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}💾 BACKUP Y RESTAURACIÓN${NC}                  ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}📁 Directorio :${NC} ${WHITE}$BACKUP_DIR${NC}"
-    echo -e "  ${PURPLE}│${NC} ${CYAN}📦 Backups   :${NC} ${WHITE}$(ls -1 $BACKUP_DIR/*.tar.gz 2>/dev/null | wc -l)${NC}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📦 Crear Backup completo${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}📂 Listar Backups${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔄 Restaurar Backup${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🗑️  Eliminar Backup${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_backup
-
-    case "$opt_backup" in
-      1)
-        FECHA=$(date +%Y%m%d_%H%M%S)
-        echo -e "\n  ${CYAN}📦 Creando backup: backup_$FECHA.tar.gz${NC}"
-        tar -czf "$BACKUP_DIR/backup_$FECHA.tar.gz" \
-          /etc/caddy/Caddyfile \
-          /usr/local/etc/v2ray/config.json \
-          /opt/vpn-proxy/main.go \
-          /etc/hysteria \
-          /etc/udp-custom \
-          /etc/zivpn 2>/dev/null
-        info "✅ Backup creado: backup_$FECHA.tar.gz"
-        ;;
-      2)
-        echo -e "\n  ${YELLOW}📂 Backups disponibles:${NC}"
-        ls -lh "$BACKUP_DIR"/*.tar.gz 2>/dev/null || echo "  No hay backups"
-        ;;
-      3)
-        echo -e "\n  ${YELLOW}📂 Backups disponibles:${NC}"
-        ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | nl
-        read -r -p "  ➜ Número de backup a restaurar: " num
-        BACKUP_FILE=$(ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | sed -n "${num}p")
-        if [[ -f "$BACKUP_FILE" ]]; then
-          tar -xzf "$BACKUP_FILE" -C /
-          info "✅ Backup restaurado: $(basename $BACKUP_FILE)"
-        else
-          warn "Backup no encontrado"
-        fi
-        ;;
-      4)
-        echo -e "\n  ${YELLOW}📂 Backups disponibles:${NC}"
-        ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | nl
-        read -r -p "  ➜ Número de backup a eliminar: " num
-        BACKUP_FILE=$(ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | sed -n "${num}p")
-        if [[ -f "$BACKUP_FILE" ]]; then
-          rm -f "$BACKUP_FILE"
-          info "✅ Backup eliminado: $(basename $BACKUP_FILE)"
-        else
-          warn "Backup no encontrado"
-        fi
-        ;;
-      0) break ;;
-    esac
-    pause
-  done
-}
-
-# =============================================
-# 11. MÓDULO: CERTIFICADOS SSL
-# =============================================
-ssl_menu() {
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🔐 CERTIFICADOS SSL${NC}                       ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ├─────────────────────────────────────────────────────────┤${NC}"
-    
-    if [[ -f "/etc/ssl/certs/caddy.pem" ]]; then
-      EXPIRA=$(openssl x509 -enddate -noout -in /etc/ssl/certs/caddy.pem 2>/dev/null | cut -d= -f2)
-      echo -e "  ${PURPLE}│${NC} ${CYAN}📜 Certificado :${NC} ${GREEN}Instalado${NC}"
-      echo -e "  ${PURPLE}│${NC} ${CYAN}⏰ Expira     :${NC} ${WHITE}$EXPIRA${NC}"
-    else
-      echo -e "  ${PURPLE}│${NC} ${CYAN}📜 Certificado :${NC} ${RED}No instalado${NC}"
-    fi
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}📥 Generar certificado SSL${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}🔍 Verificar certificado${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🔄 Renovar certificado${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}📋 Ver detalles${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_ssl
-
-    case "$opt_ssl" in
-      1)
-        read -r -p "  ➜ Dominio: " DOMINIO_SSL
-        if [[ -n "$DOMINIO_SSL" ]]; then
-          apt-get install -y certbot 2>/dev/null
-          certbot certonly --standalone -d "$DOMINIO_SSL" --non-interactive --agree-tos -m admin@"$DOMINIO_SSL"
-          info "✅ Certificado generado para $DOMINIO_SSL"
-        fi
-        ;;
-      2)
-        echo -e "\n  ${CYAN}🔍 Verificando certificados...${NC}"
-        certbot certificates 2>/dev/null || echo "No hay certificados"
-        ;;
-      3)
-        certbot renew --dry-run
-        info "✅ Renovación verificada"
-        ;;
-      4)
-        if [[ -f "/etc/letsencrypt/live/$DOMINIO_ACTUAL/fullchain.pem" ]]; then
-          openssl x509 -in "/etc/letsencrypt/live/$DOMINIO_ACTUAL/fullchain.pem" -text -noout
-        else
-          echo "No hay certificado disponible"
-        fi
-        ;;
-      0) break ;;
-    esac
-    pause
-  done
-}
-
-# =============================================
-# 12. MÓDULO: SEGURIDAD AVANZADA
-# =============================================
-seguridad_menu() {
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🛡️  SEGURIDAD AVANZADA${NC}                    ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}🔐 Cambiar puerto SSH${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}🚫 Bloquear IP${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}📋 Ver intentos fallidos${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🔄 Configurar fail2ban${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}📊 Ver logs de seguridad${NC}"
-    echo -e "  ${CYAN}[6]${NC} ${WHITE}🔍 Escanear puertos abiertos${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_sec
-
-    case "$opt_sec" in
-      1)
-        read -r -p "  ➜ Nuevo puerto SSH (ej: 2222): " NEW_SSH_PORT
-        if [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] && [[ "$NEW_SSH_PORT" -ge 1 ]] && [[ "$NEW_SSH_PORT" -le 65535 ]]; then
-          sed -i "s/#Port 22/Port $NEW_SSH_PORT/g" /etc/ssh/sshd_config
-          sed -i "s/Port 22/Port $NEW_SSH_PORT/g" /etc/ssh/sshd_config
-          systemctl restart sshd
-          info "✅ Puerto SSH cambiado a $NEW_SSH_PORT"
-        fi
-        ;;
-      2)
-        read -r -p "  ➜ IP a bloquear: " IP_BLOCK
-        if [[ -n "$IP_BLOCK" ]]; then
-          iptables -A INPUT -s $IP_BLOCK -j DROP
-          iptables -A FORWARD -s $IP_BLOCK -j DROP
-          info "✅ IP $IP_BLOCK bloqueada"
-        fi
-        ;;
-      3)
-        echo -e "\n  ${YELLOW}📋 Últimos intentos fallidos:${NC}"
-        grep "Failed password" /var/log/auth.log | tail -10 || echo "No hay intentos fallidos"
-        ;;
-      4)
-        apt-get install -y fail2ban 2>/dev/null
-        systemctl enable fail2ban
-        systemctl start fail2ban
-        info "✅ fail2ban instalado"
-        ;;
-      5)
-        echo -e "\n  ${YELLOW}📊 Logs de seguridad:${NC}"
-        tail -20 /var/log/auth.log
-        ;;
-      6)
-        echo -e "\n  ${CYAN}🔍 Puertos abiertos:${NC}"
-        netstat -tulpn | grep LISTEN | column -t
-        ;;
-      0) break ;;
-    esac
-    pause
-  done
-}
-
-# =============================================
-# 13. MÓDULO: LIMPIEZA DEL SISTEMA
-# =============================================
-limpieza_menu() {
-  while true; do
-    draw_header
-    echo -e "${PURPLE}  ╭─────────────────────────────────────────────────────────╮${NC}"
-    echo -e "  ${PURPLE}│${NC}        ${BOLD}${WHITE}🧹 LIMPIEZA DEL SISTEMA${NC}                    ${PURPLE}│${NC}"
-    echo -e "${PURPLE}  ╰─────────────────────────────────────────────────────────╯${NC}\n"
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}🗑️  Limpiar caché de APT${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}📁 Limpiar logs antiguos${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}💾 Liberar espacio en disco${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}🧹 Limpiar paquetes huérfanos${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}📊 Ver uso de disco${NC}"
-    echo -e "  ${YELLOW}[0]${NC} ${WHITE}⬅  Volver al Menú Principal${NC}"
-    echo -en "\n  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r opt_clean
-
-    case "$opt_clean" in
-      1) apt-get clean; apt-get autoclean; info "✅ Caché limpiado" ;;
-      2) journalctl --vacuum-time=3d; info "✅ Logs antiguos eliminados" ;;
-      3) apt-get autoremove -y; docker system prune -f 2>/dev/null || true; info "✅ Espacio liberado" ;;
-      4) apt-get autoremove -y; info "✅ Paquetes huérfanos eliminados" ;;
-      5) clear; df -h; echo -e "\n  ${CYAN}Directorios más pesados:${NC}"; du -sh /* 2>/dev/null | sort -hr | head -10 ;;
-      0) break ;;
-    esac
-    pause
-  done
-}
-
-# =============================================
-# 14. MENÚ PRINCIPAL DEL SISTEMA (ACTUALIZADO)
-# =============================================
-main_menu() {
-  while true; do
-    display_header_main
-
-    echo -e "  ${CYAN}[1]${NC} ${WHITE}🌐 Caddy Server${NC}          ${GRAY}(Instalar / Administrar)${NC}"
-    echo -e "  ${CYAN}[2]${NC} ${WHITE}⚡ V2Ray VMess${NC}           ${GRAY}(Instalar / Administrar)${NC}"
-    echo -e "  ${CYAN}[3]${NC} ${WHITE}🚀 SSH-Go Proxy${NC}          ${GRAY}(Instalar / Administrar)${NC}"
-    echo -e "  ${CYAN}[4]${NC} ${WHITE}📦 Instalar TODO de una vez${NC}"
-    echo -e "  ${CYAN}[5]${NC} ${WHITE}🛡️  Firewall${NC}               ${GRAY}(Administrar Seguridad)${NC}"
-    echo -e "  ${CYAN}[6]${NC} ${WHITE}👥 SSH Panel${NC}               ${GRAY}(Gestión de usuarios SSH)${NC}"
-    echo -e "  ${CYAN}[7]${NC} ${WHITE}📊 Monitoreo${NC}               ${GRAY}(Estado del sistema)${NC}"
-    echo -e "  ${CYAN}[8]${NC} ${WHITE}💾 Backup${NC}                   ${GRAY}(Copias de seguridad)${NC}"
-    echo -e "  ${CYAN}[9]${NC} ${WHITE}🔐 SSL Certificados${NC}        ${GRAY}(SSL/HTTPS)${NC}"
-    echo -e "  ${CYAN}[10]${NC} ${WHITE}🛡️  Seguridad Avanzada${NC}     ${GRAY}(Protección extra)${NC}"
-    echo -e "  ${CYAN}[11]${NC} ${WHITE}🧹 Limpieza del Sistema${NC}    ${GRAY}(Liberar espacio)${NC}"
-    echo -e "  ${CYAN}[12]${NC} ${WHITE}🔰 XRay Panel${NC}              ${GRAY}(VLESS/VMess/Trojan)${NC}"
-    echo -e "  ${CYAN}[13]${NC} ${WHITE}⚡ UDP Panel${NC}                ${GRAY}(Hysteria/Custom/ZI)${NC}"
-    echo -e "  ${CYAN}[14]${NC} ${WHITE}🔄 Actualizar Panel${NC}       ${GRAY}(Última versión)${NC}"
-    echo -e "\n  ${GRAY}─────────────────────────────────────────────────────────${NC}"
-    echo -e "  ${RED}[0]${NC} ${WHITE}🚪 SALIR DEL PANEL${NC}"
-    echo -e "  ${GRAY}─────────────────────────────────────────────────────────${NC}\n"
-
-    echo -en "  ${GREEN}❯❯❯ Selecciona una opción:${NC} "
-    read -r option
-
-    case "$option" in
-      1) caddy_menu ;;
-      2) v2ray_menu ;;
-      3) sshgo_menu ;;
-      4)
-        echo -e "\n  ${CYAN}📦 Instalando todos los servicios...${NC}"
-        download_and_execute "install-caddy.sh"
+    if ! command_exists v2ray &&
+        [[ ! -f /usr/local/etc/v2ray/config.json ]]; then
+        warn "V2Ray no está instalado."
         download_and_execute "install-v2ray.sh"
-        download_and_execute "install-sshgo.sh"
-        ;;
-      5) firewall_menu ;;
-      6) 
-        echo -e "\n  ${YELLOW}📥 Instalando SSH Panel...${NC}"
-        mkdir -p /usr/local/bin || true
-        curl -fsSL "https://raw.githubusercontent.com/Yelsinml10/AriadnyHn/main/sshpanel.sh" -o /usr/local/bin/sshpanel.sh || true
-        chmod +x /usr/local/bin/sshpanel.sh || true
-        if ! grep -q "alias sshpanel=" ~/.bashrc 2>/dev/null; then echo "alias sshpanel='sudo /usr/local/bin/sshpanel.sh'" >> ~/.bashrc; fi
-        info "SSH Panel instalado. Ejecuta: sshpanel"
-        pause
-        ;;
-      7) monitoreo_menu ;;
-      8) backup_menu ;;
-      9) ssl_menu ;;
-      10) seguridad_menu ;;
-      11) limpieza_menu ;;
-      12) xray_menu ;;
-      13) udp_menu ;;
-      14)
-        echo -e "\n  ${CYAN}🔄 Actualizando panel...${NC}"
-        curl -fsSL "$BASE_URL/menu.sh" -o /tmp/menu_update.sh
-        if [[ -f /tmp/menu_update.sh ]]; then
-          chmod +x /tmp/menu_update.sh
-          mv /tmp/menu_update.sh /usr/local/bin/menu
-          info "✅ Panel actualizado"
-        else
-          warn "Error al actualizar"
-        fi
-        pause
-        ;;
-      0) 
-        clear
-        echo -e "\n  ${GREEN}¡Gracias por utilizar PANEL MAESTRO VPN! 👋${NC}\n"
-        exit 0 ;;
-      *) sleep 1 ;;
-    esac
-  done
+    else
+        info "V2Ray ya está instalado."
+        systemctl status v2ray --no-pager 2>/dev/null ||
+            warn "No se pudo consultar el estado de V2Ray."
+    fi
+
+    pause_screen
 }
 
-# =============================================
-# INICIO DEL SCRIPT
-# =============================================
+install_all() {
+    panel_header "INSTALACIÓN COMPLETA" "📦"
+
+    download_and_execute "install-caddy.sh"
+    download_and_execute "install-v2ray.sh"
+    download_and_execute "install-sshgo.sh"
+
+    pause_screen
+}
+
+firewall_menu() {
+    local firewall="/usr/local/bin/firewall.sh"
+
+    panel_header "FIREWALL" "🛡️"
+
+    if [[ ! -x "$firewall" ]]; then
+        warn "Firewall no instalado."
+
+        if download_to_path "firewall.sh" "$firewall"; then
+            "$firewall"
+        fi
+    else
+        info "Firewall ya está instalado."
+        "$firewall"
+    fi
+
+    pause_screen
+}
+
+xray_menu() {
+    panel_header "XRAY PANEL" "🔰"
+
+    if [[ ! -x /usr/local/bin/xray &&
+          ! -x /usr/local/bin/v2ray &&
+          ! -x /usr/bin/xray &&
+          ! -x /usr/bin/v2ray ]]; then
+        warn "XRay no está instalado."
+        download_and_execute "xray.sh"
+    else
+        info "XRay/V2Ray ya está instalado."
+
+        if command -v menuV2 >/dev/null 2>&1; then
+            menuV2
+        else
+            warn "El comando menuV2 no está disponible."
+        fi
+    fi
+
+    pause_screen
+}
+
+udp_menu() {
+    panel_header "UDP PANEL" "⚡"
+
+    if [[ ! -f /usr/bin/menuUDP &&
+          ! -x /usr/local/bin/menuUDP &&
+          ! -d /etc/hysteria ]]; then
+        warn "UDP no está instalado."
+        download_and_execute "Udp.sh"
+    else
+        info "UDP ya está instalado."
+
+        if [[ -x /usr/bin/menuUDP ]]; then
+            /usr/bin/menuUDP
+        elif [[ -x /usr/local/bin/menuUDP ]]; then
+            /usr/local/bin/menuUDP
+        else
+            systemctl status udp-hysteria udp-custom zivpn \
+                --no-pager 2>/dev/null || true
+        fi
+    fi
+
+    pause_screen
+}
+
+ssh_panel_menu() {
+    local ssh_panel="/usr/local/bin/sshpanel.sh"
+
+    panel_header "SSH PANEL" "👥"
+
+    printf "  %bDescargando tu panel SSH personalizado...%b\n" \
+        "$CYAN" "$RESET"
+
+    if download_to_path "sshpanel.sh" "$ssh_panel"; then
+        printf "\n  %bAbriendo sshpanel.sh...%b\n\n" \
+            "$GREEN" "$RESET"
+
+        bash "$ssh_panel"
+    else
+        error_msg "No se pudo descargar sshpanel.sh."
+    fi
+
+    pause_screen
+}
+
+configure_ssh() {
+    panel_header "CONFIGURAR SSH" "🔐"
+
+    printf "  %bDescargando y ejecutando ssh.sh...%b\n" \
+        "$CYAN" "$RESET"
+
+    download_and_execute "ssh.sh"
+
+    pause_screen
+}
+
+monitor_menu() {
+    panel_header "MONITOREO DEL SISTEMA" "📊"
+
+    printf "  Sistema: %s\n" \
+        "$(awk -F= '/^PRETTY_NAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release)"
+    printf "  Memoria: %s\n" \
+        "$(free -h | awk 'NR==2 {print $3 " / " $2}')"
+    printf "  Disco: %s\n" \
+        "$(df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')"
+    printf "  Tiempo activo: %s\n" \
+        "$(uptime -p 2>/dev/null || echo N/A)"
+
+    pause_screen
+}
+
+backup_menu() {
+    local backup_dir="/root/backups"
+    local backup_file
+
+    mkdir -p "$backup_dir"
+    backup_file="$backup_dir/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+
+    panel_header "BACKUP DE CONFIGURACIONES" "💾"
+
+    tar -czf "$backup_file" \
+        /etc/caddy \
+        /usr/local/etc/v2ray \
+        /opt/vpn-proxy \
+        /etc/hysteria \
+        /etc/udp-custom \
+        /etc/zivpn 2>/dev/null
+
+    info "Backup creado: $backup_file"
+    pause_screen
+}
+
+status_menu() {
+    panel_header "ESTADO GENERAL" "📋"
+
+    printf "  Caddy:   "
+    if systemctl is-active --quiet caddy 2>/dev/null; then
+        info "ACTIVO"
+    else
+        warn "INACTIVO"
+    fi
+
+    printf "  V2Ray:   "
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
+        info "ACTIVO"
+    else
+        warn "INACTIVO"
+    fi
+
+    printf "  SSH-Go:  "
+    if systemctl is-active --quiet vpn-proxy 2>/dev/null; then
+        info "ACTIVO"
+    else
+        warn "INACTIVO"
+    fi
+
+    pause_screen
+}
+
+update_panel() {
+    local temporary="/tmp/menu_update.sh"
+
+    panel_header "ACTUALIZAR PANEL" "🔄"
+
+    if curl -fSL "$BASE_URL/menu.sh" -o "$temporary"; then
+        chmod +x "$temporary"
+        mv "$temporary" /usr/local/bin/menu
+        info "Panel actualizado en /usr/local/bin/menu."
+    else
+        error_msg "No se pudo actualizar el panel."
+        rm -f "$temporary"
+    fi
+
+    pause_screen
+}
+
+# ==============================================================================
+# MENÚ PRINCIPAL
+# ==============================================================================
+
+main_menu() {
+    while true; do
+        header
+
+        printf "  %b[1]%b  🌐 Caddy Server\n" "$CYAN" "$RESET"
+        printf "  %b[2]%b  ⚡ V2Ray / VMess\n" "$CYAN" "$RESET"
+        printf "  %b[3]%b  🚀 SSH-Go Proxy\n" "$CYAN" "$RESET"
+        printf "  %b[4]%b  📦 Instalar todos los protocolos\n" "$CYAN" "$RESET"
+        printf "  %b[5]%b  👥 SSH Panel personalizado\n" "$CYAN" "$RESET"
+        printf "  %b[6]%b  🛡️  Firewall\n" "$CYAN" "$RESET"
+        printf "  %b[7]%b  🔰 XRay Panel\n" "$CYAN" "$RESET"
+        printf "  %b[8]%b  ⚡ UDP Panel\n" "$CYAN" "$RESET"
+
+        line
+
+        printf "  %b[9]%b  📊 Monitoreo del sistema\n" "$BLUE" "$RESET"
+        printf "  %b[10]%b 💾 Backup de configuraciones\n" "$BLUE" "$RESET"
+        printf "  %b[11]%b 🔐 Configurar SSH\n" "$CYAN" "$RESET"
+        printf "  %b[12]%b 📋 Estado general\n" "$BLUE" "$RESET"
+        printf "  %b[13]%b 🔄 Actualizar panel\n" "$BLUE" "$RESET"
+
+        line
+
+        printf "  %b[0]%b  🚪 Salir\n\n" "$RED" "$RESET"
+
+        read -r -p "  ❯ Selecciona una opción: " option
+
+        case "$option" in
+            1) caddy_menu ;;
+            2) v2ray_menu ;;
+            3) sshgo_menu ;;
+            4) install_all ;;
+            5) ssh_panel_menu ;;
+            6) firewall_menu ;;
+            7) xray_menu ;;
+            8) udp_menu ;;
+            9) monitor_menu ;;
+            10) backup_menu ;;
+            11) configure_ssh ;;
+            12) status_menu ;;
+            13) update_panel ;;
+            0)
+                clear_screen
+                printf "\n  %b¡Gracias por usar el panel VPN!%b\n\n" \
+                    "$GREEN" "$RESET"
+                exit 0
+                ;;
+            *)
+                warn "Selecciona una opción válida."
+                sleep 1
+                ;;
+        esac
+    done
+}
+
 require_root
-check_dependencies
-setup_menu_command
+install_dependencies
 main_menu
