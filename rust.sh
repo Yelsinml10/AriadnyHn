@@ -1,7 +1,7 @@
 #!/bin/bash
 # =========================================================
 #  SOCKS PROXY UNIVERSAL - 100% PURE RUST (COMANDO 'rust')
-#  VERSIÓN CORREGIDA - CONEXIÓN HÍBRIDA (PAYLOADS A Y B)
+#  VERSIÓN CORREGIDA - TRADUCCIÓN EXACTA 1:1 DE PYTHON
 # =========================================================
 
 C_RESET='\033[0m'
@@ -28,15 +28,11 @@ fi
 echo -e "\n${C_YELLOW}[1/4] Instalando compilador Rust (rustc) y herramientas...${C_RESET}"
 apt update -y && apt install -y rustc curl wget net-tools openssh-server systemd > /dev/null 2>&1
 
-# Asegurar que el servicio SSH esté activo
+# Asegurar servicio SSH activo
 systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null
 
-# 2. Configuración Interactiva Automática
+# 2. Configuración Interactiva
 echo -e "\n${C_YELLOW}[2/4] Configurando el protocolo Proxy WebSocket Custom...${C_RESET}"
-
-echo -e "\n${C_RED}======================================================${C_RESET}"
-echo -e "${C_RED}${C_BOLD}   SOCKS DIRECTO-RUST  |  CUSTOM AUTOMÁTICO${C_RESET}"
-echo -e "${C_RED}======================================================${C_RESET}\n"
 
 read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE EL PUERTO PROXY A ABRIR [8080]: ${C_RESET}")" LISTEN_PORT
 LISTEN_PORT=${LISTEN_PORT:-8080}
@@ -53,13 +49,13 @@ cat > "$CONFIG_FILE" << EOF
 }
 EOF
 
-# 3. Código Fuente en Rust (Soporte Híbrido de Payloads)
+# 3. Código Fuente en Rust (Traducción 1:1 de Python)
 echo -e "\n${C_YELLOW}[3/4] Compilando binario nativo principal '/usr/local/bin/rust'...${C_RESET}"
 cat > /root/proxy.rs << 'EOF'
 use std::env;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{TcpListener, TcpStream};
 use std::process::Command;
 use std::sync::Arc;
 use std::thread;
@@ -140,34 +136,29 @@ impl Config {
     }
 }
 
+// --- PARSER DE CABECERAS EXACTO A PYTHON ---
 fn find_header(head: &str, header_name: &str) -> String {
     let head_lower = head.to_lowercase();
     let key = format!("{}:", header_name.to_lowercase());
     if let Some(idx) = head_lower.find(&key) {
         let start = idx + key.len();
         let rest = &head[start..];
-        let end = rest.find('\n').unwrap_or(rest.len());
-        let line = &rest[..end];
-        return line.trim_matches(|c| c == '\r' || c == ' ').to_string();
+        let end1 = rest.find("\r\n");
+        let end2 = rest.find('\n');
+        let end = match (end1, end2) {
+            (Some(e1), Some(e2)) => std::cmp::min(e1, e2),
+            (Some(e1), None) => e1,
+            (None, Some(e2)) => e2,
+            (None, None) => rest.len(),
+        };
+        return rest[..end].trim().to_string();
     }
     String::new()
 }
 
-fn connect_fast(host: &str, port: u16, timeout: Duration) -> io::Result<TcpStream> {
-    let addr_str = format!("{}:{}", host, port);
-    if let Ok(addrs) = addr_str.to_socket_addrs() {
-        for addr in addrs {
-            if let Ok(stream) = TcpStream::connect_timeout(&addr, timeout) {
-                return Ok(stream);
-            }
-        }
-    }
-    TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), timeout)
-}
-
 fn tunnel(mut client: TcpStream, mut remote: TcpStream) {
-    let _ = client.set_read_timeout(Some(Duration::from_secs(120)));
-    let _ = remote.set_read_timeout(Some(Duration::from_secs(120)));
+    let _ = client.set_read_timeout(None);
+    let _ = remote.set_read_timeout(None);
 
     let mut client_read = match client.try_clone() {
         Ok(s) => s,
@@ -202,6 +193,8 @@ fn tunnel(mut client: TcpStream, mut remote: TcpStream) {
 }
 
 fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
+    let _ = client.set_read_timeout(Some(Duration::from_secs(15)));
+
     let mut buf = [0u8; 16384];
     let n = match client.read(&mut buf) {
         Ok(n) if n > 0 => n,
@@ -210,7 +203,7 @@ fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
 
     let client_buffer = String::from_utf8_lossy(&buf[..n]);
 
-    // 1. Extraer Host Destino
+    // 1. Extraer Host Destino idéntico a Python
     let mut target_host_str = find_header(&client_buffer, "X-Real-Host");
     if target_host_str.is_empty() {
         target_host_str = find_header(&client_buffer, "X-Forwarded-For");
@@ -219,7 +212,7 @@ fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
         target_host_str = find_header(&client_buffer, "X-Online-Host");
     }
 
-    let (mut host, mut port) = if !target_host_str.is_empty() {
+    let (target_host, target_port) = if !target_host_str.is_empty() {
         if let Some((h, p)) = target_host_str.split_once(':') {
             let parsed_p = p.trim().parse::<u16>().unwrap_or(ssh_port);
             (h.trim().to_string(), parsed_p)
@@ -230,28 +223,16 @@ fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
         ("127.0.0.1".to_string(), ssh_port)
     };
 
-    // Filtro de dominios de bypass / local SSH
-    let host_lower = host.to_lowercase();
-    if host.is_empty() 
-        || host == "127.0.0.1" 
-        || host == "localhost" 
-        || host_lower.contains("tigo") 
-        || host_lower.contains("claro") 
-        || host_lower.contains("movistar") {
-        host = "127.0.0.1".to_string();
-        port = ssh_port;
-    }
-
-    // 2. Conexión rápida (timeout de 1.5s para no congelar HTTP Custom)
-    let remote = connect_fast(&host, port, Duration::from_millis(1500))
-        .or_else(|_| connect_fast("127.0.0.1", ssh_port, Duration::from_secs(3)));
+    // 2. Conectar al destino con fallback idéntico a Python
+    let remote = TcpStream::connect((target_host.as_str(), target_port))
+        .or_else(|_| TcpStream::connect(("127.0.0.1", ssh_port)));
 
     let mut remote_stream = match remote {
         Ok(s) => s,
         Err(_) => return,
     };
 
-    // 3. Respuesta HTTP seleccionada
+    // 3. Respuesta HTTP seleccionada (idéntica a Python)
     let lower_buf = client_buffer.to_lowercase();
     let resp = match http_code.as_str() {
         "101" => b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec(),
@@ -271,7 +252,7 @@ fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
         return;
     }
 
-    // 4. Tunelizado bidireccional
+    // 4. Tunelizado bidireccional de sockets
     tunnel(client, remote_stream);
 }
 
