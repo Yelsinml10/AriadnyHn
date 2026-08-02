@@ -46,8 +46,14 @@ error_msg() {
 }
 
 line() {
-    printf "  %b────────────────────────────────────────────────────────────%b\n" \
+    printf "  %b───────────────────────────────────────────%b\n" \
         "$DARK" "$RESET"
+}
+
+section_divider() {
+    local title="$1"
+    printf "  %b─ %s ───────────────────────────────%b\n" \
+        "$PURPLE" "$title" "$RESET"
 }
 
 require_root() {
@@ -80,18 +86,71 @@ setup_menu_shortcut() {
     fi
 }
 
+get_sys_info() {
+    IP_ADDR=$(curl -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+    [[ -z "$IP_ADDR" ]] && IP_ADDR="127.0.0.1"
+    
+    RAM_INFO=$(free -h 2>/dev/null | awk 'NR==2 {print $3 " / " $2}')
+    [[ -z "$RAM_INFO" ]] && RAM_INFO="N/A"
+    
+    OS_INFO=$(awk -F= '/^PRETTY_NAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release 2>/dev/null | cut -d' ' -f1,2)
+    [[ -z "$OS_INFO" ]] && OS_INFO="Linux"
+}
+
+get_ports_summary() {
+    # Puertos SSH-Go
+    SSHGO_PORTS_RAW=$(get_sshgo_ports 2>/dev/null)
+    if [[ -n "$SSHGO_PORTS_RAW" ]]; then
+        SSHGO_PORTS_DISPLAY=$(echo "$SSHGO_PORTS_RAW" | tr ' ' ',')
+    else
+        SSHGO_PORTS_DISPLAY="OFF"
+    fi
+
+    # Puertos V2Ray
+    local cfg=$(get_v2ray_cfg_path)
+    V2RAY_PORTS_DISPLAY="OFF"
+    if [[ -f "$cfg" ]] && systemctl is-active --quiet v2ray 2>/dev/null; then
+        local v_out=$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1], "r") as f: data = json.load(f)
+    inbounds = data.get("inbounds", [])
+    if isinstance(data, dict) and "inbounds" not in data and "inbound" in data: inbounds = [data["inbound"]]
+    ports = sorted(list(set(str(inb["port"]) for inb in inbounds if "port" in inb)))
+    print(",".join(ports))
+except Exception: pass
+' "$cfg" 2>/dev/null)
+        [[ -n "$v_out" ]] && V2RAY_PORTS_DISPLAY="$v_out"
+    fi
+
+    # Puertos Caddy
+    CADDY_PORTS_DISPLAY="OFF"
+    if systemctl is-active --quiet caddy 2>/dev/null; then
+        local c_http=$(get_caddy_ports_http 2>/dev/null)
+        local c_https=$(get_caddy_ports_https 2>/dev/null)
+        local all_caddy=$(echo "$c_http $c_https" | tr ' ' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+        [[ -n "$all_caddy" ]] && CADDY_PORTS_DISPLAY="$all_caddy"
+    fi
+
+    # Puerto SSH Sistema
+    SSH_PORT_DISPLAY="22"
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        local ssh_p=$(grep -i "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tr '\n' ',' | sed 's/,$//')
+        [[ -n "$ssh_p" ]] && SSH_PORT_DISPLAY="$ssh_p"
+    fi
+}
+
 header() {
     clear_screen
+    get_sys_info
+    get_ports_summary
     printf "\n"
-    printf "  %b╔════════════════════════════════════════════════════════╗%b\n" \
-        "$VIOLET" "$RESET"
-    printf "  %b║%b  %b🚀 PANEL MAESTRO VPN%b  %b◆ PROFESSIONAL%b  %b║%b\n" \
-        "$VIOLET" "$RESET" "$BOLD$WHITE" "$RESET" "$CYAN" "$RESET" "$VIOLET" "$RESET"
-    printf "  %b║%b  %bAdministrador avanzado de servicios VPN%b             %b║%b\n" \
-        "$VIOLET" "$RESET" "$DIM" "$RESET" "$VIOLET" "$RESET"
-    printf "  %b╚════════════════════════════════════════════════════════╝%b\n" \
-        "$VIOLET" "$RESET"
-    printf "  %b%s%b\n\n" "$GRAY" "$VERSION" "$RESET"
+    printf "  %b🚀 ARIADNY MASTER PANEL %s%b\n" "$BOLD$WHITE" "$VERSION" "$RESET"
+    printf "  %b%s%b • %b%s%b • %bRAM: %s%b\n\n" "$CYAN" "$IP_ADDR" "$RESET" "$CYAN" "$OS_INFO" "$RESET" "$GREEN" "$RAM_INFO" "$RESET"
+
+    section_divider "PUERTOS ACTIVOS"
+    printf "  %b🌐 Caddy  :%b %-16s %b⚡ V2Ray :%b %s\n" "$CYAN" "$RESET" "$CADDY_PORTS_DISPLAY" "$CYAN" "$RESET" "$V2RAY_PORTS_DISPLAY"
+    printf "  %b🚀 SSH-Go :%b %-16s %b🔐 SSH   :%b %s\n\n" "$CYAN" "$RESET" "$SSHGO_PORTS_DISPLAY" "$CYAN" "$RESET" "$SSH_PORT_DISPLAY"
 }
 
 panel_header() {
@@ -99,20 +158,15 @@ panel_header() {
     local icon="${2:-◆}"
 
     header
-    printf "  %b╭────────────────────────────────────────────────────────╮%b\n" \
-        "$PURPLE" "$RESET"
-    printf "  %b│%b  %b%s %s%b\n" \
-        "$PURPLE" "$RESET" "$CYAN" "$icon" "$title" "$RESET"
-    printf "  %b╰────────────────────────────────────────────────────────╯%b\n\n" \
-        "$PURPLE" "$RESET"
+    printf "  %b─ %s %s ───────────────────────────────%b\n\n" \
+        "$PURPLE" "$icon" "$title" "$RESET"
 }
 
 download_to_path() {
     local script_name="$1"
     local destination="$2"
 
-    printf "\n  %b⬇ Descargando %s...%b\n" \
-        "$CYAN" "$script_name" "$RESET"
+    printf "\n  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$RESET"
 
     if curl -fsSL --connect-timeout 15 --max-time 300 \
         "$BASE_URL/$script_name" -o "$destination"; then
@@ -130,8 +184,7 @@ download_and_execute() {
     local script_name="$1"
     local temporary="/tmp/${script_name##*/}.$$"
 
-    printf "\n  %b⬇ Descargando %s...%b\n" \
-        "$CYAN" "$script_name" "$RESET"
+    printf "\n  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$RESET"
 
     if ! curl -fsSL --connect-timeout 15 --max-time 300 \
         "$BASE_URL/$script_name" -o "$temporary"; then
@@ -142,8 +195,7 @@ download_and_execute() {
 
     chmod 700 "$temporary"
 
-    printf "  %b🚀 Ejecutando %s...%b\n\n" \
-        "$GREEN" "$script_name" "$RESET"
+    printf "  %b🚀 Ejecutando %s...%b\n\n" "$GREEN" "$script_name" "$RESET"
 
     bash "$temporary"
     local result=$?
@@ -1167,7 +1219,7 @@ v2ray_admin_menu() {
         
         show_v2ray_status
         
-        printf "\n  %b[1]%b  Instalar V2Ray\n" "$GREEN" "$RESET"
+        printf "  %b[1]%b  Instalar V2Ray\n" "$GREEN" "$RESET"
         printf "  %b[2]%b  Agregar ID (UUID)\n" "$CYAN" "$RESET"
         printf "  %b[3]%b  Quitar ID (UUID)\n" "$CYAN" "$RESET"
         printf "  %b[4]%b  Cambiar Path\n" "$CYAN" "$RESET"
@@ -1198,7 +1250,7 @@ sshgo_admin_menu() {
         
         show_sshgo_status
         
-        printf "\n  %b[1]%b  Instalar SSH-Go\n" "$GREEN" "$RESET"
+        printf "  %b[1]%b  Instalar SSH-Go\n" "$GREEN" "$RESET"
         printf "  %b[2]%b  Agregar puerto\n" "$CYAN" "$RESET"
         printf "  %b[3]%b  Quitar puerto\n" "$CYAN" "$RESET"
         printf "  %b[4]%b  Reiniciar SSH-Go\n" "$CYAN" "$RESET"
@@ -1225,7 +1277,7 @@ caddy_admin_menu() {
         
         show_caddy_status
         
-        printf "\n  %b[1]%b  Instalar Caddy\n" "$GREEN" "$RESET"
+        printf "  %b[1]%b  Instalar Caddy\n" "$GREEN" "$RESET"
         printf "  %b[2]%b  Cambiar dominio\n" "$CYAN" "$RESET"
         printf "  %b[3]%b  Agregar puerto HTTP\n" "$CYAN" "$RESET"
         printf "  %b[4]%b  Agregar puerto HTTPS\n" "$CYAN" "$RESET"
@@ -1276,16 +1328,6 @@ v2ray_menu() {
         install_v2ray_direct
     fi
     v2ray_admin_menu
-}
-
-install_all() {
-    panel_header "INSTALACIÓN COMPLETA" "📦"
-
-    download_and_execute "install-caddy.sh"
-    download_and_execute "install-v2ray.sh"
-    download_and_execute "install-sshgo.sh"
-
-    pause_screen
 }
 
 firewall_menu() {
@@ -1460,54 +1502,46 @@ update_panel() {
 }
 
 # ==============================================================================
-# MENÚ PRINCIPAL
+# MENÚ PRINCIPAL EN 2 COLUMNAS PARALELAS ("A LA PAR" CON ALINEACIÓN PERFECTA)
 # ==============================================================================
 
 main_menu() {
     while true; do
         header
 
-        printf "  %b[1]%b  🌐 Caddy Server\n" "$CYAN" "$RESET"
-        printf "  %b[2]%b  ⚡ V2Ray / VMess\n" "$CYAN" "$RESET"
-        printf "  %b[3]%b  🚀 SSH-Go Proxy\n" "$CYAN" "$RESET"
-        printf "  %b[4]%b  📦 Instalar todos los protocolos\n" "$CYAN" "$RESET"
-        printf "  %b[5]%b  👥 SSH Panel personalizado\n" "$CYAN" "$RESET"
-        printf "  %b[6]%b  🛡️  Firewall\n" "$CYAN" "$RESET"
-        printf "  %b[7]%b  🔰 XRay Panel\n" "$CYAN" "$RESET"
-        printf "  %b[8]%b  ⚡ UDP Panel\n" "$CYAN" "$RESET"
-        printf "  %b[9]%b  🦀 SOCKS Proxy Rust\n" "$CYAN" "$RESET"
-        printf "  %b[10]%b 🐍 SOCKS Proxy Python\n" "$CYAN" "$RESET"
+        section_divider "PROTOCOLOS & PROXIES"
+        printf "  %b[ 1]%b 🌐 Caddy Server       %b[ 2]%b ⚡ V2Ray / VMess\n" "$CYAN" "$RESET" "$CYAN" "$RESET"
+        printf "  %b[ 3]%b 🚀 SSH-Go Proxy       %b[ 4]%b 🔰 XRay Panel\n" "$CYAN" "$RESET" "$CYAN" "$RESET"
+        printf "  %b[ 5]%b ⚡ UDP Panel          %b[ 6]%b 🦀 SOCKS Proxy Rust\n" "$CYAN" "$RESET" "$CYAN" "$RESET"
+        printf "  %b[ 7]%b 🐍 SOCKS Proxy Python %b[ 8]%b 👥 SSH Panel / User\n\n" "$CYAN" "$RESET" "$CYAN" "$RESET"
+
+        section_divider "GESTIÓN & MANTENIMIENTO"
+        printf "  %b[ 9]%b 🛡️  Firewall           %b[10]%b 🔐 Configurar SSH\n" "$CYAN" "$RESET" "$CYAN" "$RESET"
+        printf "  %b[11]%b 📊 Monitoreo Sistema   %b[12]%b 💾 Backup Config\n" "$BLUE" "$RESET" "$BLUE" "$RESET"
+        printf "  %b[13]%b 📋 Estado General      %b[14]%b 🔄 Actualizar Panel\n" "$BLUE" "$RESET" "$BLUE" "$RESET"
 
         line
-
-        printf "  %b[11]%b 📊 Monitoreo del sistema\n" "$BLUE" "$RESET"
-        printf "  %b[12]%b 💾 Backup de configuraciones\n" "$BLUE" "$RESET"
-        printf "  %b[13]%b 🔐 Configurar SSH\n" "$CYAN" "$RESET"
-        printf "  %b[14]%b 📋 Estado general\n" "$BLUE" "$RESET"
-        printf "  %b[15]%b 🔄 Actualizar panel\n" "$BLUE" "$RESET"
-
+        printf "  %b[ 0]%b 🚪 Salir del Panel\n" "$RED" "$RESET"
         line
+        printf "\n"
 
-        printf "  %b[0]%b  🚪 Salir\n\n" "$RED" "$RESET"
-
-        read -r -p "  ❯ Selecciona una opción: " option
+        read -r -p "  ❯ Selecciona una opción [0-14]: " option
 
         case "$option" in
             1) caddy_menu ;;
             2) v2ray_menu ;;
             3) sshgo_menu ;;
-            4) install_all ;;
-            5) ssh_panel_menu ;;
-            6) firewall_menu ;;
-            7) xray_menu ;;
-            8) udp_menu ;;
-            9) rust_menu ;;
-            10) python_menu ;;
+            4) xray_menu ;;
+            5) udp_menu ;;
+            6) rust_menu ;;
+            7) python_menu ;;
+            8) ssh_panel_menu ;;
+            9) firewall_menu ;;
+            10) configure_ssh ;;
             11) monitor_menu ;;
             12) backup_menu ;;
-            13) configure_ssh ;;
-            14) status_menu ;;
-            15) update_panel ;;
+            13) status_menu ;;
+            14) update_panel ;;
             0)
                 clear_screen
                 printf "\n  %b¡Gracias por usar el panel VPN!%b\n\n" "$GREEN" "$RESET"
