@@ -1,6 +1,6 @@
 #!/bin/bash
 # =========================================================
-#  SOCKS PROXY UNIVERSAL GO (TRADUCCIÓN EXACTA 1:1 DE PYTHON)
+#  SOCKS PROXY UNIVERSAL GO (NUEVO MOTOR OPTIMIZADO)
 #  CON PANEL ADMINISTRATIVO Y SOPORTE MULTI-PUERTO
 # =========================================================
 
@@ -18,7 +18,7 @@ BG_GREEN='\033[42m'
 
 clear
 echo -e "${C_CYAN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
-echo -e "${C_CYAN}│${C_RESET} ${BG_BLUE}${C_WHITE}${C_BOLD}     🚀 PROXY UNIVERSAL 100% GO (ENGINE PYTHON 1:1) 🚀     ${C_RESET} ${C_CYAN}│${C_RESET}"
+echo -e "${C_CYAN}│${C_RESET} ${BG_BLUE}${C_WHITE}${C_BOLD}     🚀 PROXY UNIVERSAL GO (MOTOR SIMPLIFICADO) 🚀        ${C_RESET} ${C_CYAN}│${C_RESET}"
 echo -e "${C_CYAN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
 
 if [ "$EUID" -ne 0 ]; then
@@ -44,14 +44,13 @@ if [ ! -f "$CONFIG_FILE" ]; then
 cat > "$CONFIG_FILE" << EOF
 {
     "ports": [$LISTEN_PORT],
-    "ssh_port": 22,
-    "http_code": "101"
+    "ssh_port": 22
 }
 EOF
 fi
 
-# 3. Código Fuente en Go (Traducción 1:1 de proxy.py)
-echo -e "\n${C_YELLOW}[3/4] Compilando binario de Go con motor optimizado...${C_RESET}"
+# 3. Código Fuente en Go (Nuevo motor integrado)
+echo -e "\n${C_YELLOW}[3/4] Compilando binario de Go con nuevo motor...${C_RESET}"
 cat > /opt/vpn-proxy/main.go << 'EOF'
 package main
 
@@ -70,30 +69,26 @@ import (
 )
 
 const (
-	BUFLEN      = 16384
+	BUFLEN      = 4096 * 4
 	CONFIG_PATH = "/opt/vpn-proxy/config.json"
 )
 
 type Config struct {
-	Ports        []int  `json:"ports"`
-	SSHPort      int    `json:"ssh_port"`
-	ResponseCode string `json:"http_code"`
+	Ports   []int `json:"ports"`
+	SSHPort int   `json:"ssh_port"`
 }
 
 func loadConfig() Config {
 	file, err := os.ReadFile(CONFIG_PATH)
 	if err != nil {
-		return Config{Ports: []int{8080}, SSHPort: 22, ResponseCode: "101"}
+		return Config{Ports: []int{8080}, SSHPort: 22}
 	}
 	var cfg Config
 	if err := json.Unmarshal(file, &cfg); err != nil || len(cfg.Ports) == 0 {
-		return Config{Ports: []int{8080}, SSHPort: 22, ResponseCode: "101"}
+		return Config{Ports: []int{8080}, SSHPort: 22}
 	}
 	if cfg.SSHPort <= 0 {
 		cfg.SSHPort = 22
-	}
-	if cfg.ResponseCode == "" {
-		cfg.ResponseCode = "101"
 	}
 	return cfg
 }
@@ -114,17 +109,17 @@ func main() {
 	}
 }
 
-// --- DAEMON PROXY GO (LÓGICA EXACTA DE PYTHON) ---
+// --- DAEMON PROXY GO (NUEVA LÓGICA DE CONEXIÓN) ---
 
 func runDaemon() {
 	cfg := loadConfig()
-	fmt.Printf("⚡ Proxy Engine SSH-Go iniciado. Puertos: %v | SSH Local: %d | Modo: HTTP %s\n", cfg.Ports, cfg.SSHPort, cfg.ResponseCode)
+	fmt.Printf("⚡ Proxy Engine Go iniciado. Puertos: %v | SSH Local: %d\n", cfg.Ports, cfg.SSHPort)
 
-	for _, port := range cfg.Ports {
-		go func(p int) {
-			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", p))
+	for _, p := range cfg.Ports {
+		go func(port int) {
+			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 			if err != nil {
-				fmt.Printf("❌ Error escuchando en puerto %d: %v\n", p, err)
+				fmt.Printf("❌ Error escuchando en puerto %d: %v\n", port, err)
 				return
 			}
 			for {
@@ -134,7 +129,7 @@ func runDaemon() {
 				}
 				go handleConnection(client)
 			}
-		}(port)
+		}(p)
 	}
 	select {}
 }
@@ -143,82 +138,44 @@ func handleConnection(client net.Conn) {
 	defer client.Close()
 
 	cfg := loadConfig()
-	sshPort := cfg.SSHPort
-	if sshPort <= 0 {
-		sshPort = 22
-	}
+	defaultHost := fmt.Sprintf("127.0.0.1:%d", cfg.SSHPort)
 
 	client.SetReadDeadline(time.Now().Add(15 * time.Second))
 
 	buf := make([]byte, BUFLEN)
 	n, err := client.Read(buf)
-	if err != nil || n == 0 {
+	if err != nil {
 		return
 	}
 
 	clientBuffer := string(buf[:n])
-
-	// 1. Parsear X-Real-Host exactamente igual a Python
-	targetHostStr := findHeader(clientBuffer, "X-Real-Host")
-	var targetHost string
-	var targetPort int
-
-	if targetHostStr != "" {
-		if strings.Contains(targetHostStr, ":") {
-			parts := strings.SplitN(targetHostStr, ":", 2)
-			targetHost = parts[0]
-			p, err := strconv.Atoi(parts[1])
-			if err == nil && p > 0 {
-				targetPort = p
-			} else {
-				targetPort = sshPort
-			}
-		} else {
-			targetHost = targetHostStr
-			targetPort = sshPort
-		}
-	} else {
-		targetHost = "127.0.0.1"
-		targetPort = sshPort
+	targetHost := findHeader(clientBuffer, "X-Real-Host")
+	if targetHost == "" {
+		targetHost = defaultHost
+	} else if !strings.Contains(targetHost, ":") {
+		targetHost = fmt.Sprintf("%s:%d", targetHost, cfg.SSHPort)
 	}
 
-	// 2. Conectar al host destino con fallback a 127.0.0.1:SSHPort
-	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
-	target, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
+	target, err := net.DialTimeout("tcp", targetHost, 10*time.Second)
 	if err != nil {
-		localAddr := fmt.Sprintf("127.0.0.1:%d", sshPort)
-		target, err = net.DialTimeout("tcp", localAddr, 5*time.Second)
+		// Fallback al host por defecto en caso de error
+		target, err = net.DialTimeout("tcp", defaultHost, 5*time.Second)
 		if err != nil {
 			return
 		}
 	}
 	defer target.Close()
 
-	client.SetReadDeadline(time.Time{})
-
-	// 3. Respuesta HTTP configurable según el Panel
-	var resp []byte
-	switch cfg.ResponseCode {
-	case "101":
-		resp = []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
-	case "200":
-		resp = []byte("HTTP/1.1 200 Connection Established\r\n\r\n")
-	case "200-WS":
-		resp = []byte("HTTP/1.1 200 OK\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
-	case "302":
-		resp = []byte("HTTP/1.1 302 Found\r\nLocation: https://google.com\r\n\r\n")
-	default: // AUTO
-		if strings.Contains(clientBuffer, "Upgrade: websocket") || strings.Contains(strings.ToLower(clientBuffer), "websocket") {
-			resp = []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
-		} else {
-			resp = []byte("HTTP/1.1 200 Connection Established\r\n\r\n")
-		}
+	// Lógica inteligente: Si el cliente pide upgrade a websocket, damos 101, si no, damos 200
+	if strings.Contains(clientBuffer, "Upgrade: websocket") {
+		client.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"))
+	} else {
+		client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 	}
 
-	client.Write(resp)
+	client.SetReadDeadline(time.Time{})
 
-	// 4. Copia bidireccional de sockets
-	done := make(chan struct{}, 2)
+	done := make(chan struct{})
 	go func() {
 		io.Copy(target, client)
 		done <- struct{}{}
@@ -230,23 +187,18 @@ func handleConnection(client net.Conn) {
 	<-done
 }
 
-func findHeader(head, headerName string) string {
-	key := headerName + ": "
+func findHeader(head, header string) string {
+	key := header + ": "
 	idx := strings.Index(head, key)
 	if idx == -1 {
-		key = headerName + ":"
-		idx = strings.Index(head, key)
-		if idx == -1 {
-			return ""
-		}
+		return ""
 	}
 	start := idx + len(key)
-	rest := head[start:]
-	end := strings.IndexAny(rest, "\r\n")
+	end := strings.Index(head[start:], "\r\n")
 	if end == -1 {
-		return strings.TrimSpace(rest)
+		return ""
 	}
-	return strings.TrimSpace(rest[:end])
+	return head[start : start+end]
 }
 
 // --- PANEL ADMINISTRATIVO VISUAL ---
@@ -287,7 +239,6 @@ func showHeader(cfg *Config) {
 	fmt.Printf("\x1B[1;36m│\x1B[0m  \x1B[1;37m⚡ Estado        :\x1B[0m %s\n", statusStr)
 	fmt.Printf("\x1B[1;36m│\x1B[0m  \x1B[1;37m🔌 Puertos Proxy :\x1B[0m \x1B[1;33m%v\x1B[0m\n", cfg.Ports)
 	fmt.Printf("\x1B[1;36m│\x1B[0m  \x1B[1;37m🔑 Puerto SSH    :\x1B[0m \x1B[1;32m%d\x1B[0m\n", cfg.SSHPort)
-	fmt.Printf("\x1B[1;36m│\x1B[0m  \x1B[1;37m📡 Respuesta HTTP:\x1B[0m \x1B[1;35mHTTP %s\x1B[0m\n", cfg.ResponseCode)
 	fmt.Println("\x1B[1;36m└─────────────────────────────────────────────────────────────┘\x1B[0m")
 }
 
@@ -316,23 +267,22 @@ func runPanel() {
 		cfg := loadConfig()
 		showHeader(&cfg)
 
-		fmt.Println("\x1B[1;35m┌─── [ 🛠️ CONFIGURACIÓN DE PUERTOS Y PROTOCOLO ]\x1B[0m")
+		fmt.Println("\x1B[1;35m┌─── [ 🛠️ CONFIGURACIÓN DE PUERTOS ]\x1B[0m")
 		fmt.Println("\x1B[1;35m│\x1B[0m  \x1B[1;32m[1]\x1B[0m \x1B[1m➕ Agregar Puerto Proxy\x1B[0m")
 		fmt.Println("\x1B[1;35m│\x1B[0m  \x1B[1;31m[2]\x1B[0m \x1B[1m➖ Quitar Puerto Proxy\x1B[0m")
 		fmt.Println("\x1B[1;35m│\x1B[0m  \x1B[1;36m[3]\x1B[0m \x1B[1m🔑 Cambiar Puerto SSH Destino\x1B[0m")
-		fmt.Println("\x1B[1;35m│\x1B[0m  \x1B[1;33m[4]\x1B[0m \x1B[1m🌐 Cambiar Código Response HTTP\x1B[0m")
 		fmt.Println("\x1B[1;35m│\x1B[0m")
 		fmt.Println("\x1B[1;34m├─── [ ⚡ CONTROL Y MANTENIMIENTO DEL SERVICIO ]\x1B[0m")
-		fmt.Println("\x1B[1;34m│\x1B[0m  \x1B[1;33m[5]\x1B[0m \x1B[1m🔄 Reiniciar Servicio Proxy\x1B[0m")
-		fmt.Println("\x1B[1;34m│\x1B[0m  \x1B[1;32m[6]\x1B[0m \x1B[1m⏯️  Iniciar / Detener Servicio\x1B[0m")
-		fmt.Println("\x1B[1;34m│\x1B[0m  \x1B[1;36m[7]\x1B[0m \x1B[1m📋 Ver Logs en Tiempo Real\x1B[0m")
+		fmt.Println("\x1B[1;34m│\x1B[0m  \x1B[1;33m[4]\x1B[0m \x1B[1m🔄 Reiniciar Servicio Proxy\x1B[0m")
+		fmt.Println("\x1B[1;34m│\x1B[0m  \x1B[1;32m[5]\x1B[0m \x1B[1m⏯️  Iniciar / Detener Servicio\x1B[0m")
+		fmt.Println("\x1B[1;34m│\x1B[0m  \x1B[1;36m[6]\x1B[0m \x1B[1m📋 Ver Logs en Tiempo Real\x1B[0m")
 		fmt.Println("\x1B[1;34m│\x1B[0m")
 		fmt.Println("\x1B[1;31m└─── [ ❌ OTROS ]\x1B[0m")
-		fmt.Println("   \x1B[1;31m[8]\x1B[0m \x1B[1;31m🗑️  Desinstalar Proxy Completamente\x1B[0m")
+		fmt.Println("   \x1B[1;31m[7]\x1B[0m \x1B[1;31m🗑️  Desinstalar Proxy Completamente\x1B[0m")
 		fmt.Println("   \x1B[1;37m[0]\x1B[0m \x1B[1m🚪 Salir del Panel\x1B[0m")
 		fmt.Println("\n\x1B[0;90m─────────────────────────────────────────────────────────────\x1B[0m")
 
-		fmt.Print("\x1B[1;33m ❯ Seleccione una opción [0-8]: \x1B[0m")
+		fmt.Print("\x1B[1;33m ❯ Seleccione una opción [0-7]: \x1B[0m")
 		input, _ := reader.ReadString('\n')
 		choice := strings.TrimSpace(input)
 
@@ -412,44 +362,13 @@ func runPanel() {
 			pause()
 
 		case "4":
-			showHeader(&cfg)
-			fmt.Println("\n\x1B[1;36m📌 SELECCIONE EL MODO DE RESPUESTA HTTP:\x1B[0m")
-			fmt.Println("  \x1B[1;32m[1]\x1B[0m HTTP 101  ➜ Switching Protocols (Recomendado WebSocket)")
-			fmt.Println("  \x1B[1;33m[2]\x1B[0m HTTP 200  ➜ Connection Established (Estándar Directo)")
-			fmt.Println("  \x1B[1;35m[3]\x1B[0m HTTP 200-WS➜ 200 OK con Upgrade WebSocket")
-			fmt.Println("  \x1B[1;31m[4]\x1B[0m HTTP 302  ➜ Found / Redirect")
-			fmt.Println("  \x1B[1;36m[5]\x1B[0m Modo AUTO ➜ Autodetect")
-			fmt.Print("\n\x1B[1;33m ❯ Seleccione una opción [1-5]: \x1B[0m")
-			mIn, _ := reader.ReadString('\n')
-			switch strings.TrimSpace(mIn) {
-			case "1":
-				cfg.ResponseCode = "101"
-			case "2":
-				cfg.ResponseCode = "200"
-			case "3":
-				cfg.ResponseCode = "200-WS"
-			case "4":
-				cfg.ResponseCode = "302"
-			case "5":
-				cfg.ResponseCode = "AUTO"
-			default:
-				fmt.Println("\x1B[1;31m❌ Opción no válida.\x1B[0m")
-				pause()
-				continue
-			}
-			cfg.save()
-			fmt.Printf("\x1B[1;32m✅ Respuesta HTTP cambiada a %s.\x1B[0m\n", cfg.ResponseCode)
-			restartService()
-			pause()
-
-		case "5":
 			restartService()
 			time.Sleep(500 * time.Millisecond)
 
-		case "6":
+		case "5":
 			toggleService()
 
-		case "7":
+		case "6":
 			fmt.Print("\x1B[2J\x1B[1;1H")
 			fmt.Println("\x1B[1;36m📋 MONITOR DE LOGS EN TIEMPO REAL (Ctrl+C para salir)\x1B[0m\n")
 			cmd := exec.Command("journalctl", "-u", "vpn-proxy", "-f", "-n", "50")
@@ -458,7 +377,7 @@ func runPanel() {
 			cmd.Stdin = os.Stdin
 			cmd.Run()
 
-		case "8":
+		case "7":
 			showHeader(&cfg)
 			fmt.Print("\n\x1B[1;31m❓ ¿Desea eliminar por completo el Proxy? (s/N): \x1B[0m")
 			confirm, _ := reader.ReadString('\n')
