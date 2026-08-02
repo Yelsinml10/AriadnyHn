@@ -494,9 +494,6 @@ fn run_panel() {
                     let _ = std::fs::remove_file("/root/proxy.rs");
                     let _ = std::fs::remove_file("/root/socks_config.json");
                     let _ = std::fs::remove_file("/usr/local/bin/rust");
-                    let _ = std::fs::remove_file("/usr/local/bin/proxy");
-                    let _ = std::fs::remove_file("/usr/local/bin/python");
-                    let _ = std::fs::remove_file("/usr/local/bin/menu");
 
                     println!("\n\x1B[1;32m✅ Desinstalación terminada correctamente. ¡Hasta luego!\x1B[0m\n");
                     std::process::exit(0);
@@ -529,11 +526,6 @@ EOF
 rustc -O /root/proxy.rs -o /usr/local/bin/rust
 chmod +x /usr/local/bin/rust
 
-# Enlaces simbólicos directos para comandos secundarios
-ln -sf /usr/local/bin/rust /usr/local/bin/proxy
-ln -sf /usr/local/bin/rust /usr/local/bin/python
-ln -sf /usr/local/bin/rust /usr/local/bin/menu
-
 # 4. Configurar Servicio Systemd con '/usr/local/bin/rust --daemon'
 echo -e "${C_YELLOW}[4/4] Configurando servicio systemd para Rust...${C_RESET}"
 cat > /etc/systemd/system/socks-proxy.service << 'EOF'
@@ -556,11 +548,8 @@ systemctl daemon-reload
 systemctl enable socks-proxy > /dev/null 2>&1
 systemctl restart socks-proxy
 
-# Agregar alias al entorno bash
+# Agregar alias exclusivo al entorno bash
 echo "alias rust='/usr/local/bin/rust'" >> /root/.bashrc
-echo "alias proxy='/usr/local/bin/rust'" >> /root/.bashrc
-echo "alias python='/usr/local/bin/rust'" >> /root/.bashrc
-echo "alias menu='/usr/local/bin/rust'" >> /root/.bashrc
 hash -r 2>/dev/null
 
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
