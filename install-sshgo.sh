@@ -349,7 +349,6 @@ func runPanel() {
 
 				os.RemoveAll("/opt/vpn-proxy")
 				os.Remove("/usr/local/bin/sshgo")
-				os.Remove("/usr/local/bin/menu")
 
 				fmt.Println("\n\x1B[1;32m✅ Desinstalación terminada correctamente. ¡Hasta luego!\x1B[0m\n")
 				os.Exit(0)
@@ -375,9 +374,6 @@ EOF
 go build -ldflags="-s -w" -o /usr/local/bin/sshgo /opt/vpn-proxy/main.go
 chmod +x /usr/local/bin/sshgo
 
-# Crear enlace simbólico para el comando 'menu'
-ln -sf /usr/local/bin/sshgo /usr/local/bin/menu
-
 # 4. Configurar Servicio Systemd
 echo -e "${C_YELLOW}Configurando servicio systemd para Go...${C_RESET}"
 cat > /etc/systemd/system/vpn-proxy.service << 'EOF'
@@ -400,15 +396,14 @@ systemctl daemon-reload
 systemctl enable vpn-proxy > /dev/null 2>&1
 systemctl restart vpn-proxy
 
-# Alias para bash
+# Alias exclusivo para bash
 echo "alias sshgo='/usr/local/bin/sshgo'" >> /root/.bashrc
-echo "alias oso='/usr/local/bin/sshgo'" >> /root/.bashrc
 hash -r 2>/dev/null
 
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
 echo -e "${C_GREEN}│${C_RESET} ${BG_GREEN}${C_WHITE}${C_BOLD}    ¡INSTALACIÓN COMPLETADA! COMANDO PRINCIPAL: sshgo       ${C_RESET} ${C_GREEN}│${C_RESET}"
 echo -e "${C_GREEN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
-echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}sshgo${C_RESET} o ${C_BOLD}${C_YELLOW}oso${C_RESET} en tu terminal para abrir el panel.\n"
+echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}sshgo${C_RESET} en tu terminal para abrir el panel.\n"
 
 read -p "$(echo -e "${C_BOLD}${C_CYAN}¿Deseas abrir el Panel Administrativo en Go ahora? (S/n): ${C_RESET}")" RUN_NOW
 if [[ "$RUN_NOW" =~ ^[sS]$ ]] || [ -z "$RUN_NOW" ]; then
