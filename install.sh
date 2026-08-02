@@ -1,4 +1,48 @@
-#!/usr/bin/env bash
+# =======================================================
+# 1. DESACTIVAR MENSAJES DE RELLENO EN UBUNTU
+# =======================================================
+chmod -x /etc/update-motd.d/10-help-text /etc/update-motd.d/60-unminimize 2>/dev/null
+
+# =======================================================
+# 2. CREAR BANNER COMPACTO Y OPTIMIZADO PARA CELULAR
+# =======================================================
+cat > /etc/update-motd.d/99-info-vps << 'MOTD_EOF'
+#!/bin/bash
+CYAN='\033[0;36m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+RESET='\033[0m'
+
+OS=$(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2 2>/dev/null | cut -d' ' -f1,2,3)
+IP=$(curl -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+UPTIME=$(uptime -p 2>/dev/null | sed 's/up //')
+RAM_USED=$(free -m 2>/dev/null | awk '/Mem:/ {print $3}')
+RAM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}')
+DISK_USED=$(df -h / 2>/dev/null | awk 'NR==2 {print $3}')
+DISK_TOTAL=$(df -h / 2>/dev/null | awk 'NR==2 {print $2}')
+
+echo ""
+echo -e "${CYAN}======================================${RESET}"
+echo -e "${CYAN}        INFORMACIÓN DE LA VPS         ${RESET}"
+echo -e "${CYAN}======================================${RESET}"
+echo -e " • ${CYAN}Sistema:${RESET}  $OS"
+echo -e " • ${CYAN}IP Pub:${RESET}   $IP"
+echo -e " • ${CYAN}Activo:${RESET}   $UPTIME"
+echo -e " • ${CYAN}RAM:${RESET}      ${RAM_USED} MB / ${RAM_TOTAL} MB"
+echo -e " • ${CYAN}Disco:${RESET}    ${DISK_USED} / ${DISK_TOTAL}"
+echo -e "${CYAN}--------------------------------------${RESET}"
+echo -e " ${YELLOW}➔ Escribe '${GREEN}menu${YELLOW}' para abrir el panel.${RESET}"
+echo -e "${CYAN}======================================${RESET}"
+echo ""
+MOTD_EOF
+
+chmod +x /etc/update-motd.d/99-info-vps
+
+# =======================================================
+# 3. INSTALAR EL PANEL PRINCIPAL (/usr/local/bin/menu)
+# =======================================================
+cat > /usr/local/bin/menu << 'MENU_EOF'
+#!/bin/bash
 
 set -o pipefail
 
@@ -85,10 +129,6 @@ setup_menu_shortcut() {
             chmod +x /usr/bin/menu 2>/dev/null
         fi
     fi
-
-    chmod +x /usr/local/bin/menu /usr/bin/menu 2>/dev/null
-    grep -q "alias menu=" /root/.bashrc 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /root/.bashrc
-    grep -q "alias menu=" /etc/profile 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /etc/profile
 }
 
 get_sys_info() {
@@ -1373,3 +1413,22 @@ require_root
 install_dependencies
 setup_menu_shortcut
 main_menu
+MENU_EOF
+
+# =======================================================
+# 4. FIXES Y REPARACIÓN DEL COMANDO 'menu'
+# =======================================================
+sed -i 's/\r$//' /usr/local/bin/menu
+chmod +x /usr/local/bin/menu
+ln -sf /usr/local/bin/menu /usr/bin/menu
+chmod +x /usr/bin/menu
+
+grep -q "alias menu=" /root/.bashrc 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /root/.bashrc
+grep -q "alias menu=" /etc/bash.bashrc 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /etc/bash.bashrc
+grep -q "alias menu=" /etc/profile 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /etc/profile
+
+hash -r
+source /root/.bashrc 2>/dev/null
+
+# Abrir el menú inmediatamente
+/usr/local/bin/menu
