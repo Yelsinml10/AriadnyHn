@@ -62,7 +62,7 @@ import (
 
 const (
 	BUFLEN       = 16384
-	DEFAULT_HOST = "0.0.0.0:22"
+	DEFAULT_HOST = "127.0.0.1:22"
 	CONFIG_PATH  = "/opt/vpn-proxy/config.json"
 )
 
