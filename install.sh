@@ -1,4 +1,3 @@
-cat > /usr/local/bin/menu << 'EOF'
 #!/usr/bin/env bash
 
 set -o pipefail
@@ -86,6 +85,10 @@ setup_menu_shortcut() {
             chmod +x /usr/bin/menu 2>/dev/null
         fi
     fi
+
+    chmod +x /usr/local/bin/menu /usr/bin/menu 2>/dev/null
+    grep -q "alias menu=" /root/.bashrc 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /root/.bashrc
+    grep -q "alias menu=" /etc/profile 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /etc/profile
 }
 
 get_sys_info() {
@@ -1370,9 +1373,3 @@ require_root
 install_dependencies
 setup_menu_shortcut
 main_menu
-EOF
-
-chmod +x /usr/local/bin/menu
-cp /usr/local/bin/menu /usr/bin/menu 2>/dev/null
-chmod +x /usr/bin/menu 2>/dev/null
-/usr/local/bin/menu
