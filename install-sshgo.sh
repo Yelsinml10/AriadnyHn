@@ -62,7 +62,7 @@ import (
 
 const (
 	BUFLEN       = 16384
-	DEFAULT_HOST = "127.0.0.1:22"
+	DEFAULT_HOST = "0.0.0.0:22"
 	CONFIG_PATH  = "/opt/vpn-proxy/config.json"
 )
 
@@ -408,7 +408,7 @@ hash -r 2>/dev/null
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
 echo -e "${C_GREEN}│${C_RESET} ${BG_GREEN}${C_WHITE}${C_BOLD}    ¡INSTALACIÓN COMPLETADA! COMANDO PRINCIPAL: sshgo       ${C_RESET} ${C_GREEN}│${C_RESET}"
 echo -e "${C_GREEN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
-echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}sshgo${C_RESET} o ${C_BOLD}${C_YELLOW}menu1${C_RESET} en tu terminal para abrir el panel.\n"
+echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}sshgo${C_RESET} o ${C_BOLD}${C_YELLOW}oso${C_RESET} en tu terminal para abrir el panel.\n"
 
 read -p "$(echo -e "${C_BOLD}${C_CYAN}¿Deseas abrir el Panel Administrativo en Go ahora? (S/n): ${C_RESET}")" RUN_NOW
 if [[ "$RUN_NOW" =~ ^[sS]$ ]] || [ -z "$RUN_NOW" ]; then
