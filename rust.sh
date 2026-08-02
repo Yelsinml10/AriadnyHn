@@ -1,6 +1,7 @@
 #!/bin/bash
 # =========================================================
 #  SOCKS PROXY UNIVERSAL - 100% PURE RUST (COMANDO 'rust')
+#  VERSIÓN CORREGIDA - CONEXIÓN HÍBRIDA (PAYLOADS A Y B)
 # =========================================================
 
 C_RESET='\033[0m'
@@ -23,25 +24,25 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# 1. Instalar dependencias puras en Rust (SIN PYTHON)
-echo -e "\n${C_YELLOW}[1/4] Instalando compilador Rust (rustc) y herramientas del sistema...${C_RESET}"
+# 1. Instalar dependencias puras en Rust
+echo -e "\n${C_YELLOW}[1/4] Instalando compilador Rust (rustc) y herramientas...${C_RESET}"
 apt update -y && apt install -y rustc curl wget net-tools openssh-server systemd > /dev/null 2>&1
 
-# 2. Configuración Interactiva del Proxy
-echo -e "${C_YELLOW}[2/4] Configurando el protocolo Proxy WebSocket Custom...${C_RESET}"
+# Asegurar que el servicio SSH esté activo
+systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null
+
+# 2. Configuración Interactiva Automática
+echo -e "\n${C_YELLOW}[2/4] Configurando el protocolo Proxy WebSocket Custom...${C_RESET}"
 
 echo -e "\n${C_RED}======================================================${C_RESET}"
-echo -e "${C_RED}${C_BOLD}   SOCKS DIRECTO-PY  |  CUSTOM${C_RESET}"
+echo -e "${C_RED}${C_BOLD}   SOCKS DIRECTO-RUST  |  CUSTOM AUTOMÁTICO${C_RESET}"
 echo -e "${C_RED}======================================================${C_RESET}\n"
 
-read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE SU PUERTO: ${C_RESET}")" LISTEN_PORT
+read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE EL PUERTO PROXY A ABRIR [8080]: ${C_RESET}")" LISTEN_PORT
 LISTEN_PORT=${LISTEN_PORT:-8080}
 
-read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Digite Un Puerto SSH/DROPBEAR activo [22]: ${C_RESET}")" SSH_PORT
-SSH_PORT=${SSH_PORT:-22}
-
-read -p "$(echo -e "\n${C_WHITE}${C_BOLD}Escribe El HTTP Response? 101|200|300 [101]: ${C_RESET}")" HTTP_CODE
-HTTP_CODE=${HTTP_CODE:-101}
+SSH_PORT=22
+HTTP_CODE="101"
 
 CONFIG_FILE="/root/socks_config.json"
 cat > "$CONFIG_FILE" << EOF
@@ -52,13 +53,13 @@ cat > "$CONFIG_FILE" << EOF
 }
 EOF
 
-# 3. Código Fuente en Rust (Proxy + Panel)
+# 3. Código Fuente en Rust (Soporte Híbrido de Payloads)
 echo -e "\n${C_YELLOW}[3/4] Compilando binario nativo principal '/usr/local/bin/rust'...${C_RESET}"
 cat > /root/proxy.rs << 'EOF'
 use std::env;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::process::Command;
 use std::sync::Arc;
 use std::thread;
@@ -139,67 +140,29 @@ impl Config {
     }
 }
 
-// --- ENGINE PROXY BACKEND ---
-fn build_response(code: &str) -> Vec<u8> {
-    match code {
-        "101" => b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec(),
-        "200" => b"HTTP/1.1 200 Connection Established\r\n\r\n".to_vec(),
-        "200-WS" => b"HTTP/1.1 200 OK\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec(),
-        _ => b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1\r\n\r\n".to_vec(),
+fn find_header(head: &str, header_name: &str) -> String {
+    let head_lower = head.to_lowercase();
+    let key = format!("{}:", header_name.to_lowercase());
+    if let Some(idx) = head_lower.find(&key) {
+        let start = idx + key.len();
+        let rest = &head[start..];
+        let end = rest.find('\n').unwrap_or(rest.len());
+        let line = &rest[..end];
+        return line.trim_matches(|c| c == '\r' || c == ' ').to_string();
     }
+    String::new()
 }
 
-fn parse_target(buffer: &[u8], default_ssh_port: u16) -> (String, u16, bool) {
-    let mut target_host = "127.0.0.1".to_string();
-    let mut target_port = default_ssh_port;
-    let mut is_http = false;
-
-    let text = String::from_utf8_lossy(buffer);
-    let mut lines = text.lines();
-
-    if let Some(first_line) = lines.next() {
-        let parts: Vec<&str> = first_line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let method = parts[0].to_uppercase();
-            let uri = parts[1];
-
-            if matches!(
-                method.as_str(),
-                "GET" | "POST" | "CONNECT" | "OPTIONS" | "HEAD" | "PUT" | "DELETE" | "PATCH" | "TRACE"
-            ) {
-                is_http = true;
-            }
-
-            if method == "CONNECT" {
-                if let Some((h, p)) = uri.split_once(':') {
-                    target_host = h.to_string();
-                    if let Ok(port) = p.parse() {
-                        target_port = port;
-                    }
-                } else {
-                    target_host = uri.to_string();
-                }
-            } else {
-                for line in lines {
-                    if line.to_lowercase().starts_with("host:") {
-                        if let Some((_, host_val)) = line.split_once(':') {
-                            let h_val = host_val.trim();
-                            if let Some((h, p)) = h_val.split_once(':') {
-                                target_host = h.to_string();
-                                if let Ok(port) = p.parse() {
-                                    target_port = port;
-                                }
-                            } else {
-                                target_host = h_val.to_string();
-                            }
-                        }
-                        break;
-                    }
-                }
+fn connect_fast(host: &str, port: u16, timeout: Duration) -> io::Result<TcpStream> {
+    let addr_str = format!("{}:{}", host, port);
+    if let Ok(addrs) = addr_str.to_socket_addrs() {
+        for addr in addrs {
+            if let Ok(stream) = TcpStream::connect_timeout(&addr, timeout) {
+                return Ok(stream);
             }
         }
     }
-    (target_host, target_port, is_http)
+    TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), timeout)
 }
 
 fn tunnel(mut client: TcpStream, mut remote: TcpStream) {
@@ -238,45 +201,90 @@ fn tunnel(mut client: TcpStream, mut remote: TcpStream) {
     let _ = t2.join();
 }
 
-fn handle_client(mut client: TcpStream, ssh_port: u16, response: Vec<u8>) {
+fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
     let mut buf = [0u8; 16384];
     let n = match client.read(&mut buf) {
         Ok(n) if n > 0 => n,
         _ => return,
     };
 
-    let (target_host, target_port, is_http) = parse_target(&buf[..n], ssh_port);
+    let client_buffer = String::from_utf8_lossy(&buf[..n]);
 
-    let remote = TcpStream::connect((target_host.as_str(), target_port))
-        .or_else(|_| TcpStream::connect(("127.0.0.1", ssh_port)));
-
-    match remote {
-        Ok(mut remote_stream) => {
-            if is_http {
-                let _ = client.write_all(&response);
-            } else {
-                let _ = remote_stream.write_all(&buf[..n]);
-            }
-            tunnel(client, remote_stream);
-        }
-        Err(_) => {
-            if is_http {
-                let _ = client.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n");
-            }
-        }
+    // 1. Extraer Host Destino
+    let mut target_host_str = find_header(&client_buffer, "X-Real-Host");
+    if target_host_str.is_empty() {
+        target_host_str = find_header(&client_buffer, "X-Forwarded-For");
     }
+    if target_host_str.is_empty() {
+        target_host_str = find_header(&client_buffer, "X-Online-Host");
+    }
+
+    let (mut host, mut port) = if !target_host_str.is_empty() {
+        if let Some((h, p)) = target_host_str.split_once(':') {
+            let parsed_p = p.trim().parse::<u16>().unwrap_or(ssh_port);
+            (h.trim().to_string(), parsed_p)
+        } else {
+            (target_host_str.trim().to_string(), ssh_port)
+        }
+    } else {
+        ("127.0.0.1".to_string(), ssh_port)
+    };
+
+    // Filtro de dominios de bypass / local SSH
+    let host_lower = host.to_lowercase();
+    if host.is_empty() 
+        || host == "127.0.0.1" 
+        || host == "localhost" 
+        || host_lower.contains("tigo") 
+        || host_lower.contains("claro") 
+        || host_lower.contains("movistar") {
+        host = "127.0.0.1".to_string();
+        port = ssh_port;
+    }
+
+    // 2. Conexión rápida (timeout de 1.5s para no congelar HTTP Custom)
+    let remote = connect_fast(&host, port, Duration::from_millis(1500))
+        .or_else(|_| connect_fast("127.0.0.1", ssh_port, Duration::from_secs(3)));
+
+    let mut remote_stream = match remote {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    // 3. Respuesta HTTP seleccionada
+    let lower_buf = client_buffer.to_lowercase();
+    let resp = match http_code.as_str() {
+        "101" => b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec(),
+        "200" => b"HTTP/1.1 200 Connection Established\r\n\r\n".to_vec(),
+        "200-WS" => b"HTTP/1.1 200 OK\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec(),
+        "302" => b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1\r\n\r\n".to_vec(),
+        _ => {
+            if lower_buf.contains("websocket") || lower_buf.contains("upgrade") {
+                b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec()
+            } else {
+                b"HTTP/1.1 200 Connection Established\r\n\r\n".to_vec()
+            }
+        }
+    };
+
+    if client.write_all(&resp).is_err() {
+        return;
+    }
+
+    // 4. Tunelizado bidireccional
+    tunnel(client, remote_stream);
 }
 
 fn run_daemon() {
     let config = Config::load();
-    let response = Arc::new(build_response(&config.http_code));
     let ssh_port = config.ssh_port;
+    let http_code = config.http_code;
 
     println!("⚡ Daemon Proxy Rust iniciado. Puertos: {:?}", config.ports);
 
     let mut handles = vec![];
     for &port in &config.ports {
-        let resp_clone = Arc::clone(&response);
+        let code_clone = http_code.clone();
         let handle = thread::spawn(move || {
             let listener = match TcpListener::bind(("0.0.0.0", port)) {
                 Ok(l) => l,
@@ -287,9 +295,9 @@ fn run_daemon() {
             };
             for stream in listener.incoming() {
                 if let Ok(client) = stream {
-                    let r_clone = Arc::clone(&resp_clone);
+                    let code_c = code_clone.clone();
                     thread::spawn(move || {
-                        handle_client(client, ssh_port, (*r_clone).clone());
+                        handle_client(client, ssh_port, code_c);
                     });
                 }
             }
@@ -526,7 +534,7 @@ EOF
 rustc -O /root/proxy.rs -o /usr/local/bin/rust
 chmod +x /usr/local/bin/rust
 
-# 4. Configurar Servicio Systemd con '/usr/local/bin/rust --daemon'
+# 4. Configurar Servicio Systemd
 echo -e "${C_YELLOW}[4/4] Configurando servicio systemd para Rust...${C_RESET}"
 cat > /etc/systemd/system/socks-proxy.service << 'EOF'
 [Unit]
@@ -549,13 +557,13 @@ systemctl enable socks-proxy > /dev/null 2>&1
 systemctl restart socks-proxy
 
 # Agregar alias exclusivo al entorno bash
-echo "alias rust='/usr/local/bin/rust'" >> /root/.bashrc
+grep -q "alias rust=" /root/.bashrc || echo "alias rust='/usr/local/bin/rust'" >> /root/.bashrc
 hash -r 2>/dev/null
 
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
 echo -e "${C_GREEN}│${C_RESET} ${BG_GREEN}${C_WHITE}${C_BOLD}    ¡INSTALACIÓN COMPLETADA! COMANDO PRINCIPAL: rust         ${C_RESET} ${C_GREEN}│${C_RESET}"
 echo -e "${C_GREEN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
-echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}rust${C_RESET} en tu terminal para abrir el panel en cualquier momento.\n"
+echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}rust${C_RESET} en tu terminal para abrir el panel.\n"
 
 read -p "$(echo -e "${C_BOLD}${C_CYAN}¿Deseas abrir el Panel Administrativo en Rust ahora? (S/n): ${C_RESET}")" RUN_NOW
 if [[ "$RUN_NOW" =~ ^[sS]$ ]] || [ -z "$RUN_NOW" ]; then
