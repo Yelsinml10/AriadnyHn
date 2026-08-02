@@ -1,6 +1,6 @@
 #!/bin/bash
 # =========================================================
-#  SOCKS PROXY UNIVERSAL + PANEL PREMIUM (ACCESO CON 'python')
+#  SOCKS PROXY UNIVERSAL + PANEL PREMIUM (ACCESO CON 'proxy')
 # =========================================================
 
 # Definición de Colores ANSI
@@ -502,7 +502,6 @@ uninstall_proxy() {
         rm -f /root/proxy.py
         rm -f /root/socks_config.json
         rm -f /usr/local/bin/proxy
-        rm -f /usr/local/bin/python
 
         echo -e "\n${C_GREEN}✅ Desinstalación terminada correctamente. ¡Hasta pronto!${C_RESET}\n"
         exit 0
@@ -552,27 +551,15 @@ EOF
 
 chmod +x /usr/local/bin/proxy
 
-# 6. Crear Wrapper y Alias para ingresar con 'python', 'proxy' y 'menu'
-cat > /usr/local/bin/python << 'EOF'
-#!/bin/bash
-if [ $# -eq 0 ]; then
-    exec /usr/local/bin/proxy
-else
-    exec /usr/bin/python3 "$@"
-fi
-EOF
-chmod +x /usr/local/bin/python
-
-echo "alias python='/usr/local/bin/proxy'" >> /root/.bashrc
-echo "alias menu='/usr/local/bin/proxy'" >> /root/.bashrc
+# 6. Alias exclusivo para el comando 'proxy'
+echo "alias proxy='/usr/local/bin/proxy'" >> /root/.bashrc
+hash -r 2>/dev/null
 
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
 echo -e "${C_GREEN}│${C_RESET} ${BG_GREEN}${C_WHITE}${C_BOLD}       ¡INSTALACIÓN DE PROXY UNIVERSAL COMPLETADA!         ${C_RESET} ${C_GREEN}│${C_RESET}"
 echo -e "${C_GREEN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
-echo -e "\n📌 Puedes abrir el panel administrativo escribiendo cualquiera de estas palabras:"
-echo -e "   - ${C_BOLD}${C_YELLOW}python${C_RESET}"
-echo -e "   - ${C_BOLD}${C_YELLOW}proxy${C_RESET}"
-echo -e "   - ${C_BOLD}${C_YELLOW}menu2${C_RESET}\n"
+echo -e "\n📌 Puedes abrir el panel administrativo escribiendo el comando:"
+echo -e "   - ${C_BOLD}${C_YELLOW}proxy${C_RESET}\n"
 
 read -p "$(echo -e "${C_BOLD}${C_CYAN}¿Deseas abrir el Panel Administrativo ahora? (S/n): ${C_RESET}")" RUN_NOW
 if [[ "$RUN_NOW" =~ ^[sS]$ ]] || [ -z "$RUN_NOW" ]; then
