@@ -1,3 +1,4 @@
+cat > /usr/local/bin/menu << 'EOF'
 #!/usr/bin/env bash
 
 set -o pipefail
@@ -207,13 +208,13 @@ except Exception: pass
     fi
 
     # 6. Rust
-    if systemctl is-active --quiet socks-proxy 2>/dev/null || systemctl is-active --quiet rust-proxy 2>/dev/null; then
+    if pgrep -f "socks-rust" >/dev/null || pgrep -f "rust-proxy" >/dev/null || pgrep -x "rust" >/dev/null || systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null; then
         local r_p=$(get_socks_config_port)
         [[ -n "$r_p" ]] && ACTIVE_ITEMS+=("🦀 Rust   : $(truncate_str "$r_p")") || ACTIVE_ITEMS+=("🦀 Rust   : ON")
     fi
 
     # 7. Python
-    if systemctl is-active --quiet python-proxy 2>/dev/null; then
+    if pgrep -f "proxy.py" >/dev/null || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && ! pgrep -f "socks-rust" >/dev/null && ! pgrep -f "rust-proxy" >/dev/null && ! pgrep -x "rust" >/dev/null); then
         local p_p=$(get_socks_config_port)
         [[ -n "$p_p" ]] && ACTIVE_ITEMS+=("🐍 Python : $(truncate_str "$p_p")") || ACTIVE_ITEMS+=("🐍 Python : ON")
     fi
@@ -318,7 +319,7 @@ download_and_execute() {
 }
 
 is_sshgo_installed() {
-    [[ -f /opt/vpn-proxy/vpn-proxy || -f /opt/sshgo/vpn-proxy || -f /usr/bin/vpn-proxy ]] || systemctl is-active --quiet vpn-proxy 2>/dev/null
+    [[ -f /usr/local/bin/sshgo || -f /opt/vpn-proxy/vpn-proxy || -f /opt/vpn-proxy/main.go ]] || systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null
 }
 
 is_caddy_installed() {
@@ -327,6 +328,296 @@ is_caddy_installed() {
 
 is_v2ray_installed() {
     command_exists v2ray || [[ -f /usr/local/etc/v2ray/config.json || -f /etc/v2ray/config.json ]]
+}
+
+is_python_installed() {
+    [[ -f /root/proxy.py ]] || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && pgrep -f "proxy.py" >/dev/null)
+}
+
+is_rust_installed() {
+    [[ -f /usr/local/bin/socks-rust || -f /usr/local/bin/rust-proxy || -f /usr/local/bin/rust || -f /etc/socks-rust/config.json ]] || systemctl is-active --quiet rust-proxy 2>/dev/null
+}
+
+create_python_panel_script() {
+cat > /usr/local/bin/proxy << 'PYPANEL'
+#!/bin/bash
+
+C_RESET='\033[0m'
+C_BOLD='\033[1m'
+C_RED='\033[1;31m'
+C_GREEN='\033[1;32m'
+C_YELLOW='\033[1;33m'
+C_BLUE='\033[1;34m'
+C_PURPLE='\033[1;35m'
+C_CYAN='\033[1;36m'
+C_WHITE='\033[1;37m'
+C_GRAY='\033[0;90m'
+
+BG_BLUE='\033[44m'
+BG_CYAN='\033[46m'
+BG_PURPLE='\033[45m'
+BG_RED='\033[41m'
+
+CONFIG_FILE="/root/socks_config.json"
+
+get_service_name() {
+    if systemctl is-active --quiet socks-proxy 2>/dev/null; then
+        echo "socks-proxy"
+    else
+        echo "python-proxy"
+    fi
+}
+
+get_ip() {
+    curl -s --connect-timeout 2 https://api.ipify.org || hostname -I | awk '{print $1}'
+}
+
+get_status() {
+    SRV=$(get_service_name)
+    if systemctl is-active --quiet "$SRV"; then
+        echo -e "${C_GREEN}${C_BOLD}● ACTIVO (Running)${C_RESET}"
+    else
+        echo -e "${C_RED}${C_BOLD}● DETENIDO (Stopped)${C_RESET}"
+    fi
+}
+
+get_ports() {
+    python3 -c "import json; cfg=json.load(open('$CONFIG_FILE')); print(', '.join(map(str, cfg.get('ports', []))))" 2>/dev/null || echo "8080"
+}
+
+get_ssh_port() {
+    python3 -c "import json; cfg=json.load(open('$CONFIG_FILE')); print(cfg.get('ssh_port', 22))" 2>/dev/null || echo "22"
+}
+
+get_http_code() {
+    python3 -c "import json; cfg=json.load(open('$CONFIG_FILE')); print(cfg.get('http_code', '101'))" 2>/dev/null || echo "101"
+}
+
+show_header() {
+    clear
+    echo -e "${C_CYAN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
+    echo -e "${C_CYAN}│${C_RESET} ${BG_BLUE}${C_WHITE}${C_BOLD}     🚀 PANEL DE CONTROL - SOCKS PROXY PYTHON 🚀     ${C_RESET} ${C_CYAN}│${C_RESET}"
+    echo -e "${C_CYAN}├─────────────────────────────────────────────────────────────┤${C_RESET}"
+    echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}🌐 IP Servidor   :${C_RESET} ${C_CYAN}${C_BOLD}$(get_ip)${C_RESET}"
+    echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}⚡ Estado        :${C_RESET} $(get_status)"
+    echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}🔌 Puertos Proxy :${C_RESET} ${C_YELLOW}${C_BOLD}$(get_ports)${C_RESET}"
+    echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}🔑 Puerto SSH    :${C_RESET} ${C_GREEN}${C_BOLD}$(get_ssh_port)${C_RESET}"
+    echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}📡 Respuesta HTTP:${C_RESET} ${C_PURPLE}${C_BOLD}HTTP $(get_http_code)${C_RESET}"
+    echo -e "${C_CYAN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
+}
+
+add_port() {
+    show_header
+    echo -e "\n${C_CYAN}┌─── [ ➕ AGREGAR PUERTO PROXY ]${C_RESET}"
+    read -p "$(echo -e "${C_CYAN}│${C_RESET} ${C_BOLD}${C_YELLOW}📌 Ingrese el nuevo puerto a escuchar: ${C_RESET}")" NEW_PORT
+    if [[ "$NEW_PORT" =~ ^[0-9]+$ ]] && [ "$NEW_PORT" -gt 0 ] && [ "$NEW_PORT" -le 65535 ]; then
+        python3 -c "
+import json
+try: cfg = json.load(open('$CONFIG_FILE'))
+except: cfg = {'ports': [8080], 'ssh_port': 22, 'http_code': '101'}
+ports = set(cfg.get('ports', []))
+ports.add($NEW_PORT)
+cfg['ports'] = sorted(list(ports))
+json.dump(cfg, open('$CONFIG_FILE', 'w'), indent=4)
+"
+        echo -e "${C_GREEN}│ ✅ Puerto $NEW_PORT agregado correctamente.${C_RESET}"
+        SRV=$(get_service_name)
+        systemctl restart "$SRV"
+        echo -e "${C_GREEN}│ ✅ Servicio reiniciado exitosamente.${C_RESET}"
+    else
+        echo -e "${C_RED}│ ❌ Error: Puerto inválido.${C_RESET}"
+    fi
+    echo -e "${C_CYAN}└───────────────────────────────────────${C_RESET}"
+    read -p "Presione ENTER para continuar..."
+}
+
+remove_port() {
+    show_header
+    echo -e "\n${C_RED}┌─── [ ➖ QUITAR PUERTO PROXY ]${C_RESET}"
+    echo -e "${C_RED}│${C_RESET} Puertos activos actuales: ${C_YELLOW}${C_BOLD}$(get_ports)${C_RESET}"
+    read -p "$(echo -e "${C_RED}│${C_RESET} ${C_BOLD}${C_YELLOW}📌 Ingrese el puerto a eliminar: ${C_RESET}")" DEL_PORT
+    if [[ "$DEL_PORT" =~ ^[0-9]+$ ]]; then
+        python3 -c "
+import json
+try: cfg = json.load(open('$CONFIG_FILE'))
+except: cfg = {'ports': [8080], 'ssh_port': 22, 'http_code': '101'}
+ports = cfg.get('ports', [])
+if $DEL_PORT in ports:
+    if len(ports) <= 1: print('ERROR_LAST')
+    else:
+        ports.remove($DEL_PORT)
+        cfg['ports'] = ports
+        json.dump(cfg, open('$CONFIG_FILE', 'w'), indent=4)
+        print('OK')
+else: print('NOT_FOUND')
+" > /tmp/proxy_res
+        RES=$(cat /tmp/proxy_res)
+        if [ "$RES" == "OK" ]; then
+            echo -e "${C_GREEN}│ ✅ Puerto $DEL_PORT eliminado correctamente.${C_RESET}"
+            SRV=$(get_service_name)
+            systemctl restart "$SRV"
+            echo -e "${C_GREEN}│ ✅ Servicio reiniciado exitosamente.${C_RESET}"
+        elif [ "$RES" == "ERROR_LAST" ]; then
+            echo -e "${C_RED}│ ❌ No se puede borrar. Debe mantener al menos 1 puerto proxy.${C_RESET}"
+        else
+            echo -e "${C_RED}│ ❌ El puerto $DEL_PORT no está en uso actualmente.${C_RESET}"
+        fi
+    else
+        echo -e "${C_RED}│ ❌ Error: Puerto inválido.${C_RESET}"
+    fi
+    echo -e "${C_RED}└───────────────────────────────────────${C_RESET}"
+    read -p "Presione ENTER para continuar..."
+}
+
+change_ssh_port() {
+    show_header
+    echo -e "\n${C_GREEN}┌─── [ 🔑 CAMBIAR PUERTO SSH DESTINO ]${C_RESET}"
+    read -p "$(echo -e "${C_GREEN}│${C_RESET} ${C_BOLD}${C_YELLOW}📌 Ingrese el nuevo puerto SSH local (ej: 22): ${C_RESET}")" SSH_P
+    if [[ "$SSH_P" =~ ^[0-9]+$ ]] && [ "$SSH_P" -gt 0 ] && [ "$SSH_P" -le 65535 ]; then
+        python3 -c "
+import json
+try: cfg = json.load(open('$CONFIG_FILE'))
+except: cfg = {'ports': [8080], 'ssh_port': 22, 'http_code': '101'}
+cfg['ssh_port'] = $SSH_P
+json.dump(cfg, open('$CONFIG_FILE', 'w'), indent=4)
+"
+        echo -e "${C_GREEN}│ ✅ Puerto SSH local cambiado a $SSH_P.${C_RESET}"
+        SRV=$(get_service_name)
+        systemctl restart "$SRV"
+        echo -e "${C_GREEN}│ ✅ Servicio reiniciado exitosamente.${C_RESET}"
+    else
+        echo -e "${C_RED}│ ❌ Error: Puerto SSH inválido.${C_RESET}"
+    fi
+    echo -e "${C_GREEN}└───────────────────────────────────────${C_RESET}"
+    read -p "Presione ENTER para continuar..."
+}
+
+change_http_code() {
+    show_header
+    echo -e "\n${C_PURPLE}┌─── [ 🌐 SELECCIONAR CÓDIGO RESPUESTA HTTP ]${C_RESET}"
+    echo -e "${C_PURPLE}│${C_RESET}  ${C_CYAN}[1]${C_RESET} ${C_BOLD}HTTP 101${C_RESET}  ➜ Switching Protocols (Recomendado WebSocket)"
+    echo -e "${C_PURPLE}│${C_RESET}  ${C_GREEN}[2]${C_RESET} ${C_BOLD}HTTP 200${C_RESET}  ➜ Connection Established (Estándar Directo)"
+    echo -e "${C_PURPLE}│${C_RESET}  ${C_YELLOW}[3]${C_RESET} ${C_BOLD}HTTP 200-WS${C_RESET}➜ 200 OK con Upgrade WebSocket"
+    echo -e "${C_PURPLE}│${C_RESET}  ${C_RED}[4]${C_RESET} ${C_BOLD}HTTP 302${C_RESET}  ➜ Found / Redirect"
+    echo -e "${C_PURPLE}│${C_RESET}"
+    read -p "$(echo -e "${C_PURPLE}└───❯${C_RESET} ${C_BOLD}${C_YELLOW}Seleccione una opción [1-4]: ${C_RESET}")" CODE_OPT
+    case $CODE_OPT in
+        1) HCODE="101" ;;
+        2) HCODE="200" ;;
+        3) HCODE="200-WS" ;;
+        4) HCODE="302" ;;
+        *) echo -e "${C_RED}❌ Opción inválida.${C_RESET}"; sleep 1; return ;;
+    esac
+
+    python3 -c "
+import json
+try: cfg = json.load(open('$CONFIG_FILE'))
+except: cfg = {'ports': [8080], 'ssh_port': 22, 'http_code': '101'}
+cfg['http_code'] = '$HCODE'
+json.dump(cfg, open('$CONFIG_FILE', 'w'), indent=4)
+"
+    echo -e "${C_GREEN}✅ Respuesta HTTP cambiada a $HCODE con éxito.${C_RESET}"
+    SRV=$(get_service_name)
+    systemctl restart "$SRV"
+    read -p "Presione ENTER para continuar..."
+}
+
+restart_service() {
+    echo -e "\n${C_YELLOW}🔄 Reiniciando servicio Proxy...${C_RESET}"
+    SRV=$(get_service_name)
+    systemctl restart "$SRV"
+    sleep 1.2
+    echo -e "${C_GREEN}✅ Servicio reiniciado correctamente.${C_RESET}"
+    sleep 1
+}
+
+toggle_service() {
+    SRV=$(get_service_name)
+    if systemctl is-active --quiet "$SRV"; then
+        systemctl stop "$SRV"
+        echo -e "\n${C_RED}⛔ Servicio proxy detenido.${C_RESET}"
+    else
+        systemctl start "$SRV"
+        echo -e "\n${C_GREEN}▶️ Servicio proxy iniciado.${C_RESET}"
+    fi
+    sleep 1.2
+}
+
+view_logs() {
+    clear
+    echo -e "${C_CYAN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
+    echo -e "${C_CYAN}│${C_RESET} ${BG_CYAN}${C_WHITE}${C_BOLD}       📋 MONITOR DE LOGS EN TIEMPO REAL (Ctrl+C salir)     ${C_RESET} ${C_CYAN}│${C_RESET}"
+    echo -e "${C_CYAN}└─────────────────────────────────────────────────────────────┘${C_RESET}\n"
+    SRV=$(get_service_name)
+    journalctl -u "$SRV" -f -n 50
+}
+
+uninstall_proxy() {
+    show_header
+    echo -e "\n${C_RED}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
+    echo -e "${C_RED}│${C_RESET} ${BG_RED}${C_WHITE}${C_BOLD}           ⚠️  DESINSTALACIÓN COMPLETA DEL PROXY  ⚠️          ${C_RESET} ${C_RED}│${C_RESET}"
+    echo -e "${C_RED}└─────────────────────────────────────────────────────────────┘${C_RESET}"
+    read -p "$(echo -e "\n${C_BOLD}${C_RED}❓ ¿Desea eliminar por completo el Proxy y sus configuraciones? (s/N): ${C_RESET}")" CONFIRM
+    if [[ "$CONFIRM" =~ ^[sS]$ ]]; then
+        echo -e "\n${C_YELLOW}🛑 Deteniendo y deshabilitando servicio systemd...${C_RESET}"
+        systemctl stop socks-proxy python-proxy > /dev/null 2>&1
+        systemctl disable socks-proxy python-proxy > /dev/null 2>&1
+        fuser -k -9 8080/tcp > /dev/null 2>&1
+        rm -f /etc/systemd/system/socks-proxy.service /etc/systemd/system/python-proxy.service
+        systemctl daemon-reload
+
+        echo -e "${C_YELLOW}🗑️ Borrando archivos e interfaz...${C_RESET}"
+        pkill -f "proxy.py" > /dev/null 2>&1
+        rm -f /root/proxy.py
+        rm -f /root/socks_config.json
+        rm -f /usr/local/bin/proxy
+
+        echo -e "\n${C_GREEN}✅ Desinstalación terminada correctamente. ¡Hasta pronto!${C_RESET}\n"
+        exit 0
+    else
+        echo -e "${C_YELLOW}Operación cancelada.${C_RESET}"
+        read -p "Presione ENTER para continuar..."
+    fi
+}
+
+main_menu() {
+    while true; do
+        show_header
+        echo -e "${C_PURPLE}${C_BOLD}┌─── [ 🛠️ CONFIGURACIÓN DE PUERTOS Y PROTOCOLO ]${C_RESET}"
+        echo -e "${C_PURPLE}│${C_RESET}  ${C_GREEN}[1]${C_RESET} ${C_BOLD}➕ Agregar Puerto Proxy${C_RESET}"
+        echo -e "${C_PURPLE}│${C_RESET}  ${C_RED}[2]${C_RESET} ${C_BOLD}➖ Quitar Puerto Proxy${C_RESET}"
+        echo -e "${C_PURPLE}│${C_RESET}  ${C_CYAN}[3]${C_RESET} ${C_BOLD}🔑 Cambiar Puerto SSH Destino${C_RESET}"
+        echo -e "${C_PURPLE}│${C_RESET}  ${C_YELLOW}[4]${C_RESET} ${C_BOLD}🌐 Cambiar Código HTTP Response${C_RESET}"
+        echo -e "${C_PURPLE}│${C_RESET}"
+        echo -e "${C_BLUE}${C_BOLD}├─── [ ⚡ CONTROL Y MANTENIMIENTO DEL SERVICIO ]${C_RESET}"
+        echo -e "${C_BLUE}│${C_RESET}  ${C_YELLOW}[5]${C_RESET} ${C_BOLD}🔄 Reiniciar Servicio Proxy${C_RESET}"
+        echo -e "${C_BLUE}│${C_RESET}  ${C_GREEN}[6]${C_RESET} ${C_BOLD}⏯️  Iniciar / Detener Servicio${C_RESET}"
+        echo -e "${C_BLUE}│${C_RESET}  ${C_CYAN}[7]${C_RESET} ${C_BOLD}📋 Ver Logs en Tiempo Real${C_RESET}"
+        echo -e "${C_BLUE}│${C_RESET}"
+        echo -e "${C_RED}${C_BOLD}└─── [ ❌ OTROS ]${C_RESET}"
+        echo -e "${C_RED}   [8]${C_RESET} ${C_BOLD}${C_RED}🗑️  Desinstalar Proxy Completamente${C_RESET}"
+        echo -e "${C_WHITE}   [0]${C_RESET} ${C_BOLD}🚪 Salir del Panel${C_RESET}"
+        
+        echo -e "\n${C_GRAY}─────────────────────────────────────────────────────────────${C_RESET}"
+        read -p "$(echo -e "${C_BOLD}${C_YELLOW} ❯ Seleccione una opción [0-8]: ${C_RESET}")" OPT
+        case $OPT in
+            1) add_port ;;
+            2) remove_port ;;
+            3) change_ssh_port ;;
+            4) change_http_code ;;
+            5) restart_service ;;
+            6) toggle_service ;;
+            7) view_logs ;;
+            8) uninstall_proxy ;;
+            0) clear; break ;;
+            *) echo -e "${C_RED}❌ Opción no válida.${C_RESET}"; sleep 1 ;;
+        esac
+    done
+}
+
+main_menu
+PYPANEL
+chmod +x /usr/local/bin/proxy
 }
 
 get_v2ray_cfg_path() {
@@ -616,7 +907,7 @@ remove_sshgo_port() {
     local ports=($(get_sshgo_ports))
     [[ ${#ports[@]} -eq 0 ]] && { warn "No hay puertos configurados"; pause_screen; return 1; }
 
-    echo "  Puertos activos:"
+    echo "  Puertos actuales:"
     local i=1
     for port in "${ports[@]}"; do printf "  %b[%d]%b Puerto %s\n" "$CYAN" "$i" "$RESET" "$port"; ((i++)); done
     echo ""
@@ -908,7 +1199,26 @@ caddy_admin_menu() {
 }
 
 caddy_menu() { is_caddy_installed || install_caddy_direct; caddy_admin_menu; }
-sshgo_menu() { is_sshgo_installed || install_sshgo_direct; sshgo_admin_menu; }
+
+sshgo_menu() {
+    chmod +x /usr/local/bin/sshgo /usr/bin/sshgo /opt/vpn-proxy/vpn-proxy 2>/dev/null
+    if [[ -f /usr/local/bin/sshgo ]]; then
+        /usr/local/bin/sshgo
+    elif [[ -f /usr/bin/sshgo ]]; then
+        /usr/bin/sshgo
+    elif [[ -f /opt/vpn-proxy/vpn-proxy ]]; then
+        /opt/vpn-proxy/vpn-proxy
+    else
+        panel_header "INSTALANDO SSH-GO" "🚀"
+        install_sshgo_direct
+        if [[ -f /usr/local/bin/sshgo ]]; then
+            /usr/local/bin/sshgo
+        else
+            sshgo_admin_menu
+        fi
+    fi
+}
+
 v2ray_menu() { is_v2ray_installed || install_v2ray_direct; v2ray_admin_menu; }
 
 firewall_menu() {
@@ -947,8 +1257,44 @@ udp_menu() {
     pause_screen
 }
 
-rust_menu() { panel_header "SOCKS PROXY RUST" "🦀"; download_and_execute "rust.sh"; pause_screen; }
-python_menu() { panel_header "SOCKS PROXY PYTHON" "🐍"; download_and_execute "Python.sh"; pause_screen; }
+rust_menu() {
+    chmod +x /usr/local/bin/socks-rust /usr/bin/socks-rust /usr/local/bin/rust-proxy /usr/local/bin/rust /usr/local/bin/menuRust 2>/dev/null
+    if [[ -f /usr/local/bin/rust ]]; then
+        /usr/local/bin/rust
+    elif [[ -f /usr/bin/rust ]]; then
+        /usr/bin/rust
+    elif [[ -f /usr/local/bin/socks-rust ]]; then
+        /usr/local/bin/socks-rust
+    elif [[ -f /usr/bin/socks-rust ]]; then
+        /usr/bin/socks-rust
+    elif [[ -f /usr/local/bin/rust-proxy ]]; then
+        /usr/local/bin/rust-proxy
+    elif [[ -f /usr/local/bin/menuRust ]]; then
+        /usr/local/bin/menuRust
+    else
+        panel_header "SOCKS PROXY RUST" "🦀"
+        download_and_execute "rust.sh"
+        pause_screen
+    fi
+}
+
+python_menu() {
+    if is_python_installed; then
+        if [[ ! -x /usr/local/bin/proxy ]]; then
+            create_python_panel_script
+        fi
+        chmod +x /usr/local/bin/proxy 2>/dev/null
+        /usr/local/bin/proxy
+    else
+        panel_header "SOCKS PROXY PYTHON" "🐍"
+        download_and_execute "Python.sh"
+        if is_python_installed; then
+            create_python_panel_script
+            chmod +x /usr/local/bin/proxy 2>/dev/null
+            /usr/local/bin/proxy
+        fi
+    fi
+}
 
 ssh_panel_menu() {
     local ssh_panel="/usr/local/bin/sshpanel.sh"
@@ -1029,3 +1375,4 @@ EOF
 chmod +x /usr/local/bin/menu
 cp /usr/local/bin/menu /usr/bin/menu 2>/dev/null
 chmod +x /usr/bin/menu 2>/dev/null
+/usr/local/bin/menu
