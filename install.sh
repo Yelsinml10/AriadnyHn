@@ -1,4 +1,3 @@
-cat << 'EOF' > /usr/local/bin/menu
 #!/usr/bin/env bash
 
 set -o pipefail
@@ -991,7 +990,7 @@ main_menu() {
         section_divider "GESTIÓN & MANTENIMIENTO"
         printf "  %b[ 9]%b 🛡️  Firewall           %b[10]%b 🔐 Configurar SSH\n" "$CYAN" "$RESET" "$CYAN" "$RESET"
         printf "  %b[11]%b 📊 Monitoreo Sistema   %b[12]%b 📋 Estado General\n" "$BLUE" "$RESET" "$BLUE" "$RESET"
-        printf "  %b[ 0]%b 🚪 Salir del Panel\n\n" "$RED" "$RESET"
+        printf "  %b[ 0]%b 🚪 Salir del Panel\n" "$RED" "$RESET"
 
         read -r -p "  ❯ Selecciona una opción [0-12]: " option
 
