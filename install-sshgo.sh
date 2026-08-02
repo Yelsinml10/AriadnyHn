@@ -402,7 +402,7 @@ systemctl restart vpn-proxy
 
 # Alias para bash
 echo "alias sshgo='/usr/local/bin/sshgo'" >> /root/.bashrc
-echo "alias menu='/usr/local/bin/sshgo'" >> /root/.bashrc
+echo "alias oso='/usr/local/bin/sshgo'" >> /root/.bashrc
 hash -r 2>/dev/null
 
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
