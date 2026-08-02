@@ -1,7 +1,7 @@
 #!/bin/bash
 # =========================================================
 #  SOCKS PROXY UNIVERSAL - 100% PURE RUST (COMANDO 'rust')
-#  VERSIÓN CORREGIDA - TRADUCCIÓN EXACTA 1:1 DE PYTHON
+#  VERSIÓN OPTIMIZADA Y CORREGIDA
 # =========================================================
 
 C_RESET='\033[0m'
@@ -38,18 +38,16 @@ read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE EL PUERTO PROXY A ABRIR [8080]: $
 LISTEN_PORT=${LISTEN_PORT:-8080}
 
 SSH_PORT=22
-HTTP_CODE="101"
-
 CONFIG_FILE="/root/socks_config.json"
+
 cat > "$CONFIG_FILE" << EOF
 {
     "ports": [$LISTEN_PORT],
-    "ssh_port": $SSH_PORT,
-    "http_code": "$HTTP_CODE"
+    "ssh_port": $SSH_PORT
 }
 EOF
 
-# 3. Código Fuente en Rust (Traducción 1:1 de Python)
+# 3. Código Fuente en Rust (Corregido para compilación)
 echo -e "\n${C_YELLOW}[3/4] Compilando binario nativo principal '/usr/local/bin/rust'...${C_RESET}"
 cat > /root/proxy.rs << 'EOF'
 use std::env;
@@ -57,7 +55,6 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::Command;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -65,14 +62,12 @@ use std::time::Duration;
 struct Config {
     ports: Vec<u16>,
     ssh_port: u16,
-    http_code: String,
 }
 
 impl Config {
     fn load() -> Self {
         let mut ports = vec![8080];
         let mut ssh_port = 22;
-        let mut http_code = String::from("101");
 
         if let Ok(mut file) = File::open("/root/socks_config.json") {
             let mut content = String::new();
@@ -104,54 +99,30 @@ impl Config {
                         }
                     }
                 }
-
-                if let Some(c_start) = content.find("\"http_code\"") {
-                    let sub = &content[c_start..];
-                    if let Some(colon) = sub.find(':') {
-                        let val_str = sub[colon + 1..].lines().next().unwrap_or("");
-                        if val_str.contains("101") {
-                            http_code = "101".to_string();
-                        } else if val_str.contains("200-WS") {
-                            http_code = "200-WS".to_string();
-                        } else if val_str.contains("200") {
-                            http_code = "200".to_string();
-                        } else if val_str.contains("302") {
-                            http_code = "302".to_string();
-                        }
-                    }
-                }
             }
         }
-        Config { ports, ssh_port, http_code }
+        Config { ports, ssh_port }
     }
 
     fn save(&self) -> io::Result<()> {
         let ports_str = format!("{:?}", self.ports);
         let json = format!(
-            "{{\n    \"ports\": {},\n    \"ssh_port\": {},\n    \"http_code\": \"{}\"\n}}",
-            ports_str, self.ssh_port, self.http_code
+            "{{\n    \"ports\": {},\n    \"ssh_port\": {}\n}}",
+            ports_str, self.ssh_port
         );
         let mut file = File::create("/root/socks_config.json")?;
         file.write_all(json.as_bytes())
     }
 }
 
-// --- PARSER DE CABECERAS EXACTO A PYTHON ---
 fn find_header(head: &str, header_name: &str) -> String {
-    let head_lower = head.to_lowercase();
-    let key = format!("{}:", header_name.to_lowercase());
-    if let Some(idx) = head_lower.find(&key) {
+    let key = format!("{}: ", header_name);
+    if let Some(idx) = head.find(&key) {
         let start = idx + key.len();
         let rest = &head[start..];
-        let end1 = rest.find("\r\n");
-        let end2 = rest.find('\n');
-        let end = match (end1, end2) {
-            (Some(e1), Some(e2)) => std::cmp::min(e1, e2),
-            (Some(e1), None) => e1,
-            (None, Some(e2)) => e2,
-            (None, None) => rest.len(),
-        };
-        return rest[..end].trim().to_string();
+        if let Some(end) = rest.find("\r\n") {
+            return rest[..end].trim().to_string();
+        }
     }
     String::new()
 }
@@ -192,7 +163,7 @@ fn tunnel(mut client: TcpStream, mut remote: TcpStream) {
     let _ = t2.join();
 }
 
-fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
+fn handle_client(mut client: TcpStream, ssh_port: u16) {
     let _ = client.set_read_timeout(Some(Duration::from_secs(15)));
 
     let mut buf = [0u8; 16384];
@@ -203,14 +174,8 @@ fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
 
     let client_buffer = String::from_utf8_lossy(&buf[..n]);
 
-    // 1. Extraer Host Destino idéntico a Python
-    let mut target_host_str = find_header(&client_buffer, "X-Real-Host");
-    if target_host_str.is_empty() {
-        target_host_str = find_header(&client_buffer, "X-Forwarded-For");
-    }
-    if target_host_str.is_empty() {
-        target_host_str = find_header(&client_buffer, "X-Online-Host");
-    }
+    let default_host = "127.0.0.1".to_string();
+    let target_host_str = find_header(&client_buffer, "X-Real-Host");
 
     let (target_host, target_port) = if !target_host_str.is_empty() {
         if let Some((h, p)) = target_host_str.split_once(':') {
@@ -220,10 +185,9 @@ fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
             (target_host_str.trim().to_string(), ssh_port)
         }
     } else {
-        ("127.0.0.1".to_string(), ssh_port)
+        (default_host.clone(), ssh_port)
     };
 
-    // 2. Conectar al destino con fallback idéntico a Python
     let remote = TcpStream::connect((target_host.as_str(), target_port))
         .or_else(|_| TcpStream::connect(("127.0.0.1", ssh_port)));
 
@@ -232,40 +196,28 @@ fn handle_client(mut client: TcpStream, ssh_port: u16, http_code: String) {
         Err(_) => return,
     };
 
-    // 3. Respuesta HTTP seleccionada (idéntica a Python)
-    let lower_buf = client_buffer.to_lowercase();
-    let resp = match http_code.as_str() {
-        "101" => b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec(),
-        "200" => b"HTTP/1.1 200 Connection Established\r\n\r\n".to_vec(),
-        "200-WS" => b"HTTP/1.1 200 OK\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec(),
-        "302" => b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1\r\n\r\n".to_vec(),
-        _ => {
-            if lower_buf.contains("websocket") || lower_buf.contains("upgrade") {
-                b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".to_vec()
-            } else {
-                b"HTTP/1.1 200 Connection Established\r\n\r\n".to_vec()
-            }
-        }
+    // Coerción explícita a slice de bytes (&[u8]) para evitar error E0308
+    let resp: &[u8] = if client_buffer.contains("Upgrade: websocket") {
+        b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
+    } else {
+        b"HTTP/1.1 200 Connection Established\r\n\r\n"
     };
 
-    if client.write_all(&resp).is_err() {
+    if client.write_all(resp).is_err() {
         return;
     }
 
-    // 4. Tunelizado bidireccional de sockets
     tunnel(client, remote_stream);
 }
 
 fn run_daemon() {
     let config = Config::load();
     let ssh_port = config.ssh_port;
-    let http_code = config.http_code;
 
     println!("⚡ Daemon Proxy Rust iniciado. Puertos: {:?}", config.ports);
 
     let mut handles = vec![];
     for &port in &config.ports {
-        let code_clone = http_code.clone();
         let handle = thread::spawn(move || {
             let listener = match TcpListener::bind(("0.0.0.0", port)) {
                 Ok(l) => l,
@@ -276,9 +228,8 @@ fn run_daemon() {
             };
             for stream in listener.incoming() {
                 if let Ok(client) = stream {
-                    let code_c = code_clone.clone();
                     thread::spawn(move || {
-                        handle_client(client, ssh_port, code_c);
+                        handle_client(client, ssh_port);
                     });
                 }
             }
@@ -332,7 +283,6 @@ fn show_header(cfg: &Config) {
     println!("\x1B[1;36m│\x1B[0m  \x1B[1;37m⚡ Estado        :\x1B[0m {}", status_str);
     println!("\x1B[1;36m│\x1B[0m  \x1B[1;37m🔌 Puertos Proxy :\x1B[0m \x1B[1;33m{:?}\x1B[0m", cfg.ports);
     println!("\x1B[1;36m│\x1B[0m  \x1B[1;37m🔑 Puerto SSH    :\x1B[0m \x1B[1;32m{}\x1B[0m", cfg.ssh_port);
-    println!("\x1B[1;36m│\x1B[0m  \x1B[1;37m📡 Respuesta HTTP:\x1B[0m \x1B[1;35mHTTP {}\x1B[0m", cfg.http_code);
     println!("\x1B[1;36m└─────────────────────────────────────────────────────────────┘\x1B[0m");
 }
 
@@ -348,23 +298,22 @@ fn run_panel() {
         let mut cfg = Config::load();
         show_header(&cfg);
 
-        println!("\x1B[1;35m┌─── [ 🛠️ CONFIGURACIÓN DE PUERTOS Y PROTOCOLO ]\x1B[0m");
+        println!("\x1B[1;35m┌─── [ 🛠️ CONFIGURACIÓN DE PUERTOS ]\x1B[0m");
         println!("\x1B[1;35m│\x1B[0m  \x1B[1;32m[1]\x1B[0m \x1B[1m➕ Agregar Puerto Proxy\x1B[0m");
         println!("\x1B[1;35m│\x1B[0m  \x1B[1;31m[2]\x1B[0m \x1B[1m➖ Quitar Puerto Proxy\x1B[0m");
         println!("\x1B[1;35m│\x1B[0m  \x1B[1;36m[3]\x1B[0m \x1B[1m🔑 Cambiar Puerto SSH Destino\x1B[0m");
-        println!("\x1B[1;35m│\x1B[0m  \x1B[1;33m[4]\x1B[0m \x1B[1m🌐 Cambiar Código HTTP Response\x1B[0m");
         println!("\x1B[1;35m│\x1B[0m");
         println!("\x1B[1;34m├─── [ ⚡ CONTROL Y MANTENIMIENTO DEL SERVICIO ]\x1B[0m");
-        println!("\x1B[1;34m│\x1B[0m  \x1B[1;33m[5]\x1B[0m \x1B[1m🔄 Reiniciar Servicio Proxy\x1B[0m");
-        println!("\x1B[1;34m│\x1B[0m  \x1B[1;32m[6]\x1B[0m \x1B[1m⏯️  Iniciar / Detener Servicio\x1B[0m");
-        println!("\x1B[1;34m│\x1B[0m  \x1B[1;36m[7]\x1B[0m \x1B[1m📋 Ver Logs en Tiempo Real\x1B[0m");
+        println!("\x1B[1;34m│\x1B[0m  \x1B[1;33m[4]\x1B[0m \x1B[1m🔄 Reiniciar Servicio Proxy\x1B[0m");
+        println!("\x1B[1;34m│\x1B[0m  \x1B[1;32m[5]\x1B[0m \x1B[1m⏯️  Iniciar / Detener Servicio\x1B[0m");
+        println!("\x1B[1;34m│\x1B[0m  \x1B[1;36m[6]\x1B[0m \x1B[1m📋 Ver Logs en Tiempo Real\x1B[0m");
         println!("\x1B[1;34m│\x1B[0m");
         println!("\x1B[1;31m└─── [ ❌ OTROS ]\x1B[0m");
-        println!("   \x1B[1;31m[8]\x1B[0m \x1B[1;31m🗑️  Desinstalar Proxy Completamente\x1B[0m");
+        println!("   \x1B[1;31m[7]\x1B[0m \x1B[1;31m🗑️  Desinstalar Proxy Completamente\x1B[0m");
         println!("   \x1B[1;37m[0]\x1B[0m \x1B[1m🚪 Salir del Panel\x1B[0m");
         println!("\n\x1B[0;90m─────────────────────────────────────────────────────────────\x1B[0m");
 
-        print!("\x1B[1;33m ❯ Seleccione una opción [0-8]: \x1B[0m");
+        print!("\x1B[1;33m ❯ Seleccione una opción [0-7]: \x1B[0m");
         let _ = io::stdout().flush();
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_err() { break; }
@@ -424,33 +373,8 @@ fn run_panel() {
                 } else { println!("\x1B[1;31m❌ Puerto inválido.\x1B[0m"); }
                 pause();
             }
-            "4" => {
-                show_header(&cfg);
-                println!("\n\x1B[1;35m[1] HTTP 101 (Switching Protocols - WebSocket)\x1B[0m");
-                println!("\x1B[1;32m[2] HTTP 200 (Connection Established - Standard)\x1B[0m");
-                println!("\x1B[1;33m[3] HTTP 200-WS (200 OK + Upgrade WebSocket)\x1B[0m");
-                println!("\x1B[1;31m[4] HTTP 302 (Found / Redirect)\x1B[0m");
-                print!("\n\x1B[1;33m❯ Seleccione una opción [1-4]: \x1B[0m");
-                let _ = io::stdout().flush();
-                let mut c_in = String::new();
-                let _ = io::stdin().read_line(&mut c_in);
-                let code = match c_in.trim() {
-                    "1" => "101",
-                    "2" => "200",
-                    "3" => "200-WS",
-                    "4" => "302",
-                    _ => "",
-                };
-                if !code.is_empty() {
-                    cfg.http_code = code.to_string();
-                    let _ = cfg.save();
-                    println!("\x1B[1;32m✅ Respuesta HTTP cambiada a {}.\x1B[0m", code);
-                    restart_service();
-                } else { println!("\x1B[1;31m❌ Opción inválida.\x1B[0m"); }
-                pause();
-            }
-            "5" => { restart_service(); thread::sleep(Duration::from_millis(500)); }
-            "6" => {
+            "4" => { restart_service(); thread::sleep(Duration::from_millis(500)); }
+            "5" => {
                 if is_active() {
                     let _ = Command::new("systemctl").args(&["stop", "socks-proxy"]).status();
                     println!("\n\x1B[1;31m⛔ Servicio detenido.\x1B[0m");
@@ -460,14 +384,14 @@ fn run_panel() {
                 }
                 thread::sleep(Duration::from_millis(1000));
             }
-            "7" => {
+            "6" => {
                 print!("\x1B[2J\x1B[1;1H");
                 println!("\x1B[1;36m📋 MONITOR DE LOGS (Presione Ctrl+C para salir)\x1B[0m\n");
                 let _ = Command::new("journalctl")
                     .args(&["-u", "socks-proxy", "-f", "-n", "50"])
                     .status();
             }
-            "8" => {
+            "7" => {
                 show_header(&cfg);
                 print!("\n\x1B[1;31m❓ ¿Desea eliminar por completo el Proxy? (s/N): \x1B[0m");
                 let _ = io::stdout().flush();
