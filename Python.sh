@@ -1,6 +1,6 @@
 #!/bin/bash
 # =========================================================
-#  SOCKS PROXY UNIVERSAL + PANEL PREMIUM (ACCESO CON 'proxy')
+#  SOCKS PROXY UNIVERSAL + PANEL PREMIUM (PYTHON ENGINE)
 # =========================================================
 
 # Definición de Colores ANSI
@@ -47,23 +47,21 @@ echo -e "\n${C_RED}======================================================${C_RES
 echo -e "${C_RED}${C_BOLD}   SOCKS DIRECTO-PY  |  CUSTOM${C_RESET}"
 echo -e "${C_RED}======================================================${C_RESET}\n"
 
-read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE SU PUERTO: ${C_RESET}")" LISTEN_PORT
+read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE SU PUERTO [8080]: ${C_RESET}")" LISTEN_PORT
 LISTEN_PORT=${LISTEN_PORT:-8080}
 
 SSH_PORT=22
-HTTP_CODE="101"
-
 CONFIG_FILE="/root/socks_config.json"
+
 cat > "$CONFIG_FILE" << EOF
 {
     "ports": [$LISTEN_PORT],
-    "ssh_port": $SSH_PORT,
-    "http_code": "$HTTP_CODE"
+    "ssh_port": $SSH_PORT
 }
 EOF
 
-# 3. Backend de Python (Traducción Exacta 1:1 de SSH-Go)
-echo -e "\n${C_YELLOW}[3/5] Instalando Engine de Proxy en Python (SSH-Go Logic)...${C_RESET}"
+# 3. Backend de Python (Nuevo Engine Optimizado 1:1 con Go)
+echo -e "\n${C_YELLOW}[3/5] Instalando Engine de Proxy en Python (Nueva Lógica 1:1)...${C_RESET}"
 cat > /root/proxy.py << 'EOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -79,7 +77,6 @@ import signal
 
 CONFIG_FILE = "/root/socks_config.json"
 BUFLEN = 4096 * 4
-DEFAULT_HOST = ("127.0.0.1", 22)
 
 def log(msg):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
@@ -91,7 +88,7 @@ def load_config():
                 return json.load(f)
         except Exception as e:
             log(f"Error cargando config: {e}")
-    return {"ports": [8080], "ssh_port": 22, "http_code": "101"}
+    return {"ports": [8080], "ssh_port": 22}
 
 def find_header(head, header_name):
     key = header_name + ": "
@@ -122,20 +119,25 @@ class ConnectionHandler(threading.Thread):
 
             client_buffer = buf.decode('utf-8', errors='ignore')
 
-            # 1. Parsear X-Real-Host igual que en SSH-Go
+            # 1. Extraer X-Real-Host o fallback a SSH Local
+            default_host = "127.0.0.1"
+            default_port = self.ssh_port
+
             target_host_str = find_header(client_buffer, "X-Real-Host")
             if target_host_str:
                 if ":" in target_host_str:
-                    h, p = target_host_str.split(":", 1)
-                    target_host = h
-                    try: target_port = int(p)
-                    except: target_port = self.ssh_port
+                    parts = target_host_str.split(":", 1)
+                    target_host = parts[0]
+                    try:
+                        target_port = int(parts[1])
+                    except ValueError:
+                        target_port = default_port
                 else:
                     target_host = target_host_str
-                    target_port = self.ssh_port
+                    target_port = default_port
             else:
-                target_host = "127.0.0.1"
-                target_port = self.ssh_port
+                target_host = default_host
+                target_port = default_port
 
             # 2. Conectar al host destino
             remote_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -147,7 +149,7 @@ class ConnectionHandler(threading.Thread):
                 connected = True
             except Exception:
                 try:
-                    remote_sock.connect(('127.0.0.1', self.ssh_port))
+                    remote_sock.connect((default_host, default_port))
                     connected = True
                 except Exception:
                     pass
@@ -159,7 +161,7 @@ class ConnectionHandler(threading.Thread):
             remote_sock.settimeout(None)
             self.client.settimeout(None)
 
-            # 3. Respuesta HTTP exactamente igual a SSH-Go
+            # 3. Lógica inteligente de respuesta HTTP (WebSocket -> 101, Otro -> 200)
             if "Upgrade: websocket" in client_buffer:
                 resp = b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
             else:
@@ -173,8 +175,10 @@ class ConnectionHandler(threading.Thread):
         except Exception:
             pass
         finally:
-            try: self.client.close()
-            except Exception: pass
+            try:
+                self.client.close()
+            except Exception:
+                pass
 
     def tunnel(self, client, remote):
         sockets = [client, remote]
@@ -228,8 +232,10 @@ class ProxyServer(threading.Thread):
     def stop(self):
         self.running = False
         if self.sock:
-            try: self.sock.close()
-            except Exception: pass
+            try:
+                self.sock.close()
+            except Exception:
+                pass
 
 servers = []
 
@@ -239,7 +245,7 @@ def main():
     ports = cfg.get("ports", [8080])
     ssh_port = cfg.get("ssh_port", 22)
 
-    log("Iniciando Proxy Engine SSH-Go Python...")
+    log("Iniciando Proxy Engine Python...")
     for port in ports:
         server = ProxyServer(port, ssh_port)
         server.start()
@@ -331,10 +337,6 @@ get_ssh_port() {
     python3 -c "import json; cfg=json.load(open('$CONFIG_FILE')); print(cfg.get('ssh_port', 22))" 2>/dev/null
 }
 
-get_http_code() {
-    python3 -c "import json; cfg=json.load(open('$CONFIG_FILE')); print(cfg.get('http_code', '101'))" 2>/dev/null
-}
-
 show_header() {
     clear
     echo -e "${C_CYAN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
@@ -344,7 +346,6 @@ show_header() {
     echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}⚡ Estado        :${C_RESET} $(get_status)"
     echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}🔌 Puertos Proxy :${C_RESET} ${C_YELLOW}${C_BOLD}$(get_ports)${C_RESET}"
     echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}🔑 Puerto SSH    :${C_RESET} ${C_GREEN}${C_BOLD}$(get_ssh_port)${C_RESET}"
-    echo -e "${C_CYAN}│${C_RESET}  ${C_BOLD}${C_WHITE}📡 Respuesta HTTP:${C_RESET} ${C_PURPLE}${C_BOLD}HTTP $(get_http_code)${C_RESET}"
     echo -e "${C_CYAN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
 }
 
@@ -430,34 +431,6 @@ json.dump(cfg, open('$CONFIG_FILE', 'w'), indent=4)
     read -p "Presione ENTER para continuar..."
 }
 
-change_http_code() {
-    show_header
-    echo -e "\n${C_PURPLE}┌─── [ 🌐 SELECCIONAR CÓDIGO RESPUESTA HTTP ]${C_RESET}"
-    echo -e "${C_PURPLE}│${C_RESET}  ${C_CYAN}[1]${C_RESET} ${C_BOLD}HTTP 101${C_RESET}  ➜ Switching Protocols (Recomendado WebSocket)"
-    echo -e "${C_PURPLE}│${C_RESET}  ${C_GREEN}[2]${C_RESET} ${C_BOLD}HTTP 200${C_RESET}  ➜ Connection Established (Estándar Directo)"
-    echo -e "${C_PURPLE}│${C_RESET}  ${C_YELLOW}[3]${C_RESET} ${C_BOLD}HTTP 200-WS${C_RESET}➜ 200 OK con Upgrade WebSocket"
-    echo -e "${C_PURPLE}│${C_RESET}  ${C_RED}[4]${C_RESET} ${C_BOLD}HTTP 302${C_RESET}  ➜ Found / Redirect"
-    echo -e "${C_PURPLE}│${C_RESET}"
-    read -p "$(echo -e "${C_PURPLE}└───❯${C_RESET} ${C_BOLD}${C_YELLOW}Seleccione una opción [1-4]: ${C_RESET}")" CODE_OPT
-    case $CODE_OPT in
-        1) HCODE="101" ;;
-        2) HCODE="200" ;;
-        3) HCODE="200-WS" ;;
-        4) HCODE="302" ;;
-        *) echo -e "${C_RED}❌ Opción inválida.${C_RESET}"; sleep 1; return ;;
-    esac
-
-    python3 -c "
-import json
-cfg = json.load(open('$CONFIG_FILE'))
-cfg['http_code'] = '$HCODE'
-json.dump(cfg, open('$CONFIG_FILE', 'w'), indent=4)
-"
-    echo -e "${C_GREEN}✅ Respuesta HTTP cambiada a $HCODE con éxito.${C_RESET}"
-    systemctl restart socks-proxy
-    read -p "Presione ENTER para continuar..."
-}
-
 restart_service() {
     echo -e "\n${C_YELLOW}🔄 Reiniciando servicio Proxy...${C_RESET}"
     systemctl restart socks-proxy
@@ -514,32 +487,30 @@ uninstall_proxy() {
 main_menu() {
     while true; do
         show_header
-        echo -e "${C_PURPLE}${C_BOLD}┌─── [ 🛠️ CONFIGURACIÓN DE PUERTOS Y PROTOCOLO ]${C_RESET}"
+        echo -e "${C_PURPLE}${C_BOLD}┌─── [ 🛠️ CONFIGURACIÓN DE PUERTOS ]${C_RESET}"
         echo -e "${C_PURPLE}│${C_RESET}  ${C_GREEN}[1]${C_RESET} ${C_BOLD}➕ Agregar Puerto Proxy${C_RESET}"
         echo -e "${C_PURPLE}│${C_RESET}  ${C_RED}[2]${C_RESET} ${C_BOLD}➖ Quitar Puerto Proxy${C_RESET}"
         echo -e "${C_PURPLE}│${C_RESET}  ${C_CYAN}[3]${C_RESET} ${C_BOLD}🔑 Cambiar Puerto SSH Destino${C_RESET}"
-        echo -e "${C_PURPLE}│${C_RESET}  ${C_YELLOW}[4]${C_RESET} ${C_BOLD}🌐 Cambiar Código HTTP Response${C_RESET}"
         echo -e "${C_PURPLE}│${C_RESET}"
         echo -e "${C_BLUE}${C_BOLD}├─── [ ⚡ CONTROL Y MANTENIMIENTO DEL SERVICIO ]${C_RESET}"
-        echo -e "${C_BLUE}│${C_RESET}  ${C_YELLOW}[5]${C_RESET} ${C_BOLD}🔄 Reiniciar Servicio Proxy${C_RESET}"
-        echo -e "${C_BLUE}│${C_RESET}  ${C_GREEN}[6]${C_RESET} ${C_BOLD}⏯️  Iniciar / Detener Servicio${C_RESET}"
-        echo -e "${C_BLUE}│${C_RESET}  ${C_CYAN}[7]${C_RESET} ${C_BOLD}📋 Ver Logs en Tiempo Real${C_RESET}"
+        echo -e "${C_BLUE}│${C_RESET}  ${C_YELLOW}[4]${C_RESET} ${C_BOLD}🔄 Reiniciar Servicio Proxy${C_RESET}"
+        echo -e "${C_BLUE}│${C_RESET}  ${C_GREEN}[5]${C_RESET} ${C_BOLD}⏯️  Iniciar / Detener Servicio${C_RESET}"
+        echo -e "${C_BLUE}│${C_RESET}  ${C_CYAN}[6]${C_RESET} ${C_BOLD}📋 Ver Logs en Tiempo Real${C_RESET}"
         echo -e "${C_BLUE}│${C_RESET}"
         echo -e "${C_RED}${C_BOLD}└─── [ ❌ OTROS ]${C_RESET}"
-        echo -e "${C_RED}   [8]${C_RESET} ${C_BOLD}${C_RED}🗑️  Desinstalar Proxy Completamente${C_RESET}"
+        echo -e "${C_RED}   [7]${C_RESET} ${C_BOLD}${C_RED}🗑️  Desinstalar Proxy Completamente${C_RESET}"
         echo -e "${C_WHITE}   [0]${C_RESET} ${C_BOLD}🚪 Salir del Panel${C_RESET}"
         
         echo -e "\n${C_GRAY}─────────────────────────────────────────────────────────────${C_RESET}"
-        read -p "$(echo -e "${C_BOLD}${C_YELLOW} ❯ Seleccione una opción [0-8]: ${C_RESET}")" OPT
+        read -p "$(echo -e "${C_BOLD}${C_YELLOW} ❯ Seleccione una opción [0-7]: ${C_RESET}")" OPT
         case $OPT in
             1) add_port ;;
             2) remove_port ;;
             3) change_ssh_port ;;
-            4) change_http_code ;;
-            5) restart_service ;;
-            6) toggle_service ;;
-            7) view_logs ;;
-            8) uninstall_proxy ;;
+            4) restart_service ;;
+            5) toggle_service ;;
+            6) view_logs ;;
+            7) uninstall_proxy ;;
             0) clear; echo -e "\n${C_GREEN}👋 ¡Hasta pronto!${C_RESET}\n"; exit 0 ;;
             *) echo -e "${C_RED}❌ Opción no válida.${C_RESET}"; sleep 1 ;;
         esac
@@ -552,7 +523,7 @@ EOF
 chmod +x /usr/local/bin/proxy
 
 # 6. Alias exclusivo para el comando 'proxy'
-echo "alias proxy='/usr/local/bin/proxy'" >> /root/.bashrc
+grep -q "alias proxy=" /root/.bashrc || echo "alias proxy='/usr/local/bin/proxy'" >> /root/.bashrc
 hash -r 2>/dev/null
 
 echo -e "\n${C_GREEN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
