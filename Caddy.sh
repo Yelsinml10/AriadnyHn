@@ -1,13 +1,11 @@
 #!/bin/bash
-# Instalador Caddy Proxy + Panel Pro (Edición Especial Colorida y Profesional)
-# Dominio por defecto: arm1.freenethn.org
+# Instalador Caddy Proxy + Panel Pro (Con opciones de agregar puertos)
 
 CONF_FILE="/usr/local/etc/caddy_panel.conf"
 CADDY_CONF="/etc/caddy/Caddyfile"
 V2RAY_PORT=9090
 OTHER_PORT=8888
 
-# Códigos de Color ANSI
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -35,7 +33,7 @@ echo -e "${CYAN}${BOLD}└──────────────────
 echo ""
 
 echo -e "${PURPLE}${BOLD}[ CONFIGURACIÓN INICIAL ]${NC}"
-echo -e "${WHITE}Ingresa los datos requeridos (Presiona ${YELLOW}ENTER${WHITE} para usar los predeterminados):${NC}\n"
+echo -e "${WHITE}Ingresa los datos requeridos (Presiona ${YELLOW}ENTER${WHITE} para predeterminado):${NC}\n"
 
 echo -ne " ${CYAN}❯ Dominio${NC} [${YELLOW}arm1.freenethn.org${NC}]: "
 read INPUT_DOM
@@ -307,14 +305,16 @@ header(){
 while true; do
     header
     echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Cambiar Dominio${NC}"
-    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Cambiar Puertos HTTP${NC}"
-    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}Cambiar Puertos HTTPS${NC}"
-    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Ver Estado Detallado de Caddy${NC}"
-    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}Reiniciar Caddy${NC}"
-    echo -e " ${WHITE}${BOLD}[ 6 ]${NC} ${RED}Desinstalar Caddy Completamente${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTP${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${GREEN}Agregar un Puerto HTTP Nuevo${NC}"
+    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTPS${NC}"
+    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}Agregar un Puerto HTTPS Nuevo${NC}"
+    echo -e " ${WHITE}${BOLD}[ 6 ]${NC} ${CYAN}Ver Estado Detallado de Caddy${NC}"
+    echo -e " ${WHITE}${BOLD}[ 7 ]${NC} ${GREEN}Reiniciar Caddy${NC}"
+    echo -e " ${WHITE}${BOLD}[ 8 ]${NC} ${RED}Desinstalar Caddy Completamente${NC}"
     echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Salir${NC}"
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
-    read -p " Selecciona una opción [0-6]: " op
+    read -p " Selecciona una opción [0-8]: " op
 
     case $op in
         1)
@@ -326,30 +326,45 @@ while true; do
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Dominio actualizado correctamente a: $DOMAIN${NC}"
-                echo -e "${GREEN}✔ Caddy ha solicitado el certificado SSL para el nuevo dominio.${NC}"
+                echo -e "\n${GREEN}✔ Dominio actualizado a: $DOMAIN${NC}"
             else
                 echo -e "\n${RED}✘ Dominio inválido.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
         2)
-            echo -e "\n${YELLOW}${BOLD}=== CAMBIAR PUERTOS HTTP ===${NC}"
+            echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTP ===${NC}"
             echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
-            read -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080, 8888): " new_http
+            read -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080): " new_http
             if [ -n "$new_http" ]; then
                 HTTP_PORTS="$new_http"
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puertos HTTP actualizados a: $HTTP_PORTS${NC}"
+                echo -e "\n${GREEN}✔ Puertos HTTP reemplazados por: $HTTP_PORTS${NC}"
             else
                 echo -e "\n${RED}✘ Entrada inválida.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
         3)
-            echo -e "\n${YELLOW}${BOLD}=== CAMBIAR PUERTOS HTTPS ===${NC}"
+            echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTP NUEVO ===${NC}"
+            echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
+            read -p "Ingrese el puerto HTTP a agregar (ej: 8888): " add_http
+            add_http=$(echo "$add_http" | tr -d ' ')
+            if [ -n "$add_http" ]; then
+                HTTP_PORTS="${HTTP_PORTS}, ${add_http}"
+                save_conf
+                generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
+                systemctl restart caddy
+                echo -e "\n${GREEN}✔ Puerto HTTP $add_http agregado. Nuevos puertos: $HTTP_PORTS${NC}"
+            else
+                echo -e "\n${RED}✘ Entrada inválida.${NC}"
+            fi
+            read -p "Presione ENTER para continuar..."
+            ;;
+        4)
+            echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTPS ===${NC}"
             echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
             read -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https
             if [ -n "$new_https" ]; then
@@ -357,24 +372,40 @@ while true; do
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puertos HTTPS actualizados a: $HTTPS_PORTS${NC}"
+                echo -e "\n${GREEN}✔ Puertos HTTPS reemplazados por: $HTTPS_PORTS${NC}"
             else
                 echo -e "\n${RED}✘ Entrada inválida.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
-        4)
+        5)
+            echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTPS NUEVO ===${NC}"
+            echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
+            read -p "Ingrese el puerto HTTPS a agregar (ej: 2083): " add_https
+            add_https=$(echo "$add_https" | tr -d ' ')
+            if [ -n "$add_https" ]; then
+                HTTPS_PORTS="${HTTPS_PORTS}, ${add_https}"
+                save_conf
+                generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
+                systemctl restart caddy
+                echo -e "\n${GREEN}✔ Puerto HTTPS $add_https agregado. Nuevos puertos: $HTTPS_PORTS${NC}"
+            else
+                echo -e "\n${RED}✘ Entrada inválida.${NC}"
+            fi
+            read -p "Presione ENTER para continuar..."
+            ;;
+        6)
             echo -e "\n${YELLOW}${BOLD}=== ESTADO DETALLADO DEL SERVICIO ===${NC}"
             systemctl status caddy --no-pager -n 12
             read -p "Presione ENTER para continuar..."
             ;;
-        5)
+        7)
             echo -e "\n${YELLOW}Reiniciando Caddy...${NC}"
             systemctl restart caddy
             echo -e "${GREEN}✔ Caddy reiniciado correctamente.${NC}"
             sleep 2
             ;;
-        6)
+        8)
             echo -e "\n${RED}${BOLD}=== DESINSTALAR CADDY COMPLETAMENTE ===${NC}"
             read -p "¿Está SEGURO de eliminar Caddy y el Panel? (s/n): " confirm
             if [[ "$confirm" == "s" || "$confirm" == "S" ]]; then
@@ -407,7 +438,6 @@ PANEL
 chmod +x /usr/local/bin/panel
 echo -e "${GREEN}✔ Panel 'panel' creado e instalado en /usr/local/bin/panel.${NC}"
 
-# Activar e iniciar Caddy
 systemctl enable caddy >/dev/null 2>&1
 systemctl restart caddy >/dev/null 2>&1
 
