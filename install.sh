@@ -39,7 +39,6 @@ echo -e " • ${CYAN}RAM:${NC}      ${RAM_USED} MB / ${RAM_TOTAL} MB"
 echo -e " • ${CYAN}Disco:${NC}    ${DISK_USED} / ${DISK_TOTAL}"
 echo -e "${CYAN}${BOLD}────────────────────────────────────────${NC}"
 echo -e " ${YELLOW}➔ Escribe '${GREEN}menu${YELLOW}' para abrir el panel.${NC}"
-echo -e " ${YELLOW}➔ Comandos: '${GREEN}cadmin${YELLOW}' | '${GREEN}xray${YELLOW}'${NC}"
 echo -e "${CYAN}${BOLD}└──────────────────────────────────────┘${NC}"
 echo ""
 MOTD_EOF
