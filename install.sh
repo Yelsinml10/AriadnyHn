@@ -702,7 +702,7 @@ is_python_installed() {
 }
 
 # =======================================================
-# LÓGICA INTEGLIGENTE DE EJECUCIÓN O PANEL PRO
+# LÓGICA INTEGLIGENTE DE EJECUCIÓN DESDE GITHUB / LOCAL
 # =======================================================
 
 caddy_menu() {
@@ -752,12 +752,8 @@ sshgo_menu() {
 }
 
 firewall_menu() {
-    local firewall="/usr/local/bin/firewall.sh"
-    panel_header "FIREWALL" "🛡️"
-    if [[ ! -x "$firewall" ]]; then
-        warn "Firewall no instalado."
-        download_to_path "firewall.sh" "$firewall" && "$firewall"
-    else info "Firewall ya instalado."; "$firewall"; fi
+    panel_header "FIREWALL (GITHUB)" "🛡️"
+    download_and_execute "firewall.sh"
     pause_screen
 }
 
