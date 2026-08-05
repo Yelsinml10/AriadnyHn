@@ -1,6 +1,19 @@
 #!/bin/bash
 
 # ==========================================
+# PALETA DE COLORES ANSI Y ESTILOS
+# ==========================================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# ==========================================
 # CREACIÓN AUTOMÁTICA DEL COMANDO 'menuUDP'
 # ==========================================
 setup_shortcut() {
@@ -8,7 +21,6 @@ setup_shortcut() {
     local L1="/usr/local/bin/menuUdp"
     local L2="/usr/local/bin/menuUDP"
     local L3="/usr/bin/menuUdp"
-    # Tu enlace RAW de GitHub (usado como respaldo si se instala vía curl/wget | bash)
     local RAW_URL="https://raw.githubusercontent.com/Yelsinml10/Udp/main/install.sh"
 
     local SRC="${BASH_SOURCE[0]:-$0}"
@@ -16,58 +28,37 @@ setup_shortcut() {
         SRC=$(readlink -f "$SRC" 2>/dev/null || echo "$SRC")
     fi
 
-    # Si ya se está ejecutando desde el comando final, omitir para evitar bucles o errores
     if [[ "$SRC" == "$TARGET" ]] || [[ "$SRC" == "$L1" ]] || [[ "$SRC" == "$L2" ]] || [[ "$SRC" == "$L3" ]]; then
         return 0
     fi
 
-    # Remover destino previo para evitar error "Text file busy"
     rm -f "$TARGET" 2>/dev/null
 
-    # Si se ejecuta desde un pipe (curl | bash) o la memoria, descargar directamente de GitHub
     case "$SRC" in
         */bash|*/sh|*/dash|/dev/fd/*|/dev/stdin|"")
             curl -sSL "$RAW_URL" -o "$TARGET" 2>/dev/null || wget -qO "$TARGET" "$RAW_URL" 2>/dev/null
             ;;
         *)
             if [ -f "$SRC" ]; then
-                # Si es un archivo local (ej. ./install.sh), simplemente lo copiamos
                 cp "$SRC" "$TARGET" 2>/dev/null
             else
-                # Respaldo por si falla la lectura local
                 curl -sSL "$RAW_URL" -o "$TARGET" 2>/dev/null || wget -qO "$TARGET" "$RAW_URL" 2>/dev/null
             fi
             ;;
     esac
 
-    # Dar permisos y crear enlaces simbólicos globales
     if [ -f "$TARGET" ]; then
         chmod +x "$TARGET" 2>/dev/null
         ln -sf "$TARGET" "$L1" 2>/dev/null
         ln -sf "$TARGET" "$L2" 2>/dev/null
         ln -sf "$TARGET" "$L3" 2>/dev/null
-        
-        # Refrescar la caché de comandos de Bash
         hash -r 2>/dev/null
     fi
 }
 
-# ==========================================
-# PALETA DE COLORES ANSI Y ESTILOS
-# ==========================================
-BOLD='\033[1m'
-RED='\033[1;31m'
-GREEN='\033[1;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-PURPLE='\033[1;35m'
-CYAN='\033[1;36m'
-WHITE='\033[1;37m'
-NC='\033[0m'
-
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        echo -e "${RED}[!] Error: Este script debe ejecutarse como root (sudo).${NC}"
+        echo -e "\n${RED}${BOLD}[ERROR] Este script debe ejecutarse como root (sudo).${NC}\n"
         exit 1
     fi
 }
@@ -96,7 +87,7 @@ net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 EOF
     sysctl --system > /dev/null 2>&1
-    echo -e "${GREEN}[+] Optimizaciones del Kernel aplicadas con éxito.${NC}"
+    echo -e "${GREEN}✔ Optimizaciones del Kernel aplicadas con éxito.${NC}"
 }
 
 # ==========================================
@@ -163,7 +154,7 @@ install_hysteria_bin() {
         if [ -s "/usr/local/bin/hysteria" ]; then
             chmod +x /usr/local/bin/hysteria
             SUCCESS=1
-            echo -e "${GREEN}[+] Binario de Hysteria V${VER} instalado correctamente (${HY_ARCH}).${NC}"
+            echo -e "${GREEN}✔ Binario de Hysteria V${VER} instalado correctamente (${HY_ARCH}).${NC}"
             INSTALLED_VER=$(/usr/local/bin/hysteria version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "v1.x")
             echo -e "${CYAN}  ➔ Versión instalada: ${GREEN}$INSTALLED_VER${NC}"
             break
@@ -180,13 +171,13 @@ install_hysteria_bin() {
 
 config_udp_hysteria() {
     clear
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e "       ${WHITE}INSTALADOR UDP-HYSTERIA${NC}"
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}[1] >${NC} HYSTERIA VERSION 1"
-    echo -e " ${CYAN}[2] >${NC} HYSTERIA VERSION 2"
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    read -p "Ingresa una Opcion: " HY_OPT
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│            INSTALADOR UDP-HYSTERIA                    │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Hysteria Versión 1${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Hysteria Versión 2${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una Opción [1-2]: ${NC}")" HY_OPT
     
     if [ "$HY_OPT" == "1" ]; then
         H_VER="1"
@@ -195,20 +186,18 @@ config_udp_hysteria() {
     fi
     
     clear
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}[1] >${NC} HYSTERIA VERSION $H_VER"
-    echo -e " HYSTERIA VERSION: $H_VER"
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    read -p "INGRESA EL PUERTO [default 36712]: " H_PORT
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│            CONFIGURAR PUERTO HYSTERIA                  │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+    read -p "$(echo -e "${CYAN}❯ ${WHITE}Ingresa el puerto UDP [predeterminado 36712]: ${NC}")" H_PORT
     H_PORT=${H_PORT:-36712}
     
     clear
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}[1] >${NC} HYSTERIA VERSION $H_VER"
-    echo -e " HYSTERIA VERSION: $H_VER"
-    echo -e " PUERTO UDP: ${CYAN}$H_PORT${NC}"
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    read -p " Ingresa Tu Rango Iptables [default 1:65535]: " H_RANGE
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│            CONFIGURAR RANGO IPTABLES                   │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+    echo -e " ${WHITE}• Puerto UDP Seleccionado: ${GREEN}${BOLD}$H_PORT${NC}\n"
+    read -p "$(echo -e "${CYAN}❯ ${WHITE}Ingresa Rango Iptables [predeterminado 1:65535]: ${NC}")" H_RANGE
     H_RANGE=${H_RANGE:-1:65535}
     H_RANGE_IPT=$(echo "$H_RANGE" | tr '-' ':')
     
@@ -216,20 +205,20 @@ config_udp_hysteria() {
     
     if [ "$H_VER" == "2" ]; then
         clear
-        echo -e "${RED}────────────────────────────────────────${NC}"
-        echo -e "   ${WHITE}MÉTODO DE AUTENTICACIÓN (HYSTERIA V2)${NC}"
-        echo -e "${RED}────────────────────────────────────────${NC}"
-        echo -e " ${CYAN}[1] >${NC} Contraseña Fija Personalizada (RECOMENDADO)"
-        echo -e " ${CYAN}[2] >${NC} Backend HTTP Externo (API / Panel Web)"
-        echo -e " ${CYAN}[3] >${NC} Script / Comando Ejecutable Externo"
-        echo -e " ${CYAN}[4] >${NC} Multi-Usuario (userpass)"
-        echo -e "${RED}────────────────────────────────────────${NC}"
-        read -p "Selecciona una Opción [default 1]: " AUTH_OPT
+        echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+        echo -e "${CYAN}${BOLD}│        AUTENTICACIÓN (HYSTERIA V2)                     │${NC}"
+        echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+        echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Contraseña Fija Personalizada (RECOMENDADO)${NC}"
+        echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Backend HTTP Externo (API / Panel Web)${NC}"
+        echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}Script / Comando Ejecutable Externo${NC}"
+        echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Multi-Usuario (userpass)${NC}"
+        echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+        read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una Opción [1-4]: ${NC}")" AUTH_OPT
         AUTH_OPT=${AUTH_OPT:-1}
 
         case $AUTH_OPT in
             2)
-                read -p "Ingresa la URL del Backend HTTP (ej. http://127.0.0.1:8080/auth): " HTTP_URL
+                read -p "$(echo -e "${CYAN}❯ ${WHITE}URL Backend HTTP: ${NC}")" HTTP_URL
                 HTTP_URL=${HTTP_URL:-"http://127.0.0.1:8080/auth"}
                 AUTH_BLOCK="auth:
   type: http
@@ -238,7 +227,7 @@ config_udp_hysteria() {
                 AUTH_INFO="HTTP ($HTTP_URL)"
                 ;;
             3)
-                read -p "Ingresa la ruta del Script/Comando (ej. /etc/hysteria/auth.sh): " CMD_PATH
+                read -p "$(echo -e "${CYAN}❯ ${WHITE}Ruta del Script: ${NC}")" CMD_PATH
                 CMD_PATH=${CMD_PATH:-"/etc/hysteria/auth.sh"}
                 AUTH_BLOCK="auth:
   type: command
@@ -247,8 +236,8 @@ config_udp_hysteria() {
                 AUTH_INFO="Comando Externo ($CMD_PATH)"
                 ;;
             4)
-                read -p "Ingresa Usuario: " U_NAME
-                read -p "Ingresa Contraseña: " U_PASS
+                read -p "$(echo -e "${CYAN}❯ ${WHITE}Usuario: ${NC}")" U_NAME
+                read -p "$(echo -e "${CYAN}❯ ${WHITE}Contraseña: ${NC}")" U_PASS
                 U_NAME=${U_NAME:-"admin"}
                 U_PASS=${U_PASS:-"admin123"}
                 AUTH_BLOCK="auth:
@@ -258,7 +247,7 @@ config_udp_hysteria() {
                 AUTH_INFO="Userpass ($U_NAME)"
                 ;;
             *)
-                read -p "Ingresa tu contraseña personalizada [Enter para aleatoria]: " H_PASS
+                read -p "$(echo -e "${CYAN}❯ ${WHITE}Contraseña personalizada [Enter para aleatoria]: ${NC}")" H_PASS
                 H_PASS=${H_PASS:-$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)}
                 AUTH_BLOCK="auth:
   type: password
@@ -273,7 +262,7 @@ config_udp_hysteria() {
     echo -e "\n${YELLOW}Instalando y configurando...${NC}"
     install_dependencies
     
-    install_hysteria_bin "$H_VER" || { echo -e "\n >> Presione enter para volver <<"; read -p ""; return; }
+    install_hysteria_bin "$H_VER" || { echo -e "\n Presione ENTER para volver"; read -p ""; return; }
     
     generate_silent_cert
     optimize_kernel
@@ -350,14 +339,14 @@ EOF
     iptables -t nat -D PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT 2>/dev/null
     iptables -t nat -I PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT
     
-    echo -e "\n${GREEN}systemctl daemon-reload.........OK${NC}"
+    echo -e "\n${GREEN}✔ systemctl daemon-reload.........OK${NC}"
     systemctl daemon-reload
-    echo -e "${GREEN}systemctl start udp-hysteria....OK${NC}"
+    echo -e "${GREEN}✔ systemctl start udp-hysteria....OK${NC}"
     systemctl restart udp-hysteria
-    echo -e "${GREEN}systemctl enable udp-hysteria...OK${NC}"
+    echo -e "${GREEN}✔ systemctl enable udp-hysteria...OK${NC}"
     systemctl enable udp-hysteria >/dev/null 2>&1
     
-    echo -e "\n >> Presione enter para continuar <<"
+    echo -e "\n Presione ENTER para continuar"
     read -p ""
 }
 
@@ -375,40 +364,39 @@ menu_udp_hysteria() {
     fi
     
     clear
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e "       ${WHITE}ADMINISTRADOR UDP-HYSTERIA${NC}"
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}VERSION CONFIG:${NC} HYSTERIA V$VERSION"
-    echo -e " ${CYAN}VERSION REAL:${NC} $REAL_VER"
-    echo -e " ${CYAN}PORT:${NC} $PORT"
-    echo -e " ${CYAN}REDIRECT:${NC} $RANGE > $PORT"
-    echo -e " ${CYAN}OBFS:${NC} $OBFS"
-    echo -e " ${CYAN}AUTH:${NC} ${GREEN}${AUTH_INFO:-Libre}${NC}"
-    echo -e "${RED}────────────────────────────────────────${NC}"
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│           ADMINISTRADOR UDP-HYSTERIA                   │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+    echo -e " ${PURPLE}${BOLD}Versión Config  :${NC} ${YELLOW}${BOLD}Hysteria V$VERSION${NC}"
+    echo -e " ${PURPLE}${BOLD}Versión Binario :${NC} ${GREEN}${BOLD}$REAL_VER${NC}"
+    echo -e " ${PURPLE}${BOLD}Puerto UDP      :${NC} ${GREEN}${BOLD}$PORT${NC}"
+    echo -e " ${PURPLE}${BOLD}Redirección     :${NC} ${CYAN}$RANGE > $PORT${NC}"
+    echo -e " ${PURPLE}${BOLD}OBFS            :${NC} ${YELLOW}$OBFS${NC}"
+    echo -e " ${PURPLE}${BOLD}Autenticación   :${NC} ${GREEN}${AUTH_INFO:-Libre}${NC}"
     
     if systemctl is-active --quiet udp-hysteria; then
-        echo -e " ${GREEN}● SERVICIO: ACTIVO${NC}"
+        echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} ${GREEN}[ACTIVO / RUNNING]${NC}"
     else
-        echo -e " ${RED}● SERVICIO: DETENIDO${NC}"
+        echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} ${RED}[DETENIDO / STOPPED]${NC}"
     fi
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
     
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}[1] >${NC} RECONFIGURAR UDP-HYSTERIA"
-    echo -e " ${CYAN}[2] >${NC} MODIFICAR OBFS"
-    echo -e " ${CYAN}[3] >${NC} CAMBIAR VERSIÓN (V1 ↔ V2)"
-    echo -e " ${CYAN}[4] >${NC} ESTADO DEL SERVICIO"
-    echo -e " ${CYAN}[5] >${NC} REINICIAR SERVICIO"
-    echo -e " ${CYAN}[6] >${NC} DETENER SERVICIO"
-    echo -e " ${CYAN}[7] >${NC} LOG UDP-HYSTERIA"
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    echo -e " ${WHITE}[0] VOLVER${NC}       ${RED}[9] DESINSTALAR${NC}"
-    echo -e "${RED}────────────────────────────────────────${NC}"
-    read -p "Ingresa una Opcion: " OPT
+    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Reconfigurar UDP-Hysteria${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Modificar OBFS${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}Cambiar Versión (V1 ↔ V2)${NC}"
+    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Estado del Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}Reiniciar Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 6 ]${NC} ${YELLOW}Detener Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 7 ]${NC} ${CYAN}Ver Logs en Tiempo Real${NC}"
+    echo -e " ${WHITE}${BOLD}[ 9 ]${NC} ${RED}Desinstalar UDP-Hysteria${NC}"
+    echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Volver Al Menú Principal${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una Opción [0-9]: ${NC}")" OPT
     
     case $OPT in
         1) config_udp_hysteria; menu_udp_hysteria ;;
         2) 
-           read -p "Nuevo OBFS: " NEW_OBFS
+           read -p "$(echo -e "${CYAN}❯ ${WHITE}Nuevo OBFS: ${NC}")" NEW_OBFS
            if [ -n "$NEW_OBFS" ]; then
                sed -i "s/OBFS=.*/OBFS=$NEW_OBFS/g" /etc/hysteria/panel.conf
                if [ "$VERSION" == "1" ]; then
@@ -419,14 +407,14 @@ menu_udp_hysteria() {
                fuser -k $PORT/udp 2>/dev/null
                pkill -9 hysteria 2>/dev/null
                systemctl restart udp-hysteria
-               echo -e "${GREEN}OBFS actualizado.${NC}"; sleep 2
+               echo -e "${GREEN}✔ OBFS actualizado correctamente.${NC}"; sleep 2
            fi
            menu_udp_hysteria ;;
         3) config_udp_hysteria; menu_udp_hysteria ;;
-        4) systemctl status udp-hysteria --no-pager; read -p "Enter para volver..."; menu_udp_hysteria ;;
-        5) fuser -k $PORT/udp 2>/dev/null; pkill -9 hysteria 2>/dev/null; systemctl restart udp-hysteria; echo -e "${GREEN}Reiniciado.${NC}"; sleep 1; menu_udp_hysteria ;;
-        6) systemctl stop udp-hysteria; echo -e "${YELLOW}Detenido.${NC}"; sleep 1; menu_udp_hysteria ;;
-        7) journalctl -u udp-hysteria -n 50 --no-pager; read -p "Presione Enter para volver..."; menu_udp_hysteria ;;
+        4) systemctl status udp-hysteria --no-pager; read -p "Presione ENTER para volver..."; menu_udp_hysteria ;;
+        5) fuser -k $PORT/udp 2>/dev/null; pkill -9 hysteria 2>/dev/null; systemctl restart udp-hysteria; echo -e "${GREEN}✔ Servicio reiniciado.${NC}"; sleep 1; menu_udp_hysteria ;;
+        6) systemctl stop udp-hysteria; echo -e "${YELLOW}Servicio detenido.${NC}"; sleep 1; menu_udp_hysteria ;;
+        7) journalctl -u udp-hysteria -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_udp_hysteria ;;
         9) 
            systemctl stop udp-hysteria 2>/dev/null
            systemctl disable udp-hysteria 2>/dev/null
@@ -435,7 +423,7 @@ menu_udp_hysteria() {
            rm -rf /etc/hysteria /etc/systemd/system/udp-hysteria.service
            rm -f /usr/local/bin/hysteria
            systemctl daemon-reload
-           echo -e "${GREEN}Desinstalado completamente.${NC}"
+           echo -e "${GREEN}✔ Desinstalado completamente.${NC}"
            sleep 2
            menu_main ;;
         0) menu_main ;;
@@ -461,7 +449,7 @@ install_udp_bin() {
         curl -sSL -o /usr/local/bin/udp-custom "$url" 2>/dev/null || wget -qO /usr/local/bin/udp-custom --no-check-certificate "$url" 2>/dev/null
         if [ -s "/usr/local/bin/udp-custom" ]; then
             chmod +x /usr/local/bin/udp-custom
-            echo -e "${GREEN}[+] UDP Custom instalado con éxito.${NC}"
+            echo -e "${GREEN}✔ UDP Custom instalado con éxito.${NC}"
             return 0
         fi
     done
@@ -470,14 +458,14 @@ install_udp_bin() {
 
 config_udp() {
     clear
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    echo -e "       ${WHITE}INSTALADOR UDP CUSTOM${NC}"
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    read -p "INGRESA EL PUERTO UDP CUSTOM [default 36712]: " U_PORT
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│            INSTALADOR UDP CUSTOM                       │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+    read -p "$(echo -e "${CYAN}❯ ${WHITE}Ingresa el puerto UDP Custom [predeterminado 36712]: ${NC}")" U_PORT
     U_PORT=${U_PORT:-36712}
 
     install_dependencies
-    install_udp_bin || { echo -e "\n >> Presione enter para volver <<"; read -p ""; return; }
+    install_udp_bin || { echo -e "\n Presione ENTER para volver"; read -p ""; return; }
 
     mkdir -p /etc/udp-custom
     cat <<EOF > /etc/udp-custom/config.json
@@ -524,7 +512,7 @@ EOF
     systemctl enable udp-custom > /dev/null 2>&1
     systemctl restart udp-custom
     
-    echo -e "\n${GREEN}[+] UDP Custom configurado en el puerto $U_PORT${NC}"
+    echo -e "\n${GREEN}✔ UDP Custom configurado en el puerto $U_PORT${NC}"
     sleep 2
 }
 
@@ -537,39 +525,38 @@ menu_udp_custom() {
     source /etc/udp-custom/panel.conf
     
     clear
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    echo -e "       ${WHITE}ADMINISTRADOR UDP CUSTOM${NC}"
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}PUERTO UDP:${NC} $PORT"
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│           ADMINISTRADOR UDP CUSTOM                     │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+    echo -e " ${PURPLE}${BOLD}Puerto UDP      :${NC} ${GREEN}${BOLD}$PORT${NC}"
     
     if systemctl is-active --quiet udp-custom; then
-        echo -e " ${GREEN}● SERVICIO: ACTIVO${NC}"
+        echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} ${GREEN}[ACTIVO / RUNNING]${NC}"
     else
-        echo -e " ${RED}● SERVICIO: DETENIDO${NC}"
+        echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} ${RED}[DETENIDO / STOPPED]${NC}"
     fi
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
     
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}[1] >${NC} RECONFIGURAR UDP CUSTOM"
-    echo -e " ${CYAN}[2] >${NC} ESTADO DEL SERVICIO"
-    echo -e " ${CYAN}[3] >${NC} REINICIAR SERVICIO"
-    echo -e " ${CYAN}[4] >${NC} DETENER SERVICIO"
-    echo -e " ${CYAN}[5] >${NC} LOG UDP CUSTOM"
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    echo -e " ${WHITE}[0] VOLVER${NC}       ${RED}[9] DESINSTALAR${NC}"
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    read -p "Ingresa una Opcion: " OPT
+    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Reconfigurar UDP Custom${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Estado del Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${GREEN}Reiniciar Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${YELLOW}Detener Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${CYAN}Ver Logs en Tiempo Real${NC}"
+    echo -e " ${WHITE}${BOLD}[ 9 ]${NC} ${RED}Desinstalar UDP Custom${NC}"
+    echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Volver Al Menú Principal${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una Opción [0-9]: ${NC}")" OPT
     
     case $OPT in
         1) config_udp; menu_udp_custom ;;
-        2) systemctl status udp-custom --no-pager; read -p "Enter para volver..."; menu_udp_custom ;;
+        2) systemctl status udp-custom --no-pager; read -p "Presione ENTER para volver..."; menu_udp_custom ;;
         3) 
            fuser -k $PORT/udp 2>/dev/null
            pkill -9 udp-custom 2>/dev/null
            systemctl restart udp-custom
-           echo -e "${GREEN}Reiniciado.${NC}"; sleep 1; menu_udp_custom ;;
-        4) systemctl stop udp-custom; echo -e "${YELLOW}Detenido.${NC}"; sleep 1; menu_udp_custom ;;
-        5) journalctl -u udp-custom -n 50 --no-pager; read -p "Presione Enter para volver..."; menu_udp_custom ;;
+           echo -e "${GREEN}✔ Servicio reiniciado.${NC}"; sleep 1; menu_udp_custom ;;
+        4) systemctl stop udp-custom; echo -e "${YELLOW}Servicio detenido.${NC}"; sleep 1; menu_udp_custom ;;
+        5) journalctl -u udp-custom -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_udp_custom ;;
         9) 
            systemctl stop udp-custom 2>/dev/null
            systemctl disable udp-custom 2>/dev/null
@@ -578,7 +565,7 @@ menu_udp_custom() {
            rm -rf /etc/udp-custom /etc/systemd/system/udp-custom.service
            rm -f /usr/local/bin/udp-custom
            systemctl daemon-reload
-           echo -e "${GREEN}Desinstalado completamente.${NC}"
+           echo -e "${GREEN}✔ Desinstalado completamente.${NC}"
            sleep 2
            menu_main ;;
         0) menu_main ;;
@@ -623,7 +610,7 @@ install_zivpn_bin() {
         if [ -s "/usr/local/bin/zivpn" ] && file /usr/local/bin/zivpn 2>/dev/null | grep -qE 'ELF|script'; then
             chmod +x /usr/local/bin/zivpn
             SUCCESS=1
-            echo -e "${GREEN}[+] Binario ZI VPN instalado con éxito (${ZI_ARCH}).${NC}"
+            echo -e "${GREEN}✔ Binario ZI VPN instalado con éxito (${ZI_ARCH}).${NC}"
             break
         fi
         rm -f /usr/local/bin/zivpn
@@ -677,16 +664,16 @@ EOF
 
 config_zivpn() {
     clear
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
-    echo -e "       ${WHITE}INSTALADOR ZI VPN${NC}"
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
-    read -p "INGRESA EL PUERTO ZI VPN [default 5667]: " Z_PORT
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│            INSTALADOR ZI VPN                           │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+    read -p "$(echo -e "${CYAN}❯ ${WHITE}Puerto ZI VPN [predeterminado 5667]: ${NC}")" Z_PORT
     Z_PORT=${Z_PORT:-5667}
 
-    read -p "INGRESA EL OBFS DE ZI VPN [default zivpn]: " Z_OBFS
+    read -p "$(echo -e "${CYAN}❯ ${WHITE}OBFS de ZI VPN [predeterminado zivpn]: ${NC}")" Z_OBFS
     Z_OBFS=${Z_OBFS:-zivpn}
 
-    read -p "INGRESA LA CONTRASEÑA/PASSWORD DE ZI VPN [default zi]: " Z_PASS
+    read -p "$(echo -e "${CYAN}❯ ${WHITE}Contraseña de ZI VPN [predeterminado zi]: ${NC}")" Z_PASS
     Z_PASS=${Z_PASS:-zi}
 
     install_dependencies
@@ -752,7 +739,7 @@ EOF
     systemctl enable zivpn > /dev/null 2>&1
     systemctl restart zivpn
 
-    echo -e "\n${GREEN}[+] ZI VPN configurado en el puerto $Z_PORT (OBFS: $Z_OBFS | PASS: $Z_PASS)${NC}"
+    echo -e "\n${GREEN}✔ ZI VPN configurado en el puerto $Z_PORT (OBFS: $Z_OBFS | PASS: $Z_PASS)${NC}"
     sleep 2
 }
 
@@ -765,65 +752,64 @@ menu_zivpn() {
     source /etc/zivpn/panel.conf
     
     clear
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
-    echo -e "       ${WHITE}ADMINISTRADOR ZI VPN${NC}"
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}PUERTO UDP:${NC} $PORT"
-    echo -e " ${CYAN}OBFS:${NC} $OBFS"
-    echo -e " ${CYAN}CONTRASEÑA (PASS):${NC} ${GREEN}$PASS${NC}"
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│           ADMINISTRADOR ZI VPN                         │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+    echo -e " ${PURPLE}${BOLD}Puerto UDP      :${NC} ${GREEN}${BOLD}$PORT${NC}"
+    echo -e " ${PURPLE}${BOLD}OBFS            :${NC} ${YELLOW}${BOLD}$OBFS${NC}"
+    echo -e " ${PURPLE}${BOLD}Contraseña PASS :${NC} ${GREEN}${BOLD}$PASS${NC}"
     
     if systemctl is-active --quiet zivpn; then
-        echo -e " ${GREEN}● SERVICIO: ACTIVO${NC}"
+        echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} ${GREEN}[ACTIVO / RUNNING]${NC}"
     else
-        echo -e " ${RED}● SERVICIO: DETENIDO${NC}"
+        echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} ${RED}[DETENIDO / STOPPED]${NC}"
     fi
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
     
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
-    echo -e " ${CYAN}[1] >${NC} RECONFIGURAR ZI VPN"
-    echo -e " ${CYAN}[2] >${NC} MODIFICAR OBFS"
-    echo -e " ${CYAN}[3] >${NC} MODIFICAR CONTRASEÑA"
-    echo -e " ${CYAN}[4] >${NC} ESTADO DEL SERVICIO"
-    echo -e " ${CYAN}[5] >${NC} REINICIAR SERVICIO"
-    echo -e " ${CYAN}[6] >${NC} DETENER SERVICIO"
-    echo -e " ${CYAN}[7] >${NC} LOG ZI VPN"
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
-    echo -e " ${WHITE}[0] VOLVER${NC}       ${RED}[9] DESINSTALAR${NC}"
-    echo -e "${PURPLE}────────────────────────────────────────${NC}"
-    read -p "Ingresa una Opcion: " OPT
+    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Reconfigurar ZI VPN${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Modificar OBFS${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}Modificar Contraseña${NC}"
+    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Estado del Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}Reiniciar Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 6 ]${NC} ${YELLOW}Detener Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 7 ]${NC} ${CYAN}Ver Logs en Tiempo Real${NC}"
+    echo -e " ${WHITE}${BOLD}[ 9 ]${NC} ${RED}Desinstalar ZI VPN${NC}"
+    echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Volver Al Menú Principal${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una Opción [0-9]: ${NC}")" OPT
     
     case $OPT in
         1) config_zivpn; menu_zivpn ;;
         2) 
-           read -p "Nuevo OBFS: " NEW_OBFS
+           read -p "$(echo -e "${CYAN}❯ ${WHITE}Nuevo OBFS: ${NC}")" NEW_OBFS
            if [ -n "$NEW_OBFS" ]; then
                sed -i "s/OBFS=.*/OBFS=$NEW_OBFS/g" /etc/zivpn/panel.conf
                sed -i "s/\"obfs\": \".*\"/\"obfs\": \"$NEW_OBFS\"/g" /etc/zivpn/config.json
                fuser -k $PORT/udp 2>/dev/null
                pkill -9 zivpn 2>/dev/null
                systemctl restart zivpn
-               echo -e "${GREEN}OBFS actualizado.${NC}"; sleep 2
+               echo -e "${GREEN}✔ OBFS actualizado correctamente.${NC}"; sleep 2
            fi
            menu_zivpn ;;
         3)
-           read -p "Nueva Contraseña: " NEW_PASS
+           read -p "$(echo -e "${CYAN}❯ ${WHITE}Nueva Contraseña: ${NC}")" NEW_PASS
            if [ -n "$NEW_PASS" ]; then
                sed -i "s/PASS=.*/PASS=$NEW_PASS/g" /etc/zivpn/panel.conf
                python3 -c "import json; f=open('/etc/zivpn/config.json'); d=json.load(f); f.close(); d['auth']['config']=['$NEW_PASS']; f=open('/etc/zivpn/config.json','w'); json.dump(d,f,indent=2); f.close()" 2>/dev/null
                fuser -k $PORT/udp 2>/dev/null
                pkill -9 zivpn 2>/dev/null
                systemctl restart zivpn
-               echo -e "${GREEN}Contraseña actualizada.${NC}"; sleep 2
+               echo -e "${GREEN}✔ Contraseña actualizada correctamente.${NC}"; sleep 2
            fi
            menu_zivpn ;;
-        4) systemctl status zivpn --no-pager; read -p "Enter para volver..."; menu_zivpn ;;
+        4) systemctl status zivpn --no-pager; read -p "Presione ENTER para volver..."; menu_zivpn ;;
         5) 
            fuser -k $PORT/udp 2>/dev/null
            pkill -9 zivpn 2>/dev/null
            systemctl restart zivpn
-           echo -e "${GREEN}Reiniciado.${NC}"; sleep 1; menu_zivpn ;;
-        6) systemctl stop zivpn; echo -e "${YELLOW}Detenido.${NC}"; sleep 1; menu_zivpn ;;
-        7) journalctl -u zivpn -n 50 --no-pager; read -p "Presione Enter para volver..."; menu_zivpn ;;
+           echo -e "${GREEN}✔ Servicio reiniciado.${NC}"; sleep 1; menu_zivpn ;;
+        6) systemctl stop zivpn; echo -e "${YELLOW}Servicio detenido.${NC}"; sleep 1; menu_zivpn ;;
+        7) journalctl -u zivpn -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_zivpn ;;
         9) 
            systemctl stop zivpn 2>/dev/null
            systemctl disable zivpn 2>/dev/null
@@ -832,7 +818,7 @@ menu_zivpn() {
            rm -rf /etc/zivpn /etc/systemd/system/zivpn.service
            rm -f /usr/local/bin/zivpn
            systemctl daemon-reload
-           echo -e "${GREEN}Desinstalado completamente.${NC}"
+           echo -e "${GREEN}✔ Desinstalado completamente.${NC}"
            sleep 2
            menu_main ;;
         0) menu_main ;;
@@ -847,24 +833,27 @@ menu_main() {
     clear
     setup_shortcut
     get_public_ip
-    echo -e "${PURPLE}${BOLD}════════════════════════════════════════════════════════════${NC}"
-    echo -e " ${WHITE}${BOLD}SISTEMA:${NC} $(uname -s) (${WHITE}IP:${NC} ${YELLOW}$PUBLIC_IP${NC})"
-    echo -e "${PURPLE}${BOLD}════════════════════════════════════════════════════════════${NC}\n"
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│       ADMINISTRADOR DE SERVICIOS UDP VIP               │${NC}"
+    echo -e "${CYAN}${BOLD}├────────────────────────────────────────────────────────┤${NC}"
+    echo -e "  ${WHITE}${BOLD}• Sistema   :${NC} ${CYAN}${BOLD}$(uname -s)${NC}"
+    echo -e "  ${WHITE}${BOLD}• IP Pública:${NC} ${YELLOW}${BOLD}$PUBLIC_IP${NC}"
+    echo -e "  ${WHITE}${BOLD}• Comando   :${NC} ${GREEN}${BOLD}menuUDP${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
     
-    echo -e " ${WHITE}${BOLD}MENÚ PRINCIPAL DE SERVICIOS VIP${NC}\n"
-    echo -e "  ${GREEN}[1]${NC} 🚀 Administrador UDP-HYSTERIA (V1/V2 + Redirección)"
-    echo -e "  ${GREEN}[2]${NC} 🛡️  Administrador UDP Custom"
-    echo -e "  ${GREEN}[3]${NC} 🔥 Administrador ZI VPN"
-    echo -e "  ${GREEN}[0]${NC} ❌ Salir"
-    echo ""
-    echo -e "${CYAN}💡 Acceso rápido: ${WHITE}menuUDP${NC} desde cualquier terminal"
-    echo ""
-    read -p "Selecciona una opción: " opt
+    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Administrador UDP-Hysteria (V1/V2 + Redirección)${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Administrador UDP Custom${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}Administrador ZI VPN Engine${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${RED}${BOLD}Salir del Panel UDP${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}\n"
+    
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una opción [0-3]: ${NC}")" opt
     case $opt in
         1) menu_udp_hysteria ;;
         2) menu_udp_custom ;;
         3) menu_zivpn ;;
-        0) clear; exit 0 ;;
+        0) clear; echo -e "${GREEN}Saliendo de menuUDP...${NC}"; exit 0 ;;
         *) menu_main ;;
     esac
 }
