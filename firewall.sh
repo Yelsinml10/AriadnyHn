@@ -109,6 +109,51 @@ abrir_udp() {
     read -p "Presiona ENTER para continuar..."
 }
 
+ver_puertos() {
+    clear
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│       PUERTOS / REGLAS PERMITIDAS EN EL FIREWALL       │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+
+    if command -v ufw &>/dev/null; then
+        local ufw_out=$(ufw status 2>/dev/null)
+        if echo "$ufw_out" | grep -iq "active\|activo"; then
+            echo -e " ${PURPLE}${BOLD}Estado UFW:${NC} ${GREEN}[ACTIVO]${NC}\n"
+            echo -e "${YELLOW}${BOLD}Puertos / Reglas Permitidas (UFW):${NC}"
+            echo -e "${CYAN}──────────────────────────────────────────────────────────${NC}"
+            
+            local rules=$(ufw status numbered 2>/dev/null | grep -E "ALLOW|PERMITIR|ALLOW IN")
+            if [ -n "$rules" ]; then
+                echo "$rules" | while read -r line; do
+                    echo -e "  ${GREEN}✔${NC} ${WHITE}${BOLD}$line${NC}"
+                done
+            else
+                echo -e "  ${YELLOW}No hay reglas individuales en UFW (o está todo abierto).${NC}"
+            fi
+            echo -e "${CYAN}──────────────────────────────────────────────────────────${NC}"
+        else
+            echo -e " ${PURPLE}${BOLD}Estado UFW:${NC} ${RED}[INACTIVO / DESACTIVADO]${NC}\n"
+        fi
+    else
+        echo -e " ${RED}UFW no está instalado en este sistema.${NC}\n"
+    fi
+
+    echo -e "\n${YELLOW}${BOLD}Reglas de Aceptación (IPTABLES):${NC}"
+    echo -e "${CYAN}──────────────────────────────────────────────────────────${NC}"
+    local ipt_rules=$(iptables -L INPUT -n --line-numbers 2>/dev/null | grep "ACCEPT")
+    if [ -n "$ipt_rules" ]; then
+        echo "$ipt_rules" | head -20 | while read -r line; do
+            echo -e "  ${GREEN}✔${NC} ${WHITE}$line${NC}"
+        done
+    else
+        echo -e "  ${YELLOW}No hay reglas específicas de ACCEPT en iptables.${NC}"
+    fi
+    echo -e "${CYAN}──────────────────────────────────────────────────────────${NC}"
+
+    echo -e ""
+    read -p "Presiona ENTER para volver al menú..."
+}
+
 reiniciar_servicio() {
     echo -e "\n${YELLOW}${BOLD}=== REINICIAR SERVICIO DE FIREWALL ===${NC}"
     
@@ -185,18 +230,20 @@ while true; do
     header
     echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Abrir TODOS los Puertos TCP (1-65535)${NC}"
     echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Abrir TODOS los Puertos UDP (1-65535)${NC}"
-    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${GREEN}Reiniciar Servicio de Firewall${NC}"
-    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${RED}Desinstalar Firewall Completamente${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}Ver Puertos Permitidos en el Firewall${NC}"
+    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${GREEN}Reiniciar Servicio de Firewall${NC}"
+    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${RED}Desinstalar Firewall Completamente${NC}"
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
     echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Salir${NC}"
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
-    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una opción [0-4]: ${NC}")" op
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una opción [0-5]: ${NC}")" op
 
     case $op in
         1) abrir_tcp ;;
         2) abrir_udp ;;
-        3) reiniciar_servicio ;;
-        4) desinstalar_firewall ;;
+        3) ver_puertos ;;
+        4) reiniciar_servicio ;;
+        5) desinstalar_firewall ;;
         0) echo -e "\n${GREEN}Saliendo del panel de Firewall...${NC}"; exit 0 ;;
         *) echo -e "\n${RED}Opción inválida.${NC}"; sleep 1 ;;
     esac
