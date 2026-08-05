@@ -1,192 +1,179 @@
 #!/bin/bash
-# ============================================================
-# 🔥 FIREWALL DEFINITIVO PARA UBUNTU (CON INSTALADOR)
-# ============================================================
-# 📌 Este script INSTALA UFW si no está presente
-# 📌 Abre TODOS los puertos (TCP + UDP)
-# 📌 Funciona en Ubuntu 20.04, 22.04, 24.04
-# ============================================================
 
+# ==========================================
+# PALETA DE COLORES ANSI Y ESTILOS
+# ==========================================
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-info() { echo -e "${GREEN}[✓]${NC} $1"; }
-error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
-step() { echo -e "${BLUE}[→]${NC} $1"; }
+# ==========================================
+# ACCESO DIRECTO GLOBAL 'firewall'
+# ==========================================
+setup_shortcut() {
+    local TARGET="/usr/local/bin/firewall.sh"
+    local LINK="/usr/bin/firewall"
+    local SRC="${BASH_SOURCE[0]:-$0}"
 
-# Verificar root
-[[ $EUID -ne 0 ]] && error "Ejecutar como root: sudo bash $0"
+    if [ -f "$SRC" ]; then
+        SRC=$(readlink -f "$SRC" 2>/dev/null || echo "$SRC")
+    fi
 
-# ============================================================
-# FUNCIÓN: INSTALAR UFW
-# ============================================================
-instalar_ufw() {
-    if ! command -v ufw &> /dev/null; then
-        step "UFW no está instalado. Instalando..."
-        apt-get update -qq
-        apt-get install -y -qq ufw
-        info "✅ UFW instalado correctamente"
-    else
-        info "UFW ya está instalado"
+    if [[ "$SRC" != "$TARGET" && -f "$SRC" ]]; then
+        cp "$SRC" "$TARGET" 2>/dev/null
+        chmod +x "$TARGET" 2>/dev/null
+    fi
+
+    chmod +x "$TARGET" 2>/dev/null
+    ln -sf "$TARGET" "$LINK" 2>/dev/null
+    grep -q "alias firewall=" /root/.bashrc 2>/dev/null || echo "alias firewall='/usr/local/bin/firewall.sh'" >> /root/.bashrc
+}
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo -e "\n${RED}${BOLD}[ERROR] Este script debe ejecutarse como root:${NC} ${YELLOW}sudo bash $0${NC}\n"
+        exit 1
     fi
 }
 
-# ============================================================
-# FUNCIÓN: ABRIR TODOS LOS PUERTOS
-# ============================================================
-abrir_todos() {
-    step "Abriendo TODOS los puertos (TCP + UDP)..."
-    
-    # 1. Asegurar que UFW esté instalado
+instalar_ufw() {
+    if ! command -v ufw &> /dev/null; then
+        echo -e "${CYAN}[*] UFW no está instalado. Instalando...${NC}"
+        apt-get update -qq >/dev/null 2>&1 || yum update -y >/dev/null 2>&1
+        apt-get install -y ufw -qq >/dev/null 2>&1 || yum install -y ufw -qq >/dev/null 2>&1
+        echo -e "${GREEN}✔ UFW instalado correctamente.${NC}"
+    fi
+}
+
+# ==========================================
+# FUNCIONES PRINCIPALES
+# ==========================================
+
+abrir_tcp() {
+    echo -e "\n${YELLOW}${BOLD}=== ABRIR TODOS LOS PUERTOS TCP (1-65535) ===${NC}"
     instalar_ufw
+
+    echo -e "${CYAN}Habilitando UFW y permitiendo tráfico TCP...${NC}"
+    sudo ufw default allow outgoing >/dev/null 2>&1
+    sudo ufw allow 1:65535/tcp >/dev/null 2>&1
     
-    # 2. Detener UFW
-    sudo systemctl stop ufw 2>/dev/null
-    sudo systemctl disable ufw 2>/dev/null
-    sudo ufw --force disable 2>/dev/null
+    sudo iptables -A INPUT -p tcp --dport 1:65535 -j ACCEPT 2>/dev/null
     
-    # 3. Limpiar iptables
-    sudo iptables -P INPUT ACCEPT
-    sudo iptables -P OUTPUT ACCEPT
-    sudo iptables -P FORWARD ACCEPT
-    sudo iptables -F
-    sudo iptables -X
-    sudo iptables -t nat -F
-    sudo iptables -t mangle -F
-    
-    # 4. Limpiar nftables
-    sudo nft flush ruleset 2>/dev/null || true
-    
-    # 5. Abrir todos los puertos con UFW
-    sudo ufw allow 1:65535/tcp
-    sudo ufw allow 1:65535/udp
-    sudo ufw reload
-    
-    echo ""
-    info "✅ TODOS los puertos TCP y UDP (1-65535) están ABIERTOS"
-    echo ""
-    sudo ufw status verbose
+    sudo ufw --force enable >/dev/null 2>&1
+    sudo ufw reload >/dev/null 2>&1
+
+    echo -e "${GREEN}${BOLD}✔ TODOS los puertos TCP (1-65535) han sido ABIERTOS con éxito.${NC}\n"
+    read -p "Presiona ENTER para continuar..."
 }
 
-# ============================================================
-# FUNCIÓN: CONFIGURACIÓN SEGURA
-# ============================================================
-configuracion_segura() {
-    step "Configurando firewall SEGURO..."
-    
+abrir_udp() {
+    echo -e "\n${YELLOW}${BOLD}=== ABRIR TODOS LOS PUERTOS UDP (1-65535) ===${NC}"
     instalar_ufw
+
+    echo -e "${CYAN}Habilitando UFW y permitiendo tráfico UDP...${NC}"
+    sudo ufw default allow outgoing >/dev/null 2>&1
+    sudo ufw allow 1:65535/udp >/dev/null 2>&1
     
-    sudo ufw --force reset
-    sudo ufw default deny incoming
-    sudo ufw default allow outgoing
-    sudo ufw allow 22/tcp
-    sudo ufw allow 80/tcp
-    sudo ufw allow 443/tcp
-    sudo ufw --force enable
-    sudo ufw reload
+    sudo iptables -A INPUT -p udp --dport 1:65535 -j ACCEPT 2>/dev/null
     
-    echo ""
-    info "✅ Configuración segura: SSH(22), HTTP(80), HTTPS(443)"
-    sudo ufw status verbose
+    sudo ufw --force enable >/dev/null 2>&1
+    sudo ufw reload >/dev/null 2>&1
+
+    echo -e "${GREEN}${BOLD}✔ TODOS los puertos UDP (1-65535) han sido ABIERTOS con éxito.${NC}\n"
+    read -p "Presiona ENTER para continuar..."
 }
 
-# ============================================================
-# FUNCIÓN: DESACTIVAR COMPLETAMENTE
-# ============================================================
-desactivar_completo() {
-    step "Desactivando firewall COMPLETAMENTE..."
+reiniciar_servicio() {
+    echo -e "\n${YELLOW}${BOLD}=== REINICIAR SERVICIO DE FIREWALL ===${NC}"
     
-    instalar_ufw
-    
-    sudo systemctl stop ufw
-    sudo systemctl disable ufw
-    sudo ufw --force disable
-    
-    sudo iptables -P INPUT ACCEPT
-    sudo iptables -P OUTPUT ACCEPT
-    sudo iptables -P FORWARD ACCEPT
-    sudo iptables -F
-    sudo iptables -X
-    sudo iptables -t nat -F
-    sudo iptables -t mangle -F
-    
-    sudo nft flush ruleset 2>/dev/null || true
-    
-    info "✅ Firewall DESACTIVADO. TODOS los puertos están abiertos."
+    if command -v ufw &> /dev/null; then
+        echo -e "${CYAN}Reiniciando UFW...${NC}"
+        sudo systemctl restart ufw >/dev/null 2>&1
+        sudo ufw reload >/dev/null 2>&1
+        echo -e "${GREEN}${BOLD}✔ Servicio UFW reiniciado correctamente.${NC}\n"
+    else
+        echo -e "${RED}✘ UFW no está instalado en el sistema.${NC}\n"
+    fi
+    read -p "Presiona ENTER para continuar..."
 }
 
-# ============================================================
-# FUNCIÓN: VER ESTADO
-# ============================================================
-ver_estado() {
-    echo ""
-    echo -e "${BLUE}📋 Estado de UFW:${NC}"
-    sudo ufw status verbose
-    echo ""
-    echo -e "${BLUE}📋 Reglas de iptables:${NC}"
-    sudo iptables -L -n --line-numbers | head -20
-}
+desinstalar_firewall() {
+    echo -e "\n${RED}${BOLD}=== DESINSTALAR FIREWALL COMPLETAMENTE ===${NC}"
+    read -p "¿Está seguro de eliminar UFW y limpiar todas las reglas del firewall? (s/N): " confirm
 
-# ============================================================
-# FUNCIÓN: VER PUERTOS
-# ============================================================
-ver_puertos() {
-    echo ""
-    echo -e "${BLUE}📋 Puertos abiertos en UFW:${NC}"
-    sudo ufw status | grep "ALLOW" || echo "  No hay puertos abiertos"
-    echo ""
-    echo -e "${BLUE}📋 Puertos en escucha:${NC}"
-    sudo ss -tulpn | grep LISTEN | column -t
-}
+    if [[ "$confirm" =~ ^[sS]$ ]]; then
+        echo -e "${YELLOW}Deteniendo y deshabilitando UFW...${NC}"
+        sudo ufw --force reset >/dev/null 2>&1
+        sudo ufw --force disable >/dev/null 2>&1
+        sudo systemctl stop ufw >/dev/null 2>&1
+        sudo systemctl disable ufw >/dev/null 2>&1
 
-# ============================================================
-# MENÚ PRINCIPAL
-# ============================================================
-clear
-echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
-echo -e "${YELLOW}     🔥 FIREWALL DEFINITIVO PARA UBUNTU 🔥${NC}"
-echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
-echo ""
-echo -e "${BLUE}Selecciona una opción:${NC}"
-echo "  1)  🔓 Abrir TODOS los puertos (TCP + UDP) [RECOMENDADO]"
-echo "  2)  🔒 Configuración SEGURA (SSH + HTTP + HTTPS)"
-echo "  3)  🔓 Desactivar firewall COMPLETAMENTE"
-echo "  4)  📋 Ver estado del firewall"
-echo "  5)  📋 Ver puertos abiertos"
-echo "  6)  Salir"
-echo ""
-read -p "➜ Opción: " OPCION
+        echo -e "${YELLOW}Desinstalando paquete UFW...${NC}"
+        sudo apt-get purge -y ufw >/dev/null 2>&1 || sudo yum remove -y ufw >/dev/null 2>&1
 
-# ============================================================
-# EJECUTAR
-# ============================================================
-case $OPCION in
-    1)
-        abrir_todos
-        ;;
-    2)
-        configuracion_segura
-        ;;
-    3)
-        desactivar_completo
-        ;;
-    4)
-        ver_estado
-        ;;
-    5)
-        ver_puertos
-        ;;
-    6)
-        echo "Saliendo..."
+        echo -e "${YELLOW}Limpiando reglas de iptables y nftables...${NC}"
+        sudo iptables -P INPUT ACCEPT
+        sudo iptables -P OUTPUT ACCEPT
+        sudo iptables -P FORWARD ACCEPT
+        sudo iptables -F
+        sudo iptables -X
+        sudo iptables -t nat -F
+        sudo iptables -t mangle -F
+        sudo nft flush ruleset 2>/dev/null || true
+
+        echo -e "\n${GREEN}${BOLD}✔ Firewall desinstalado y reglas eliminadas. Todos los puertos están abiertos.${NC}\n"
+        read -p "Presiona ENTER para salir..."
         exit 0
-        ;;
-    *)
-        error "Opción inválida"
-        ;;
-esac
+    else
+        echo -e "${GREEN}Desinstalación cancelada.${NC}\n"
+        sleep 1
+    fi
+}
 
-echo ""
-info "Operación completada exitosamente!"
+header() {
+    clear
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│       ADMINISTRADOR DE FIREWALL UFW / IPTABLES         │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+    
+    if command -v ufw &>/dev/null && systemctl is-active --quiet ufw 2>/dev/null; then
+        echo -e " ${PURPLE}${BOLD}Estado Firewall :${NC} ${GREEN}[ACTIVO / RUNNING]${NC}"
+    else
+        echo -e " ${PURPLE}${BOLD}Estado Firewall :${NC} ${RED}[INACTIVO / STOPPED]${NC}"
+    fi
+    echo -e " ${PURPLE}${BOLD}Comando Directo :${NC} ${GREEN}${BOLD}firewall${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+}
+
+# ==========================================
+# BUCLE DEL MENÚ
+# ==========================================
+check_root
+setup_shortcut
+
+while true; do
+    header
+    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Abrir TODOS los Puertos TCP (1-65535)${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Abrir TODOS los Puertos UDP (1-65535)${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${GREEN}Reiniciar Servicio de Firewall${NC}"
+    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${RED}Desinstalar Firewall Completamente${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Salir${NC}"
+    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una opción [0-4]: ${NC}")" op
+
+    case $op in
+        1) abrir_tcp ;;
+        2) abrir_udp ;;
+        3) reiniciar_servicio ;;
+        4) desinstalar_firewall ;;
+        0) echo -e "\n${GREEN}Saliendo del panel de Firewall...${NC}"; exit 0 ;;
+        *) echo -e "\n${RED}Opción inválida.${NC}"; sleep 1 ;;
+    esac
+done
