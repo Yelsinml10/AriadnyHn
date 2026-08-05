@@ -587,19 +587,32 @@ except Exception: pass
         [[ -n "$u_p" ]] && ACTIVE_ITEMS+=("⚡ UDP    : $(truncate_str "$u_p")") || ACTIVE_ITEMS+=("⚡ UDP    : ON")
     fi
 
-    # 6. Rust
+    # 6. BadVPN UDPGW
+    if pgrep -f badvpn-udpgw >/dev/null 2>&1 || systemctl is-active --quiet badvpn 2>/dev/null; then
+        local badvpn_ports=$(python3 -c '
+import subprocess, re
+try:
+    out = subprocess.check_output("ps aux | grep badvpn-udpgw | grep -v grep", shell=True).decode()
+    ports = re.findall(r"--listen-addr\s+127\.0\.0\.1:(\d+)", out)
+    if ports: print(",".join(sorted(list(set(ports)))))
+except Exception: pass
+' 2>/dev/null)
+        [[ -n "$badvpn_ports" ]] && ACTIVE_ITEMS+=("🚀 BadVPN : $(truncate_str "$badvpn_ports")") || ACTIVE_ITEMS+=("🚀 BadVPN : ON")
+    fi
+
+    # 7. Rust
     if pgrep -f "socks-rust" >/dev/null || pgrep -f "rust-proxy" >/dev/null || pgrep -x "rust" >/dev/null || systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null; then
         local r_p=$(get_socks_config_port)
         [[ -n "$r_p" ]] && ACTIVE_ITEMS+=("🦀 Rust   : $(truncate_str "$r_p")") || ACTIVE_ITEMS+=("🦀 Rust   : ON")
     fi
 
-    # 7. Python
+    # 8. Python
     if pgrep -f "proxy.py" >/dev/null || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && ! pgrep -f "socks-rust" >/dev/null && ! pgrep -f "rust-proxy" >/dev/null && ! pgrep -x "rust" >/dev/null); then
         local p_p=$(get_socks_config_port)
         [[ -n "$p_p" ]] && ACTIVE_ITEMS+=("🐍 Python : $(truncate_str "$p_p")") || ACTIVE_ITEMS+=("🐍 Python : ON")
     fi
 
-    # 8. SSH Sistema
+    # 9. SSH Sistema
     SSH_PORT_DISPLAY="22"
     if [[ -f /etc/ssh/sshd_config ]]; then
         local ssh_p=$(grep -i "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tr '\n' ',' | sed 's/,$//')
@@ -751,6 +764,12 @@ sshgo_menu() {
     pause_screen
 }
 
+badvpn_menu() {
+    panel_header "BADVPN UDPGW (GITHUB)" "🚀"
+    download_and_execute "badvpn-udpgw.sh"
+    pause_screen
+}
+
 firewall_menu() {
     panel_header "FIREWALL (GITHUB)" "🛡️"
     download_and_execute "firewall.sh"
@@ -803,6 +822,7 @@ status_menu() {
     printf "  Caddy:   "; (systemctl is-active --quiet caddy 2>/dev/null || command_exists caddy) && info "ACTIVO" || warn "INACTIVO"
     printf "  V2Ray:   "; systemctl is-active --quiet v2ray 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
     printf "  SSH-Go:  "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  BadVPN:  "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
     pause_screen
 }
 
@@ -814,14 +834,15 @@ main_menu() {
         printf "  %b[ 1]%b 🌐 %bCaddy Server%b       %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 3]%b 🚀 %bSSH-Go Proxy%b       %b[ 4]%b 🔰 %bXRay Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 5]%b ⚡ %bUDP Panel%b          %b[ 6]%b 🦀 %bSOCKS Proxy Rust%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b %b[ 8]%b 👥 %bSSH Panel / User%b\n\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b %b[ 8]%b 👥 %bSSH Panel / User%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 9]%b 🚀 %bBadVPN UDPGW%b\n\n" "$CYAN" "$NC" "$WHITE" "$NC"
 
         section_divider "GESTIÓN & MANTENIMIENTO"
-        printf "  %b[ 9]%b 🛡️  %bFirewall%b           %b[10]%b 🔐 %bConfigurar SSH%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[11]%b 📊 %bMonitoreo Sistema%b   %b[12]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
+        printf "  %b[10]%b 🛡️  %bFirewall%b           %b[11]%b 🔐 %bConfigurar SSH%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[12]%b 📊 %bMonitoreo Sistema%b   %b[13]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
         printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n" "$RED" "$NC" "$WHITE" "$NC"
 
-        read -r -p "  ❯ Selecciona una opción [0-12]: " option
+        read -r -p "  ❯ Selecciona una opción [0-13]: " option
 
         case "$option" in
             1) caddy_menu ;;
@@ -832,10 +853,11 @@ main_menu() {
             6) rust_menu ;;
             7) python_menu ;;
             8) ssh_panel_menu ;;
-            9) firewall_menu ;;
-            10) configure_ssh ;;
-            11) monitor_menu ;;
-            12) status_menu ;;
+            9) badvpn_menu ;;
+            10) firewall_menu ;;
+            11) configure_ssh ;;
+            12) monitor_menu ;;
+            13) status_menu ;;
             0)
                 clear_screen
                 printf "\n  %b¡Gracias por usar el panel VPN!%b\n\n" "$GREEN" "$NC"
