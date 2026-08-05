@@ -16,7 +16,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
-WHITE='\033[1;37m'
+WHITE='\033[0;37m'
 BOLD='\033[1m'
 NC='\033[0m'
 
@@ -60,7 +60,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
-WHITE='\033[1;37m'
+WHITE='\033[0;37m'
 BOLD='\033[1m'
 NC='\033[0m'
 
@@ -186,15 +186,15 @@ header(){
 
 while true; do
     header
-    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Cambiar Dominio${NC}"
-    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTP${NC}"
-    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${GREEN}Agregar un Puerto HTTP Nuevo${NC}"
-    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTPS${NC}"
-    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}Agregar un Puerto HTTPS Nuevo${NC}"
-    echo -e " ${WHITE}${BOLD}[ 6 ]${NC} ${CYAN}Ver Estado Detallado de Caddy${NC}"
-    echo -e " ${WHITE}${BOLD}[ 7 ]${NC} ${GREEN}Reiniciar Caddy${NC}"
-    echo -e " ${WHITE}${BOLD}[ 8 ]${NC} ${RED}Desinstalar Caddy Completamente${NC}"
-    echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Salir${NC}"
+    echo -e " ${WHITE}[ 1 ]${NC} ${CYAN}Cambiar Dominio${NC}"
+    echo -e " ${WHITE}[ 2 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTP${NC}"
+    echo -e " ${WHITE}[ 3 ]${NC} ${GREEN}Agregar un Puerto HTTP Nuevo${NC}"
+    echo -e " ${WHITE}[ 4 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTPS${NC}"
+    echo -e " ${WHITE}[ 5 ]${NC} ${GREEN}Agregar un Puerto HTTPS Nuevo${NC}"
+    echo -e " ${WHITE}[ 6 ]${NC} ${CYAN}Ver Estado Detallado de Caddy${NC}"
+    echo -e " ${WHITE}[ 7 ]${NC} ${GREEN}Reiniciar Caddy${NC}"
+    echo -e " ${WHITE}[ 8 ]${NC} ${RED}Desinstalar Caddy Completamente${NC}"
+    echo -e " ${WHITE}[ 0 ]${NC} ${YELLOW}Salir${NC}"
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
     read -p " Selecciona una opción [0-8]: " op
 
@@ -333,7 +333,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
-WHITE='\033[1;37m'
+WHITE='\033[0;37m'
 BOLD='\033[1m'
 NC='\033[0m'
 RESET='\033[0m'
@@ -634,7 +634,7 @@ header() {
     clear_screen
     get_sys_info
     get_ports_summary
-    printf "  %b🚀 ARIADNY MASTER PANEL %s%b\n" "$BOLD$WHITE" "$VERSION" "$NC"
+    printf "  %b🚀 ARIADNY MASTER PANEL %s%b\n" "$BOLD$CYAN" "$VERSION" "$NC"
     printf "  %b%s%b • %b%s%b • %bRAM:%s%b\n\n" "$CYAN" "$IP_ADDR" "$NC" "$CYAN" "$OS_INFO" "$NC" "$GREEN" "$RAM_INFO" "$NC"
 
     print_active_ports
@@ -811,15 +811,15 @@ main_menu() {
         header
 
         section_divider "PROTOCOLOS & PROXIES"
-        printf "  %b[ 1]%b 🌐 Caddy Server       %b[ 2]%b ⚡ V2Ray / VMess\n" "$CYAN" "$NC" "$CYAN" "$NC"
-        printf "  %b[ 3]%b 🚀 SSH-Go Proxy       %b[ 4]%b 🔰 XRay Panel\n" "$CYAN" "$NC" "$CYAN" "$NC"
-        printf "  %b[ 5]%b ⚡ UDP Panel          %b[ 6]%b 🦀 SOCKS Proxy Rust\n" "$CYAN" "$NC" "$CYAN" "$NC"
-        printf "  %b[ 7]%b 🐍 SOCKS Proxy Python %b[ 8]%b 👥 SSH Panel / User\n\n" "$CYAN" "$NC" "$CYAN" "$NC"
+        printf "  %b[ 1]%b 🌐 %bCaddy Server%b       %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 3]%b 🚀 %bSSH-Go Proxy%b       %b[ 4]%b 🔰 %bXRay Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 5]%b ⚡ %bUDP Panel%b          %b[ 6]%b 🦀 %bSOCKS Proxy Rust%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b %b[ 8]%b 👥 %bSSH Panel / User%b\n\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
 
         section_divider "GESTIÓN & MANTENIMIENTO"
-        printf "  %b[ 9]%b 🛡️  Firewall           %b[10]%b 🔐 Configurar SSH\n" "$CYAN" "$NC" "$CYAN" "$NC"
-        printf "  %b[11]%b 📊 Monitoreo Sistema   %b[12]%b 📋 Estado General\n" "$BLUE" "$NC" "$BLUE" "$NC"
-        printf "  %b[ 0]%b 🚪 Salir del Panel\n" "$RED" "$NC"
+        printf "  %b[ 9]%b 🛡️  %bFirewall%b           %b[10]%b 🔐 %bConfigurar SSH%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[11]%b 📊 %bMonitoreo Sistema%b   %b[12]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n" "$RED" "$NC" "$WHITE" "$NC"
 
         read -r -p "  ❯ Selecciona una opción [0-12]: " option
 
