@@ -51,6 +51,18 @@ instalar_ufw() {
     fi
 }
 
+is_fw_active() {
+    if command -v ufw &>/dev/null; then
+        if ufw status 2>/dev/null | grep -iq "active\|activo"; then
+            return 0
+        fi
+    fi
+    if systemctl is-active --quiet ufw 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
 # ==========================================
 # FUNCIONES PRINCIPALES
 # ==========================================
@@ -60,6 +72,10 @@ abrir_tcp() {
     instalar_ufw
 
     echo -e "${CYAN}Habilitando UFW y permitiendo tráfico TCP...${NC}"
+    sudo systemctl unmask ufw >/dev/null 2>&1
+    sudo systemctl enable ufw >/dev/null 2>&1
+    sudo systemctl start ufw >/dev/null 2>&1
+
     sudo ufw default allow outgoing >/dev/null 2>&1
     sudo ufw allow 1:65535/tcp >/dev/null 2>&1
     
@@ -77,6 +93,10 @@ abrir_udp() {
     instalar_ufw
 
     echo -e "${CYAN}Habilitando UFW y permitiendo tráfico UDP...${NC}"
+    sudo systemctl unmask ufw >/dev/null 2>&1
+    sudo systemctl enable ufw >/dev/null 2>&1
+    sudo systemctl start ufw >/dev/null 2>&1
+
     sudo ufw default allow outgoing >/dev/null 2>&1
     sudo ufw allow 1:65535/udp >/dev/null 2>&1
     
@@ -93,10 +113,14 @@ reiniciar_servicio() {
     echo -e "\n${YELLOW}${BOLD}=== REINICIAR SERVICIO DE FIREWALL ===${NC}"
     
     if command -v ufw &> /dev/null; then
-        echo -e "${CYAN}Reiniciando UFW...${NC}"
+        echo -e "${CYAN}Reiniciando e iniciando UFW...${NC}"
+        sudo systemctl unmask ufw >/dev/null 2>&1
+        sudo systemctl enable ufw >/dev/null 2>&1
+        sudo systemctl start ufw >/dev/null 2>&1
+        sudo ufw --force enable >/dev/null 2>&1
         sudo systemctl restart ufw >/dev/null 2>&1
         sudo ufw reload >/dev/null 2>&1
-        echo -e "${GREEN}${BOLD}✔ Servicio UFW reiniciado correctamente.${NC}\n"
+        echo -e "${GREEN}${BOLD}✔ Servicio UFW reiniciado e iniciado correctamente.${NC}\n"
     else
         echo -e "${RED}✘ UFW no está instalado en el sistema.${NC}\n"
     fi
@@ -142,7 +166,7 @@ header() {
     echo -e "${CYAN}${BOLD}│       ADMINISTRADOR DE FIREWALL UFW / IPTABLES         │${NC}"
     echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
     
-    if command -v ufw &>/dev/null && systemctl is-active --quiet ufw 2>/dev/null; then
+    if is_fw_active; then
         echo -e " ${PURPLE}${BOLD}Estado Firewall :${NC} ${GREEN}[ACTIVO / RUNNING]${NC}"
     else
         echo -e " ${PURPLE}${BOLD}Estado Firewall :${NC} ${RED}[INACTIVO / STOPPED]${NC}"
