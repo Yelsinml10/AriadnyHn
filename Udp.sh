@@ -90,20 +90,6 @@ EOF
 }
 
 # ==========================================
-# CERTIFICADO INVISIBLE
-# ==========================================
-generate_silent_cert() {
-    mkdir -p /etc/hysteria
-    if [ ! -f "/etc/hysteria/server.crt" ] || [ ! -f "/etc/hysteria/server.key" ]; then
-        openssl req -x509 -nodes -newkey rsa:2048 \
-            -keyout /etc/hysteria/server.key \
-            -out /etc/hysteria/server.crt \
-            -days 3650 \
-            -subj "/CN=localhost" > /dev/null 2>&1
-    fi
-}
-
-# ==========================================
 # MÓDULO: UDP-HYSTERIA (V1 & V2 CORREGIDO)
 # ==========================================
 install_hysteria_bin() {
@@ -125,6 +111,7 @@ install_hysteria_bin() {
     
     mkdir -p /etc/hysteria
     
+    # Lista de enlaces robustos directos (evitando limites de la API de Github)
     if [ "$VER" == "1" ]; then
         rm -f /etc/hysteria/config.yaml
         URLS=(
@@ -134,35 +121,38 @@ install_hysteria_bin() {
         )
     else
         rm -f /etc/hysteria/config.json
-        LATEST=$(curl -sS https://api.github.com/repos/apernet/hysteria/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "v2.6.0")
         URLS=(
-            "https://github.com/apernet/hysteria/releases/download/${LATEST}/hysteria-linux-${HY_ARCH}"
             "https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-${HY_ARCH}"
+            "https://github.com/apernet/hysteria/releases/download/app%2Fv2.5.2/hysteria-linux-${HY_ARCH}"
         )
     fi
     
     SUCCESS=0
     for url in "${URLS[@]}"; do
-        echo -e "${YELLOW}  ➔ Intentando descargar...${NC}"
-        curl -sSL -o /usr/local/bin/hysteria "$url" 2>/dev/null
+        echo -e "${YELLOW}  ➔ Intentando descargar: $url...${NC}"
         
-        if [ ! -s "/usr/local/bin/hysteria" ]; then
-            wget -qO /usr/local/bin/hysteria --no-check-certificate "$url" 2>/dev/null
-        fi
+        # Limpiar cualquier archivo corrupto previo
+        rm -f /usr/local/bin/hysteria
         
-        if [ -s "/usr/local/bin/hysteria" ]; then
+        # Descargar forzando seguimiento de redirecciones (curl -L)
+        curl -sSL -o /usr/local/bin/hysteria "$url" 2>/dev/null || wget -qO /usr/local/bin/hysteria --no-check-certificate "$url" 2>/dev/null
+        
+        # VALIDACIÓN ESTRICTA: El archivo no debe estar vacío Y debe ser un binario (ELF)
+        if [ -s "/usr/local/bin/hysteria" ] && file /usr/local/bin/hysteria 2>/dev/null | grep -qE 'ELF'; then
             chmod +x /usr/local/bin/hysteria
             SUCCESS=1
             echo -e "${GREEN}✔ Binario de Hysteria V${VER} instalado correctamente (${HY_ARCH}).${NC}"
             INSTALLED_VER=$(/usr/local/bin/hysteria version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "v1.x")
             echo -e "${CYAN}  ➔ Versión instalada: ${GREEN}$INSTALLED_VER${NC}"
             break
+        else
+            # Si descargó un error HTML, lo elimina silenciosamente para intentar la siguiente URL
+            rm -f /usr/local/bin/hysteria
         fi
-        rm -f /usr/local/bin/hysteria
     done
     
     if [ "$SUCCESS" -eq 0 ]; then
-        echo -e "${RED}[!] Error al descargar el binario de Hysteria. Verifique conexión.${NC}"
+        echo -e "${RED}[!] Error al descargar el binario de Hysteria. Verifique conexión a internet o los servidores de GitHub.${NC}"
         return 1
     fi
     return 0
@@ -203,6 +193,14 @@ config_udp_hysteria() {
     H_RANGE=${H_RANGE:-1:65535}
     H_RANGE_IPT=$(echo "$H_RANGE" | tr '-' ':')
     
+    clear
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│            CONFIGURAR DOMINIO / SNI                    │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}\n"
+    echo -e " ${WHITE}Puedes usar un dominio real tuyo, un bug host, o dejarlo en blanco.${NC}\n"
+    read -p "$(echo -e "${CYAN}❯ ${WHITE}Ingresa tu Dominio / SNI [predeterminado localhost]: ${NC}")" H_SNI
+    H_SNI=${H_SNI:-localhost}
+
     H_OBFS=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
     
     AUTH_URI=""
@@ -333,14 +331,22 @@ EOF_AUTH
     
     install_hysteria_bin "$H_VER" || { echo -e "\n Presione ENTER para volver"; read -p ""; return; }
     
-    generate_silent_cert
+    echo -e "${CYAN}[*] Generando certificado de seguridad para: ${YELLOW}$H_SNI${NC}..."
+    mkdir -p /etc/hysteria
+    rm -f /etc/hysteria/server.key /etc/hysteria/server.crt
+    openssl req -x509 -nodes -newkey rsa:2048 \
+        -keyout /etc/hysteria/server.key \
+        -out /etc/hysteria/server.crt \
+        -days 3650 \
+        -subj "/CN=$H_SNI" > /dev/null 2>&1
+
     optimize_kernel
 
-    # Generación del Link URI
+    # Generación del Link URI con el SNI Personalizado
     if [ "$H_VER" == "1" ]; then
-        HY_LINK="hysteria://${PUBLIC_IP}:${H_PORT}?protocol=udp&auth=&obfs=${H_OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=localhost#HysteriaV1_${PUBLIC_IP}"
+        HY_LINK="hysteria://${PUBLIC_IP}:${H_PORT}?protocol=udp&auth=&obfs=${H_OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=${H_SNI}#HysteriaV1_${PUBLIC_IP}"
     else
-        HY_LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${H_PORT}?insecure=1&sni=localhost&obfs=salamander&obfs-password=${H_OBFS}#HysteriaV2_${PUBLIC_IP}"
+        HY_LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${H_PORT}?insecure=1&sni=${H_SNI}&obfs=salamander&obfs-password=${H_OBFS}#HysteriaV2_${PUBLIC_IP}"
     fi
 
     cat <<EOF > /etc/hysteria/panel.conf
@@ -348,6 +354,7 @@ VERSION="$H_VER"
 PORT="$H_PORT"
 RANGE="$H_RANGE_IPT"
 OBFS="$H_OBFS"
+SNI="$H_SNI"
 AUTH_INFO="$AUTH_INFO"
 AUTH_URI="$AUTH_URI"
 LINK="$HY_LINK"
@@ -432,11 +439,14 @@ show_hysteria_info() {
         source /etc/hysteria/panel.conf 2>/dev/null
     fi
     
+    # Asegurar que SNI tenga un valor para mostrar en pantalla
+    SNI=${SNI:-localhost}
+
     if [ -z "$LINK" ]; then
         if [ "$VERSION" == "1" ]; then
-            LINK="hysteria://${PUBLIC_IP}:${PORT}?protocol=udp&auth=&obfs=${OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=localhost#HysteriaV1_${PUBLIC_IP}"
+            LINK="hysteria://${PUBLIC_IP}:${PORT}?protocol=udp&auth=&obfs=${OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=${SNI}#HysteriaV1_${PUBLIC_IP}"
         else
-            LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${PORT}?insecure=1&sni=localhost&obfs=salamander&obfs-password=${OBFS}#HysteriaV2_${PUBLIC_IP}"
+            LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${PORT}?insecure=1&sni=${SNI}&obfs=salamander&obfs-password=${OBFS}#HysteriaV2_${PUBLIC_IP}"
         fi
     fi
     
@@ -448,7 +458,7 @@ show_hysteria_info() {
     echo -e " ${PURPLE}${BOLD}• Rango IPTables  :${NC} ${CYAN}$RANGE > $PORT${NC}"
     echo -e " ${PURPLE}${BOLD}• Autenticación   :${NC} ${GREEN}${AUTH_INFO:-Libre}${NC}"
     echo -e " ${PURPLE}${BOLD}• Clave OBFS      :${NC} ${YELLOW}$OBFS${NC}"
-    echo -e " ${PURPLE}${BOLD}• SNI / Peer      :${NC} ${WHITE}localhost${NC}"
+    echo -e " ${PURPLE}${BOLD}• SNI / Peer      :${NC} ${WHITE}$SNI${NC}"
     echo -e " ${PURPLE}${BOLD}• Permite Insecure:${NC} ${GREEN}true (1)${NC}"
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
     echo -e "${GREEN}${BOLD}📌 LINK DE CONEXIÓN (Copiar y pegar en la App):${NC}"
@@ -464,6 +474,7 @@ menu_udp_hysteria() {
     fi
     
     source /etc/hysteria/panel.conf 2>/dev/null
+    SNI=${SNI:-localhost}
     
     REAL_VER="Desconocida"
     if [ -x "/usr/local/bin/hysteria" ]; then
@@ -479,6 +490,7 @@ menu_udp_hysteria() {
     echo -e " ${PURPLE}${BOLD}Puerto UDP      :${NC} ${GREEN}${BOLD}$PORT${NC}"
     echo -e " ${PURPLE}${BOLD}Redirección     :${NC} ${CYAN}$RANGE > $PORT${NC}"
     echo -e " ${PURPLE}${BOLD}OBFS            :${NC} ${YELLOW}$OBFS${NC}"
+    echo -e " ${PURPLE}${BOLD}SNI Certificado :${NC} ${WHITE}$SNI${NC}"
     echo -e " ${PURPLE}${BOLD}Autenticación   :${NC} ${GREEN}${AUTH_INFO:-Libre}${NC}"
     
     if systemctl is-active --quiet udp-hysteria; then
@@ -510,10 +522,10 @@ menu_udp_hysteria() {
                sed -i "s/OBFS=.*/OBFS=\"$NEW_OBFS\"/g" /etc/hysteria/panel.conf
                if [ "$VERSION" == "1" ]; then
                    sed -i "s/\"obfs\": \".*\"/\"obfs\": \"$NEW_OBFS\"/g" /etc/hysteria/config.json
-                   NEW_LINK="hysteria://${PUBLIC_IP}:${PORT}?protocol=udp&auth=&obfs=${NEW_OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=localhost#HysteriaV1_${PUBLIC_IP}"
+                   NEW_LINK="hysteria://${PUBLIC_IP}:${PORT}?protocol=udp&auth=&obfs=${NEW_OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=${SNI}#HysteriaV1_${PUBLIC_IP}"
                else
                    sed -i '/salamander:/{n;s/password: .*/password: "'"$NEW_OBFS"'"/}' /etc/hysteria/config.yaml
-                   NEW_LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${PORT}?insecure=1&sni=localhost&obfs=salamander&obfs-password=${NEW_OBFS}#HysteriaV2_${PUBLIC_IP}"
+                   NEW_LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${PORT}?insecure=1&sni=${SNI}&obfs=salamander&obfs-password=${NEW_OBFS}#HysteriaV2_${PUBLIC_IP}"
                fi
                sed -i "s|LINK=.*|LINK=\"$NEW_LINK\"|g" /etc/hysteria/panel.conf
                systemctl restart udp-hysteria
