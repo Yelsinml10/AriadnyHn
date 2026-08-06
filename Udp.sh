@@ -66,8 +66,7 @@ check_root() {
 install_dependencies() {
     echo -e "${CYAN}[*] Actualizando e instalando dependencias base...${NC}"
     apt-get update -y > /dev/null 2>&1
-    apt-get install -y wget curl nano iptables ufw unzip openssl net-tools iproute2 jq socat cron python3 python3-pip git psmisc file > /dev/null 2>&1
-    pip3 install --upgrade pip > /dev/null 2>&1
+    apt-get install -y wget curl nano iptables ufw unzip openssl net-tools iproute2 jq socat cron python3 python3-pip git psmisc file awk > /dev/null 2>&1
 }
 
 get_public_ip() {
@@ -235,7 +234,7 @@ config_udp_hysteria() {
                 AUTH_URI="${PANEL_PASS}@"
                 ;;
             3)
-                # Crear Autenticador Inteligente en tiempo real para usuarios de sshpanel
+                # Autenticador nativo en Bash usando openssl (Compatible Ubuntu 24.04+)
                 cat <<'EOF_AUTH' > /etc/hysteria/auth.sh
 #!/bin/bash
 AUTH_PAYLOAD="$2"
@@ -249,10 +248,12 @@ else
     PASS="$AUTH_PAYLOAD"
 fi
 
+# Verifica si el usuario existe en el sistema
 if ! id "$USER" &>/dev/null; then
     exit 1
 fi
 
+# Verificación de expiración
 EXP_DATE=$(chage -l "$USER" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
 if [ "$EXP_DATE" != "never" ] && [ -n "$EXP_DATE" ]; then
     EXP_SEC=$(date -d "$EXP_DATE" +%s 2>/dev/null)
@@ -262,26 +263,25 @@ if [ "$EXP_DATE" != "never" ] && [ -n "$EXP_DATE" ]; then
     fi
 fi
 
-python3 -c "
-import sys, spwd, crypt, time
-user = sys.argv[1]
-passw = sys.argv[2]
-try:
-    target = spwd.getspnam(user)
-    if target.sp_expire > 0 and (target.sp_expire * 86400) < time.time():
-        sys.exit(1)
-    if crypt.crypt(passw, target.sp_pwd) == target.sp_pwd:
-        sys.exit(0)
-    else:
-        sys.exit(1)
-except Exception:
-    sys.exit(1)
-" "$USER" "$PASS" 2>/dev/null
-exit $?
+# Extracción de hash y validación nativa sin dependencias obsoletas
+VALID_HASH=$(sudo awk -F: -v user="$USER" '$1 == user {print $2}' /etc/shadow)
+
+if [[ "$VALID_HASH" == "\$y\$"* ]]; then
+    # yescrypt (Predeterminado en Ubuntu recientes)
+    SALT=$(echo "$VALID_HASH" | cut -d\$ -f1,2,3,4)
+    TEST_HASH=$(openssl passwd -yescrypt -salt "$SALT" "$PASS" 2>/dev/null)
+elif [[ "$VALID_HASH" == "\$6\$"* ]]; then
+    # SHA-512 (Común en versiones anteriores)
+    SALT=$(echo "$VALID_HASH" | cut -d\$ -f1,2,3)
+    TEST_HASH=$(openssl passwd -6 -salt "$SALT" "$PASS" 2>/dev/null)
+else
+    exit 1
+fi
+
+[ "$VALID_HASH" == "$TEST_HASH" ] && exit 0 || exit 1
 EOF_AUTH
                 chmod +x /etc/hysteria/auth.sh
 
-                # CORREGIDO: auth.type = command, auth.command = string
                 AUTH_BLOCK="auth:
   type: command
   command: \"/etc/hysteria/auth.sh\""
@@ -387,6 +387,7 @@ EOF
         CMD="/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml"
     fi
 
+    # Integración de la redirección NAT directamente en el servicio Systemd
     cat <<EOF > /etc/systemd/system/udp-hysteria.service
 [Unit]
 Description=UDP-Hysteria Server V${H_VER}
@@ -396,6 +397,8 @@ After=network.target
 Type=simple
 User=root
 ExecStart=$CMD
+ExecStartPost=/bin/bash -c 'iptables -t nat -I PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT || true'
+ExecStopPost=/bin/bash -c 'iptables -t nat -D PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT || true'
 WorkingDirectory=/etc/hysteria
 Restart=always
 RestartSec=3
@@ -409,15 +412,11 @@ WantedBy=multi-user.target
 EOF
 
     systemctl stop udp-hysteria 2>/dev/null
-    fuser -k $H_PORT/udp 2>/dev/null
     pkill -9 hysteria 2>/dev/null
     sleep 1
 
     iptables -I INPUT -p udp --dport $H_PORT -j ACCEPT >/dev/null 2>&1
     ufw allow $H_PORT/udp >/dev/null 2>&1
-    
-    iptables -t nat -D PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT 2>/dev/null
-    iptables -t nat -I PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT
     
     systemctl daemon-reload
     systemctl restart udp-hysteria
@@ -517,22 +516,19 @@ menu_udp_hysteria() {
                    NEW_LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${PORT}?insecure=1&sni=localhost&obfs=salamander&obfs-password=${NEW_OBFS}#HysteriaV2_${PUBLIC_IP}"
                fi
                sed -i "s|LINK=.*|LINK=\"$NEW_LINK\"|g" /etc/hysteria/panel.conf
-               fuser -k $PORT/udp 2>/dev/null
-               pkill -9 hysteria 2>/dev/null
                systemctl restart udp-hysteria
                echo -e "${GREEN}✔ OBFS y Link actualizados correctamente.${NC}"; sleep 2
            fi
            menu_udp_hysteria ;;
         3) config_udp_hysteria; menu_udp_hysteria ;;
         4) systemctl status udp-hysteria --no-pager; read -p "Presione ENTER para volver..."; menu_udp_hysteria ;;
-        5) fuser -k $PORT/udp 2>/dev/null; pkill -9 hysteria 2>/dev/null; systemctl restart udp-hysteria; echo -e "${GREEN}✔ Servicio reiniciado.${NC}"; sleep 1; menu_udp_hysteria ;;
+        5) systemctl restart udp-hysteria; echo -e "${GREEN}✔ Servicio reiniciado.${NC}"; sleep 1; menu_udp_hysteria ;;
         6) systemctl stop udp-hysteria; echo -e "${YELLOW}Servicio detenido.${NC}"; sleep 1; menu_udp_hysteria ;;
         7) journalctl -u udp-hysteria -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_udp_hysteria ;;
         8) show_hysteria_info; menu_udp_hysteria ;;
         9) 
            systemctl stop udp-hysteria 2>/dev/null
            systemctl disable udp-hysteria 2>/dev/null
-           fuser -k $PORT/udp 2>/dev/null
            pkill -9 hysteria 2>/dev/null
            rm -rf /etc/hysteria /etc/systemd/system/udp-hysteria.service
            rm -f /usr/local/bin/hysteria
@@ -553,10 +549,11 @@ install_udp_bin() {
     ARCH=$(uname -m)
     mkdir -p /etc/udp-custom
     
+    # Ruteado a tu propio repositorio para evitar discrepancias de versión
     if [[ "$ARCH" == *"arm"* ]] || [[ "$ARCH" == *"aarch"* ]]; then
-        URLS=("https://raw.githubusercontent.com/prjkt-nv404/UDP-Custom-Installer-arm64/main/udpc-arm64")
+        URLS=("https://raw.githubusercontent.com/Yelsinml10/Udp/main/udp-custom-linux-arm64")
     else
-        URLS=("https://raw.githubusercontent.com/http-custom/udp-custom/main/bin/udp-custom-linux-amd64")
+        URLS=("https://raw.githubusercontent.com/Yelsinml10/Udp/main/udp-custom-linux-amd64")
     fi
 
     for url in "${URLS[@]}"; do
@@ -567,7 +564,7 @@ install_udp_bin() {
             return 0
         fi
     done
-    echo -e "${RED}[!] Error al instalar UDP Custom.${NC}"; return 1
+    echo -e "${RED}[!] Error al instalar UDP Custom. Asegúrate de tener el archivo en tu repositorio Github.${NC}"; return 1
 }
 
 config_udp() {
@@ -661,7 +658,6 @@ EOF
 
     # Detener y limpiar
     systemctl stop udp-custom 2>/dev/null
-    fuser -k $U_PORT/udp 2>/dev/null
     pkill -9 udp-custom 2>/dev/null
     sleep 1
 
@@ -752,8 +748,6 @@ menu_udp_custom() {
         3) mostrar_config_udp; menu_udp_custom ;;
         4) systemctl status udp-custom --no-pager; read -p "Presione ENTER para volver..."; menu_udp_custom ;;
         5) 
-           fuser -k $PORT/udp 2>/dev/null
-           pkill -9 udp-custom 2>/dev/null
            systemctl restart udp-custom
            echo -e "${GREEN}✔ Servicio reiniciado.${NC}"; sleep 1; menu_udp_custom ;;
         6) systemctl stop udp-custom; echo -e "${YELLOW}Servicio detenido.${NC}"; sleep 1; menu_udp_custom ;;
@@ -761,7 +755,6 @@ menu_udp_custom() {
         9) 
            systemctl stop udp-custom 2>/dev/null
            systemctl disable udp-custom 2>/dev/null
-           fuser -k $PORT/udp 2>/dev/null
            pkill -9 udp-custom 2>/dev/null
            rm -rf /etc/udp-custom /etc/systemd/system/udp-custom.service
            rm -f /usr/local/bin/udp-custom
@@ -861,7 +854,6 @@ install_zivpn_bin() {
     echo -e "${CYAN}[*] Verificando e instalando binario de ZI VPN...${NC}"
     
     systemctl stop zivpn 2>/dev/null
-    fuser -k 5667/udp 2>/dev/null
     pkill -9 zivpn 2>/dev/null
     rm -f /usr/local/bin/zivpn
     
@@ -1011,7 +1003,6 @@ PASS="$Z_PASS"
 EOF
 
     systemctl stop zivpn 2>/dev/null
-    fuser -k $Z_PORT/udp 2>/dev/null
     pkill -9 zivpn 2>/dev/null
     sleep 1
 
@@ -1068,8 +1059,6 @@ menu_zivpn() {
            if [ -n "$NEW_OBFS" ]; then
                sed -i "s/OBFS=.*/OBFS=\"$NEW_OBFS\"/g" /etc/zivpn/panel.conf
                sed -i "s/\"obfs\": \".*\"/\"obfs\": \"$NEW_OBFS\"/g" /etc/zivpn/config.json
-               fuser -k $PORT/udp 2>/dev/null
-               pkill -9 zivpn 2>/dev/null
                systemctl restart zivpn
                echo -e "${GREEN}✔ OBFS actualizado correctamente.${NC}"; sleep 2
            fi
@@ -1079,16 +1068,12 @@ menu_zivpn() {
            if [ -n "$NEW_PASS" ]; then
                sed -i "s/PASS=.*/PASS=\"$NEW_PASS\"/g" /etc/zivpn/panel.conf
                python3 -c "import json; f=open('/etc/zivpn/config.json'); d=json.load(f); f.close(); d['auth']['config']=['$NEW_PASS']; f=open('/etc/zivpn/config.json','w'); json.dump(d,f,indent=2); f.close()" 2>/dev/null
-               fuser -k $PORT/udp 2>/dev/null
-               pkill -9 zivpn 2>/dev/null
                systemctl restart zivpn
                echo -e "${GREEN}✔ Contraseña actualizada correctamente.${NC}"; sleep 2
            fi
            menu_zivpn ;;
         4) systemctl status zivpn --no-pager; read -p "Presione ENTER para volver..."; menu_zivpn ;;
         5) 
-           fuser -k $PORT/udp 2>/dev/null
-           pkill -9 zivpn 2>/dev/null
            systemctl restart zivpn
            echo -e "${GREEN}✔ Servicio reiniciado.${NC}"; sleep 1; menu_zivpn ;;
         6) systemctl stop zivpn; echo -e "${YELLOW}Servicio detenido.${NC}"; sleep 1; menu_zivpn ;;
@@ -1096,7 +1081,6 @@ menu_zivpn() {
         9) 
            systemctl stop zivpn 2>/dev/null
            systemctl disable zivpn 2>/dev/null
-           fuser -k $PORT/udp 2>/dev/null
            pkill -9 zivpn 2>/dev/null
            rm -rf /etc/zivpn /etc/systemd/system/zivpn.service
            rm -f /usr/local/bin/zivpn
