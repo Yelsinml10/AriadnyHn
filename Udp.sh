@@ -89,14 +89,26 @@ EOF
     echo -e "${GREEN}✔ Optimizaciones del Kernel aplicadas con éxito.${NC}"
 }
 
+generate_silent_cert() {
+    mkdir -p /etc/hysteria
+    if [ ! -f "/etc/hysteria/server.crt" ] || [ ! -f "/etc/hysteria/server.key" ]; then
+        openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout /etc/hysteria/server.key \
+            -out /etc/hysteria/server.crt \
+            -days 3650 \
+            -subj "/CN=localhost" > /dev/null 2>&1
+    fi
+}
+
 # ==========================================
-# MÓDULO: UDP-HYSTERIA (V1 & V2)
+# MÓDULO: UDP-HYSTERIA (INSTALADOR FUNCIONAL)
 # ==========================================
 install_hysteria_bin() {
     local VER=$1
     echo -e "${CYAN}[*] Instalando Binario de Hysteria (Versión $VER)...${NC}"
     
     systemctl stop udp-hysteria 2>/dev/null
+    fuser -k 36712/udp 2>/dev/null
     pkill -9 hysteria 2>/dev/null
     rm -f /usr/local/bin/hysteria
     
@@ -120,30 +132,35 @@ install_hysteria_bin() {
         )
     else
         rm -f /etc/hysteria/config.json
+        LATEST=$(curl -sS https://api.github.com/repos/apernet/hysteria/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "v2.6.0")
         URLS=(
+            "https://github.com/apernet/hysteria/releases/download/${LATEST}/hysteria-linux-${HY_ARCH}"
             "https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-${HY_ARCH}"
-            "https://github.com/apernet/hysteria/releases/download/app%2Fv2.5.2/hysteria-linux-${HY_ARCH}"
         )
     fi
     
     SUCCESS=0
     for url in "${URLS[@]}"; do
-        echo -e "${YELLOW}  ➔ Intentando descargar: $url...${NC}"
-        rm -f /usr/local/bin/hysteria
-        curl -sSL -o /usr/local/bin/hysteria "$url" 2>/dev/null || wget -qO /usr/local/bin/hysteria --no-check-certificate "$url" 2>/dev/null
+        echo -e "${YELLOW}  ➔ Descargando binario...${NC}"
+        curl -sSL -o /usr/local/bin/hysteria "$url" 2>/dev/null
         
-        if [ -s "/usr/local/bin/hysteria" ] && file /usr/local/bin/hysteria 2>/dev/null | grep -qE 'ELF'; then
+        if [ ! -s "/usr/local/bin/hysteria" ]; then
+            wget -qO /usr/local/bin/hysteria --no-check-certificate "$url" 2>/dev/null
+        fi
+        
+        if [ -s "/usr/local/bin/hysteria" ]; then
             chmod +x /usr/local/bin/hysteria
             SUCCESS=1
             echo -e "${GREEN}✔ Binario de Hysteria V${VER} instalado correctamente (${HY_ARCH}).${NC}"
+            INSTALLED_VER=$(/usr/local/bin/hysteria version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "v1.x")
+            echo -e "${CYAN}  ➔ Versión instalada: ${GREEN}$INSTALLED_VER${NC}"
             break
-        else
-            rm -f /usr/local/bin/hysteria
         fi
+        rm -f /usr/local/bin/hysteria
     done
     
     if [ "$SUCCESS" -eq 0 ]; then
-        echo -e "${RED}[!] Error al descargar el binario de Hysteria.${NC}"
+        echo -e "${RED}[!] Error al descargar el binario de Hysteria. Verifique conexión.${NC}"
         return 1
     fi
     return 0
@@ -198,13 +215,7 @@ config_udp_hysteria() {
     install_dependencies
     install_hysteria_bin "$H_VER" || { read -p "Presione ENTER para volver"; return; }
     
-    mkdir -p /etc/hysteria
-    openssl req -x509 -nodes -newkey rsa:2048 \
-        -keyout /etc/hysteria/server.key \
-        -out /etc/hysteria/server.crt \
-        -days 3650 \
-        -subj "/CN=$H_SNI" > /dev/null 2>&1
-
+    generate_silent_cert
     optimize_kernel
 
     if [ "$H_VER" == "1" ]; then
@@ -263,8 +274,6 @@ After=network.target
 Type=simple
 User=root
 ExecStart=$CMD
-ExecStartPost=/bin/bash -c 'iptables -t nat -I PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT || true'
-ExecStopPost=/bin/bash -c 'iptables -t nat -D PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT || true'
 WorkingDirectory=/etc/hysteria
 Restart=always
 RestartSec=3
@@ -278,18 +287,47 @@ WantedBy=multi-user.target
 EOF
 
     systemctl stop udp-hysteria 2>/dev/null
+    fuser -k $H_PORT/udp 2>/dev/null
     pkill -9 hysteria 2>/dev/null
     sleep 1
 
     iptables -I INPUT -p udp --dport $H_PORT -j ACCEPT >/dev/null 2>&1
     ufw allow $H_PORT/udp >/dev/null 2>&1
     
+    iptables -t nat -D PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT 2>/dev/null
+    iptables -t nat -I PREROUTING -p udp -m udp --dport $H_RANGE_IPT -j REDIRECT --to-ports $H_PORT 2>/dev/null
+    
     systemctl daemon-reload
     systemctl restart udp-hysteria
     systemctl enable udp-hysteria >/dev/null 2>&1
     
-    echo -e "${GREEN}✔ Hysteria configurado correctamente.${NC}"
-    read -p "Presione ENTER para continuar..."
+    clear
+    echo -e "${GREEN}${BOLD}✔ Hysteria V${H_VER} configurado e iniciado con éxito.${NC}\n"
+    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}${BOLD}│               ENLACE DE CONEXIÓN CLIENTE (URI)         │${NC}"
+    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+    echo -e "${YELLOW}${BOLD}$HY_LINK${NC}\n"
+    read -p "Presione ENTER para continuar al menú..."
+}
+
+show_hysteria_link() {
+    clear
+    if [ -f "/etc/hysteria/panel.conf" ]; then
+        source /etc/hysteria/panel.conf 2>/dev/null
+        echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
+        echo -e "${CYAN}${BOLD}│             ENLACE DE CONEXIÓN HYSTERIA (URI)          │${NC}"
+        echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+        echo -e " ${PURPLE}${BOLD}Versión Hysteria :${NC} ${YELLOW}V$VERSION${NC}"
+        echo -e " ${PURPLE}${BOLD}Puerto / SNI     :${NC} ${GREEN}$PORT / ${SNI:-localhost}${NC}"
+        echo -e " ${PURPLE}${BOLD}Obfuscation (OBFS):${NC} ${CYAN}$OBFS${NC}"
+        echo -e " ${PURPLE}${BOLD}Autenticación    :${NC} ${WHITE}$AUTH_INFO${NC}"
+        echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+        echo -e "${YELLOW}${BOLD}${LINK:-Sin enlace disponible}${NC}"
+        echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}\n"
+    else
+        echo -e "${RED}[!] No hay una configuración activa de Hysteria.${NC}"
+    fi
+    read -p "Presione ENTER para volver..."
 }
 
 menu_udp_hysteria() {
@@ -320,23 +358,26 @@ menu_udp_hysteria() {
     fi
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
     
-    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}Reconfigurar UDP-Hysteria${NC}"
-    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${GREEN}Reiniciar Servicio${NC}"
-    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${YELLOW}Detener Servicio${NC}"
-    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Ver Logs en Tiempo Real${NC}"
-    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${RED}Desinstalar UDP-Hysteria${NC}"
+    echo -e " ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}${BOLD}Ver Enlace / Link de Conexión (URI)${NC}"
+    echo -e " ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}Reconfigurar UDP-Hysteria${NC}"
+    echo -e " ${WHITE}${BOLD}[ 3 ]${NC} ${GREEN}Reiniciar Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 4 ]${NC} ${YELLOW}Detener Servicio${NC}"
+    echo -e " ${WHITE}${BOLD}[ 5 ]${NC} ${CYAN}Ver Logs en Tiempo Real${NC}"
+    echo -e " ${WHITE}${BOLD}[ 6 ]${NC} ${RED}Desinstalar UDP-Hysteria${NC}"
     echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Volver Al Menú Principal${NC}"
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
-    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una Opción [0-5]: ${NC}")" OPT
+    read -p "$(echo -e "${YELLOW}${BOLD} Selecciona una Opción [0-6]: ${NC}")" OPT
     
     case $OPT in
-        1) config_udp_hysteria; menu_udp_hysteria ;;
-        2) systemctl restart udp-hysteria; echo -e "${GREEN}✔ Reiniciado.${NC}"; sleep 1; menu_udp_hysteria ;;
-        3) systemctl stop udp-hysteria; echo -e "${YELLOW}✔ Detenido.${NC}"; sleep 1; menu_udp_hysteria ;;
-        4) journalctl -u udp-hysteria -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_udp_hysteria ;;
-        5) 
+        1) show_hysteria_link; menu_udp_hysteria ;;
+        2) config_udp_hysteria; menu_udp_hysteria ;;
+        3) fuser -k $PORT/udp 2>/dev/null; pkill -9 hysteria 2>/dev/null; systemctl restart udp-hysteria; echo -e "${GREEN}✔ Reiniciado.${NC}"; sleep 1; menu_udp_hysteria ;;
+        4) systemctl stop udp-hysteria; echo -e "${YELLOW}✔ Detenido.${NC}"; sleep 1; menu_udp_hysteria ;;
+        5) journalctl -u udp-hysteria -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_udp_hysteria ;;
+        6) 
            systemctl stop udp-hysteria 2>/dev/null
            systemctl disable udp-hysteria 2>/dev/null
+           fuser -k $PORT/udp 2>/dev/null
            pkill -9 hysteria 2>/dev/null
            rm -rf /etc/hysteria /etc/systemd/system/udp-hysteria.service
            rm -f /usr/local/bin/hysteria
@@ -476,6 +517,7 @@ WantedBy=multi-user.target
 EOF
 
     systemctl stop udp-custom 2>/dev/null
+    fuser -k $U_PORT/udp 2>/dev/null
     pkill -9 udp-custom 2>/dev/null
     sleep 1
 
@@ -530,6 +572,7 @@ menu_udp_custom() {
         5) 
            systemctl stop udp-custom 2>/dev/null
            systemctl disable udp-custom 2>/dev/null
+           fuser -k $PORT/udp 2>/dev/null
            pkill -9 udp-custom 2>/dev/null
            rm -rf /etc/udp-custom /etc/systemd/system/udp-custom.service
            rm -f /usr/local/bin/udp-custom
@@ -549,6 +592,7 @@ install_zivpn_bin() {
     echo -e "${CYAN}[*] Verificando e instalando binario de ZI VPN...${NC}"
     
     systemctl stop zivpn 2>/dev/null
+    fuser -k 5667/udp 2>/dev/null
     pkill -9 zivpn 2>/dev/null
     rm -f /usr/local/bin/zivpn
     
@@ -656,6 +700,7 @@ PASS="$Z_PASS"
 EOF
 
     systemctl stop zivpn 2>/dev/null
+    fuser -k $Z_PORT/udp 2>/dev/null
     pkill -9 zivpn 2>/dev/null
     sleep 1
 
@@ -710,6 +755,7 @@ menu_zivpn() {
         5) 
            systemctl stop zivpn 2>/dev/null
            systemctl disable zivpn 2>/dev/null
+           fuser -k $PORT/udp 2>/dev/null
            pkill -9 zivpn 2>/dev/null
            rm -rf /etc/zivpn /etc/systemd/system/zivpn.service
            rm -f /usr/local/bin/zivpn
