@@ -16,9 +16,14 @@ NC='\033[0m'
 
 check_root(){
     if [[ $EUID -ne 0 ]]; then
-       echo -e "\n${RED}${BOLD}[✗] Este script debe ejecutarse como root:${NC} ${YELLOW}sudo bash $0${NC}\n"
+       echo -e "\n${RED}${BOLD}[✗] Este script debe ejecutarse como root:${NC} ${YELLOW}bash $0${NC}\n"
        exit 1
     fi
+}
+
+sanitize_ports() {
+    # Convierte espacios en comas, elimina caracteres no numéricos extra
+    echo "$1" | tr ' ' ',' | tr -s ',' | sed 's/^,//;s/,$//'
 }
 
 check_root
@@ -36,8 +41,9 @@ echo -e "${PURPLE}${BOLD}[ CONFIGURACIÓN INICIAL ]${NC}\n"
 
 # 1. Solicitar Dominio
 while true; do
-    echo -e "${CYAN}➜ Agrega un dominio:${NC}"
+    echo -e "${CYAN}➜ Agrega un dominio (ejemplo: midominio.com):${NC}"
     read -p "  Dominio: " INPUT_DOM
+    INPUT_DOM=$(echo "$INPUT_DOM" | tr -d ' ')
     if [[ -n "$INPUT_DOM" ]]; then
         DOMAIN="$INPUT_DOM"
         break
@@ -51,8 +57,9 @@ echo ""
 while true; do
     echo -e "${CYAN}➜ Agrega puertos HTTP (ejemplo: 80, 8880):${NC}"
     read -p "  Puertos HTTP: " INPUT_HTTP
-    if [[ -n "$INPUT_HTTP" ]]; then
-        HTTP_PORTS="$INPUT_HTTP"
+    CLEAN_HTTP=$(sanitize_ports "$INPUT_HTTP")
+    if [[ -n "$CLEAN_HTTP" ]]; then
+        HTTP_PORTS="$CLEAN_HTTP"
         break
     else
         echo -e "  ${RED}[!] Debes agregar al menos un puerto HTTP.${NC}\n"
@@ -64,8 +71,9 @@ echo ""
 while true; do
     echo -e "${CYAN}➜ Agrega puertos HTTPS (ejemplo: 443, 8443):${NC}"
     read -p "  Puertos HTTPS: " INPUT_HTTPS
-    if [[ -n "$INPUT_HTTPS" ]]; then
-        HTTPS_PORTS="$INPUT_HTTPS"
+    CLEAN_HTTPS=$(sanitize_ports "$INPUT_HTTPS")
+    if [[ -n "$CLEAN_HTTPS" ]]; then
+        HTTPS_PORTS="$CLEAN_HTTPS"
         break
     else
         echo -e "  ${RED}[!] Debes agregar al menos un puerto HTTPS.${NC}\n"
@@ -141,8 +149,8 @@ build_caddyfile() {
 # ========================================================
 $HTTP_LIST {
     
-    # Enrutador dinámico por URL (/puerto_XXXX)
-    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
+    # Enrutador dinámico por URL (/puerto_XXXX) - Restringido a puertos > 1024 para evitar SSRF en SSH/BBDD
+    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
     handle @dinamico_http {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
@@ -171,8 +179,8 @@ $HTTP_LIST {
 # ========================================================
 $HTTPS_LIST {
     
-    # Enrutador dinámico por URL (/puerto_XXXX)
-    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
+    # Enrutador dinámico por URL (/puerto_XXXX) - Restringido a puertos > 1024
+    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
     handle @dinamico_https {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
@@ -205,8 +213,9 @@ echo -e "${BLUE}${BOLD}└──────────────────
 apt update -qq
 apt install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl >/dev/null 2>&1
 
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes 2>/dev/null
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+# Corrección: Eliminado 'sudo'
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes 2>/dev/null
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
 
 apt update -qq
 apt install -y -qq caddy >/dev/null 2>&1
@@ -242,6 +251,10 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 BOLD='\033[1m'
 NC='\033[0m'
+
+sanitize_ports() {
+    echo "$1" | tr ' ' ',' | tr -s ',' | sed 's/^,//;s/,$//'
+}
 
 load_conf(){
     if [ -f "$CONF_FILE" ]; then
@@ -310,7 +323,7 @@ generate_caddyfile() {
 # ========================================================
 $HTTP_LIST {
     
-    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
+    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
     handle @dinamico_http {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
@@ -337,7 +350,7 @@ $HTTP_LIST {
 # ========================================================
 $HTTPS_LIST {
     
-    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
+    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
     handle @dinamico_https {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
@@ -402,6 +415,7 @@ while true; do
             echo -e "\n${YELLOW}${BOLD}=== CAMBIAR DOMINIO ===${NC}"
             echo -e "Dominio actual: ${CYAN}$DOMAIN${NC}"
             read -p "Ingrese el nuevo dominio: " new_dom
+            new_dom=$(echo "$new_dom" | tr -d ' ')
             if [ -n "$new_dom" ]; then
                 DOMAIN="$new_dom"
                 save_conf
@@ -417,6 +431,7 @@ while true; do
             echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTP ===${NC}"
             echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
             read -p "Nuevos puertos HTTP separados por coma (ej: 80, 8880): " new_http
+            new_http=$(sanitize_ports "$new_http")
             if [ -n "$new_http" ]; then
                 HTTP_PORTS="$new_http"
                 save_conf
@@ -435,6 +450,7 @@ while true; do
             add_http=$(echo "$add_http" | tr -d ' ')
             if [ -n "$add_http" ]; then
                 HTTP_PORTS="${HTTP_PORTS}, ${add_http}"
+                HTTP_PORTS=$(sanitize_ports "$HTTP_PORTS")
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
@@ -448,6 +464,7 @@ while true; do
             echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTPS ===${NC}"
             echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
             read -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https
+            new_https=$(sanitize_ports "$new_https")
             if [ -n "$new_https" ]; then
                 HTTPS_PORTS="$new_https"
                 save_conf
@@ -466,6 +483,7 @@ while true; do
             add_https=$(echo "$add_https" | tr -d ' ')
             if [ -n "$add_https" ]; then
                 HTTPS_PORTS="${HTTPS_PORTS}, ${add_https}"
+                HTTPS_PORTS=$(sanitize_ports "$HTTPS_PORTS")
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
