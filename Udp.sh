@@ -66,7 +66,7 @@ check_root() {
 install_dependencies() {
     echo -e "${CYAN}[*] Actualizando e instalando dependencias base...${NC}"
     apt-get update -y > /dev/null 2>&1
-    apt-get install -y wget curl nano iptables ufw unzip openssl net-tools iproute2 jq socat cron python3 python3-pip git psmisc file awk build-essential > /dev/null 2>&1
+    apt-get install -y wget curl nano iptables ufw unzip openssl net-tools iproute2 jq socat cron python3 python3-pip git psmisc file awk build-essential perl > /dev/null 2>&1
 }
 
 get_public_ip() {
@@ -98,6 +98,46 @@ generate_silent_cert() {
             -days 3650 \
             -subj "/CN=localhost" > /dev/null 2>&1
     fi
+}
+
+create_auth_script() {
+    mkdir -p /etc/hysteria
+    cat <<'EOF_AUTH' > /etc/hysteria/auth.sh
+#!/bin/bash
+AUTH_PAYLOAD="$2"
+[ -z "$AUTH_PAYLOAD" ] && exit 1
+
+if [[ "$AUTH_PAYLOAD" == *":"* ]]; then
+    USER="${AUTH_PAYLOAD%%:*}"
+    PASS="${AUTH_PAYLOAD#*:}"
+else
+    USER="$AUTH_PAYLOAD"
+    PASS="$AUTH_PAYLOAD"
+fi
+
+if ! id "$USER" &>/dev/null; then
+    exit 1
+fi
+
+EXP_DATE=$(chage -l "$USER" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+if [ "$EXP_DATE" != "never" ] && [ -n "$EXP_DATE" ]; then
+    EXP_SEC=$(date -d "$EXP_DATE" +%s 2>/dev/null)
+    NOW_SEC=$(date +%s)
+    if [ -n "$EXP_SEC" ] && [ "$NOW_SEC" -gt "$EXP_SEC" ]; then
+        exit 1
+    fi
+fi
+
+VALID_HASH=$(awk -F: -v user="$USER" '$1 == user {print $2}' /etc/shadow)
+[ -z "$VALID_HASH" ] && exit 1
+
+perl -e '
+my ($pass, $hash) = @ARGV;
+exit 1 if (!$hash || $hash eq "*" || $hash eq "!");
+exit (crypt($pass, $hash) eq $hash ? 0 : 1);
+' "$PASS" "$VALID_HASH"
+EOF_AUTH
+    chmod +x /etc/hysteria/auth.sh
 }
 
 # ==========================================
@@ -196,35 +236,28 @@ config_udp_hysteria() {
     H_SNI=${H_SNI:-localhost}
 
     H_OBFS=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
-    
-    AUTH_URI=""
-    if [ "$H_VER" == "2" ]; then
-        read -p "$(echo -e "${CYAN}❯ ${WHITE}Contraseña Hysteria V2 [Enter para aleatoria]: ${NC}")" H_PASS
-        H_PASS=${H_PASS:-$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)}
-        AUTH_BLOCK="auth:
-  type: password
-  password: \"$H_PASS\""
-        AUTH_INFO="Password ($H_PASS)"
-        AUTH_URI="${H_PASS}@"
-    else
-        AUTH_INFO="V1 - Sin autenticación"
-        AUTH_URI=""
-    fi
 
     echo -e "\n${YELLOW}Instalando y configurando...${NC}"
     install_dependencies
     install_hysteria_bin "$H_VER" || { read -p "Presione ENTER para volver"; return; }
     
     generate_silent_cert
+    create_auth_script
     optimize_kernel
 
     if [ "$H_VER" == "1" ]; then
-        HY_LINK="hysteria://${PUBLIC_IP}:${H_PORT}?protocol=udp&auth=&obfs=${H_OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=${H_SNI}#HysteriaV1_${PUBLIC_IP}"
+        HY_LINK="hysteria://${PUBLIC_IP}:${H_PORT}?protocol=udp&auth=USUARIO:PASSWORD&obfs=${H_OBFS}&upmbps=1000&downmbps=1000&insecure=1&peer=${H_SNI}#HysteriaV1_${PUBLIC_IP}"
         cat <<EOF > /etc/hysteria/config.json
 {
   "listen": ":$H_PORT",
   "cert": "/etc/hysteria/server.crt",
   "key": "/etc/hysteria/server.key",
+  "auth": {
+    "mode": "external",
+    "config": {
+      "cmd": "/etc/hysteria/auth.sh"
+    }
+  },
   "obfs": "$H_OBFS",
   "up": "1 Gbps",
   "down": "1 Gbps"
@@ -232,7 +265,7 @@ config_udp_hysteria() {
 EOF
         CMD="/usr/local/bin/hysteria -c /etc/hysteria/config.json server"
     else
-        HY_LINK="hysteria2://${AUTH_URI}${PUBLIC_IP}:${H_PORT}?insecure=1&sni=${H_SNI}&obfs=salamander&obfs-password=${H_OBFS}#HysteriaV2_${PUBLIC_IP}"
+        HY_LINK="hysteria2://USUARIO:PASSWORD@${PUBLIC_IP}:${H_PORT}?insecure=1&sni=${H_SNI}&obfs=salamander&obfs-password=${H_OBFS}#HysteriaV2_${PUBLIC_IP}"
         cat <<EOF > /etc/hysteria/config.yaml
 listen: :$H_PORT
 
@@ -240,7 +273,9 @@ tls:
   cert: /etc/hysteria/server.crt
   key: /etc/hysteria/server.key
 
-$AUTH_BLOCK
+auth:
+  type: command
+  command: "/etc/hysteria/auth.sh"
 
 obfs:
   type: salamander
@@ -260,8 +295,6 @@ PORT="$H_PORT"
 RANGE="$H_RANGE_IPT"
 OBFS="$H_OBFS"
 SNI="$H_SNI"
-AUTH_INFO="$AUTH_INFO"
-AUTH_URI="$AUTH_URI"
 LINK="$HY_LINK"
 EOF
 
@@ -320,7 +353,6 @@ show_hysteria_link() {
         echo -e " ${PURPLE}${BOLD}Versión Hysteria :${NC} ${YELLOW}V$VERSION${NC}"
         echo -e " ${PURPLE}${BOLD}Puerto / SNI     :${NC} ${GREEN}$PORT / ${SNI:-localhost}${NC}"
         echo -e " ${PURPLE}${BOLD}Obfuscation (OBFS):${NC} ${CYAN}$OBFS${NC}"
-        echo -e " ${PURPLE}${BOLD}Autenticación    :${NC} ${WHITE}$AUTH_INFO${NC}"
         echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
         echo -e "${YELLOW}${BOLD}${LINK:-Sin enlace disponible}${NC}"
         echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}\n"
@@ -468,7 +500,7 @@ config_udp() {
     "mode": "passwords"
   },
   "tls": {
-    "cert": "/etc/udp-custom/certs/server.crt",
+    "cert": "/etc/udp-custom/certs/server.key",
     "key": "/etc/udp-custom/certs/server.key"
   },
   "stream_buffer": 33554432,
