@@ -391,7 +391,7 @@ menu_udp_hysteria() {
 }
 
 # ==========================================
-# MÓDULO: UDP CUSTOM (CORREGIDO ARM)
+# MÓDULO: UDP CUSTOM
 # ==========================================
 install_udp_bin() {
     echo -e "${CYAN}[*] Verificando e instalando binario UDP Custom...${NC}"
@@ -464,6 +464,9 @@ config_udp() {
         cat <<EOF > /etc/udp-custom/config.json
 {
   "listen": ":$U_PORT",
+  "auth": {
+    "mode": "passwords"
+  },
   "tls": {
     "cert": "/etc/udp-custom/certs/server.crt",
     "key": "/etc/udp-custom/certs/server.key"
@@ -478,6 +481,9 @@ EOF
         cat <<EOF > /etc/udp-custom/config.json
 {
   "listen": ":$U_PORT",
+  "auth": {
+    "mode": "passwords"
+  },
   "stream_buffer": 33554432,
   "receive_buffer": 8388608,
   "exclude_ports": [53, 5300]
@@ -528,7 +534,7 @@ EOF
     systemctl enable udp-custom > /dev/null 2>&1
     systemctl restart udp-custom
     
-    echo -e "\n${GREEN}✔ UDP Custom configurado con éxito en el puerto $U_PORT${NC}"
+    echo -e "\n${GREEN}✔ UDP Custom configurado con éxito en el puerto $U_PORT.${NC}"
     read -p "Presione ENTER para continuar..."
 }
 
@@ -566,7 +572,7 @@ menu_udp_custom() {
     
     case $OPT in
         1) config_udp; menu_udp_custom ;;
-        2) systemctl restart udp-custom; echo -e "${GREEN}✔ Reiniciado.${NC}"; sleep 1; menu_udp_custom ;;
+        2) fuser -k $PORT/udp 2>/dev/null; pkill -9 udp-custom 2>/dev/null; systemctl restart udp-custom; echo -e "${GREEN}✔ Reiniciado.${NC}"; sleep 1; menu_udp_custom ;;
         3) systemctl stop udp-custom; echo -e "${YELLOW}✔ Detenido.${NC}"; sleep 1; menu_udp_custom ;;
         4) journalctl -u udp-custom -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_udp_custom ;;
         5) 
@@ -749,7 +755,7 @@ menu_zivpn() {
     
     case $OPT in
         1) config_zivpn; menu_zivpn ;;
-        2) systemctl restart zivpn; echo -e "${GREEN}✔ Reiniciado.${NC}"; sleep 1; menu_zivpn ;;
+        2) fuser -k $PORT/udp 2>/dev/null; pkill -9 zivpn 2>/dev/null; systemctl restart zivpn; echo -e "${GREEN}✔ Reiniciado.${NC}"; sleep 1; menu_zivpn ;;
         3) systemctl stop zivpn; echo -e "${YELLOW}✔ Detenido.${NC}"; sleep 1; menu_zivpn ;;
         4) journalctl -u zivpn -n 50 --no-pager; read -p "Presione ENTER para volver..."; menu_zivpn ;;
         5) 
