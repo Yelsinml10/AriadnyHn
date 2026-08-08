@@ -1,8 +1,7 @@
 cat << 'EOF' > /usr/local/bin/v2ray
 #!/bin/bash
 # =========================================================
-#  V2RAY MANAGER - LIGHTWEIGHT EDITION (v2fly/v2ray-core)
-#  Con menú de selección de certificados SSL (Let's Encrypt / Autofirmado)
+#  V2RAY MANAGER - MOBILE OPTIMIZED EDITION
 # =========================================================
 
 export TERM=xterm
@@ -20,7 +19,6 @@ NC='\033[0m'
 CONFIG_FILE="/usr/local/v2ray/config.json"
 V2RAY_BIN="/usr/local/v2ray/v2ray"
 SERVICE_FILE="/etc/systemd/system/v2ray.service"
-SERVICE_FILE_SYSV="/etc/init.d/v2ray"
 CERT_DIR="/usr/local/v2ray"
 LOCK_FILE="/tmp/v2ray_manager.lock"
 
@@ -28,35 +26,18 @@ detect_ip() {
     local ip=""
     ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null)
     [[ -n "$ip" ]] && echo "$ip" && return
-    
     ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null)
     [[ -n "$ip" ]] && echo "$ip" && return
-    
     ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)
     [[ -n "$ip" ]] && echo "$ip" && return
-    
     echo "127.0.0.1"
 }
 
 SERVER_IP=$(detect_ip)
 
-detect_ubuntu_version() {
-    if [[ -f /etc/os-release ]]; then
-        . /etc/os-release
-        echo "$VERSION_ID"
-    elif [[ -f /etc/lsb-release ]]; then
-        . /etc/lsb-release
-        echo "$DISTRIB_RELEASE"
-    else
-        echo "unknown"
-    fi
-}
-
-UBUNTU_VERSION=$(detect_ubuntu_version)
-
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-       echo -e "\n${RED}${BOLD}[✗] Requiere permisos de root para ejecutar este script.${NC}\n"
+       echo -e "\n${RED}${BOLD}[✗] Requiere permisos de root.${NC}\n"
        exit 1
     fi
 }
@@ -74,29 +55,17 @@ open_port() {
 }
 
 install_dependencies() {
-    echo -e "${CYAN}${BOLD}⚡ Instalando paquetes base mínimos...${NC}"
-    
+    echo -e "${CYAN}${BOLD}⚡ Instalando dependencias básicas...${NC}"
     killall apt apt-get dpkg 2>/dev/null
     rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>/dev/null
-
     apt-get update -y -qq >/dev/null 2>&1
-
-    local base_pkgs="curl wget unzip openssl certbot"
-
-    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-        base_pkgs="$base_pkgs python python-json software-properties-common"
-    else
-        base_pkgs="$base_pkgs python3 python3-json"
-    fi
-
-    apt-get install -y -qq $base_pkgs >/dev/null 2>&1
-    echo -e "${GREEN}✔ Paquetes instalados correctamente.${NC}"
+    apt-get install -y -qq python3 python3-json wget unzip curl openssl certbot psmisc >/dev/null 2>&1
+    echo -e "${GREEN}✔ Dependencias instaladas correctamente.${NC}"
 }
 
 install_core_if_missing() {
     if [[ ! -x "$V2RAY_BIN" || ! -f "$SERVICE_FILE" ]]; then
         install_dependencies
-        
         mkdir -p /usr/local/v2ray
 
         local total_mem
@@ -107,7 +76,6 @@ install_core_if_missing() {
                 chmod 600 /swapfile
                 mkswap /swapfile >/dev/null 2>&1
                 swapon /swapfile >/dev/null 2>&1
-                echo '/swapfile none swap sw 0 0' >> /etc/fstab
             fi
         fi
 
@@ -139,54 +107,7 @@ install_core_if_missing() {
         chmod +x /usr/local/v2ray/v2ray
         rm -f /tmp/v2ray.zip
 
-        if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-            cat > "$SERVICE_FILE_SYSV" <<'EOFS'
-#!/bin/bash
-### BEGIN INIT INFO
-# Provides:          v2ray
-# Required-Start:    $network $remote_fs $syslog
-# Required-Stop:     $network $remote_fs $syslog
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: V2Ray Service
-### END INIT INFO
-
-V2RAY_BIN="/usr/local/v2ray/v2ray"
-CONFIG_FILE="/usr/local/v2ray/config.json"
-PID_FILE="/var/run/v2ray.pid"
-
-case "$1" in
-    start)
-        $V2RAY_BIN run -config $CONFIG_FILE > /dev/null 2>&1 &
-        echo $! > $PID_FILE
-        ;;
-    stop)
-        kill $(cat $PID_FILE) 2>/dev/null
-        rm -f $PID_FILE
-        ;;
-    restart)
-        $0 stop
-        sleep 2
-        $0 start
-        ;;
-    status)
-        if [[ -f $PID_FILE ]] && kill -0 $(cat $PID_FILE) 2>/dev/null; then
-            echo "V2Ray is running"
-        else
-            echo "V2Ray is stopped"
-        fi
-        ;;
-    *)
-        echo "Usage: $0 {start|stop|restart|status}"
-        exit 1
-        ;;
-esac
-exit 0
-EOFS
-            chmod +x "$SERVICE_FILE_SYSV"
-            update-rc.d v2ray defaults >/dev/null 2>&1
-        else
-            cat > "$SERVICE_FILE" <<EOFS
+        cat > "$SERVICE_FILE" <<EOFS
 [Unit]
 Description=V2Ray Core Service
 After=network.target
@@ -197,49 +118,14 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOFS
-            systemctl daemon-reload >/dev/null 2>&1
-        fi
-        echo -e "${GREEN}✔ V2Ray instalado exitosamente.${NC}"
+        systemctl daemon-reload >/dev/null 2>&1
+        echo -e "${GREEN}✔ V2Ray instalado exitosamente.${NC}\n"
         sleep 1
     fi
 }
 
-manage_service() {
-    local action="$1"
-    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-        case "$action" in
-            start) /etc/init.d/v2ray start >/dev/null 2>&1 ;;
-            stop) /etc/init.d/v2ray stop >/dev/null 2>&1 ;;
-            restart) /etc/init.d/v2ray restart >/dev/null 2>&1 ;;
-            enable) update-rc.d v2ray defaults >/dev/null 2>&1 ;;
-            status) /etc/init.d/v2ray status >/dev/null 2>&1; return $? ;;
-        esac
-    else
-        case "$action" in
-            start) systemctl start v2ray >/dev/null 2>&1 ;;
-            stop) systemctl stop v2ray >/dev/null 2>&1 ;;
-            restart) systemctl restart v2ray >/dev/null 2>&1 ;;
-            enable) systemctl enable v2ray >/dev/null 2>&1 ;;
-            status) systemctl is-active --quiet v2ray >/dev/null 2>&1; return $? ;;
-        esac
-    fi
-}
-
-service_status() {
-    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-        if [[ -f /var/run/v2ray.pid ]] && kill -0 $(cat /var/run/v2ray.pid) 2>/dev/null; then
-            return 0
-        else
-            return 1
-        fi
-    else
-        systemctl is-active --quiet v2ray >/dev/null 2>&1
-        return $?
-    fi
-}
-
 get_status() {
-    if service_status; then
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
         echo -e "${GREEN}● ONLINE / FUNCIONANDO${NC}"
     elif [[ -f "$CONFIG_FILE" ]]; then
         echo -e "${RED}● OFFLINE / DETENIDO${NC}"
@@ -254,8 +140,6 @@ header() {
     echo -e "${CYAN}${BOLD}             V2RAY MANAGER PANEL (v2fly-core)             ${NC}"
     echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
     echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC}  ${YELLOW}${SERVER_IP}${NC}"
-    echo -e " ${PURPLE}${BOLD}▸ Ubuntu:${NC}       ${YELLOW}${UBUNTU_VERSION}${NC}"
-    echo -e " ${PURPLE}${BOLD}▸ Arquitectura:${NC} ${YELLOW}$(uname -m)${NC}"
     echo -e " ${PURPLE}${BOLD}▸ Estado V2Ray:${NC} $(get_status)"
     echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────${NC}"
 }
@@ -274,23 +158,12 @@ read_val() {
     printf -v "$var" '%s' "$val"
 }
 
-get_python() {
-    if command -v python3 >/dev/null 2>&1; then
-        echo "python3"
-    elif command -v python >/dev/null 2>&1; then
-        echo "python"
-    else
-        echo ""
-    fi
-}
-
 setup_tls_cert() {
     local domain="$1"
     mkdir -p /usr/local/v2ray
     open_port 80
     open_port 443
 
-    # Si se ingresó una dirección IP directa, forzar autofirmado
     if [[ "$domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         echo -e "${YELLOW}⚠️ IP detectada, generando certificado autofirmado...${NC}"
         openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
@@ -308,19 +181,27 @@ setup_tls_cert() {
     header
     echo -e "${PURPLE}${BOLD}[ 🔒 CONFIGURACIÓN SSL / TLS PARA DOMINIO ]${NC}\n"
     echo -e " Dominio detectado: ${YELLOW}${domain}${NC}\n"
-    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial / Valido)${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial / Válido)${NC}"
     echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${YELLOW}Autofirmado (Rápido / Pruebas)${NC}\n"
     echo -e -n "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}"
     read -r cert_opt
 
     if [[ "$cert_opt" == "1" ]]; then
         echo -e "\n${CYAN}⚡ Solicitando certificado Let's Encrypt...${NC}"
+
+        if ! command -v certbot >/dev/null 2>&1; then
+            echo -e "${YELLOW}⚙️ Instalando Certbot...${NC}"
+            apt-get update -y -qq >/dev/null 2>&1
+            apt-get install -y -qq certbot >/dev/null 2>&1
+        fi
         
-        manage_service stop 2>/dev/null
+        systemctl stop v2ray 2>/dev/null
         systemctl stop nginx 2>/dev/null
         systemctl stop apache2 2>/dev/null
+        systemctl stop caddy 2>/dev/null
+        fuser -k 80/tcp >/dev/null 2>&1
 
-        DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email
 
         if [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
             cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
@@ -331,8 +212,9 @@ setup_tls_cert() {
             sleep 1.5
             return 0
         else
-            echo -e "${RED}❌ Falló la solicitud en Let's Encrypt. Generando autofirmado como respaldo...${NC}"
-            sleep 1.5
+            echo -e "\n${RED}❌ Falló la solicitud en Let's Encrypt.${NC}"
+            echo -e "${YELLOW}⚠️ Generando certificado autofirmado como respaldo...${NC}"
+            sleep 2
         fi
     fi
 
@@ -353,14 +235,7 @@ show_info() {
     header
     echo -e "${PURPLE}${BOLD}[ 📋 DATOS DE CONEXIÓN ACTUAL ]${NC}\n"
     
-    local PYTHON_CMD=$(get_python)
-    if [[ -z "$PYTHON_CMD" ]]; then
-        echo -e "${RED}Error: Python no encontrado.${NC}"
-        pause_screen
-        return
-    fi
-    
-    $PYTHON_CMD - "$CONFIG_FILE" <<'PY'
+    python3 - "$CONFIG_FILE" <<'PY'
 import json, sys, base64, urllib.parse
 
 try:
@@ -489,11 +364,7 @@ configure_protocol() {
 
     open_port "$port"
 
-    local auto_user
-    local PYTHON_CMD=$(get_python)
-    if [[ -n "$PYTHON_CMD" ]]; then
-        auto_user=$($PYTHON_CMD -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
-    fi
+    local auto_user=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
     if [[ -z "$auto_user" ]]; then
         auto_user=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s | sha256sum | head -c 32)
     fi
@@ -545,14 +416,7 @@ configure_protocol() {
         setup_tls_cert "$dom"
     fi
 
-    local PYTHON_CMD=$(get_python)
-    if [[ -z "$PYTHON_CMD" ]]; then
-        echo -e "${RED}Error: Python no encontrado.${NC}"
-        pause_screen
-        return
-    fi
-
-    $PYTHON_CMD - "$CONFIG_FILE" "$proto" "$port" "$trans" "$sec" "$user" "$extra" "$dom" "$host_header" "$CERT_DIR" <<'PY'
+    python3 - "$CONFIG_FILE" "$proto" "$port" "$trans" "$sec" "$user" "$extra" "$dom" "$host_header" "$CERT_DIR" <<'PY'
 import json, sys
 
 cfg_file    = sys.argv[1]
@@ -617,20 +481,22 @@ with open(cfg_file, "w") as f:
     json.dump(config, f, indent=2)
 PY
 
-    manage_service enable
-    manage_service restart
+    systemctl enable v2ray >/dev/null 2>&1
+    systemctl restart v2ray >/dev/null 2>&1
+
+    sleep 1
+    if systemctl is-active --quiet v2ray 2>/dev/null; then
+        echo -e "\n${GREEN}✔ Configuración aplicada y V2Ray reiniciado exitosamente.${NC}"
+    else
+        echo -e "\n${RED}❌ Error: V2Ray no pudo iniciar. Revisa los logs.${NC}"
+        journalctl -u v2ray -n 10 --no-pager 2>/dev/null
+    fi
     show_info
 }
 
 modify_param() {
     local action="$1" val="$2" val2="$3"
-    local PYTHON_CMD=$(get_python)
-    if [[ -z "$PYTHON_CMD" ]]; then
-        echo -e "${RED}Error: Python no encontrado.${NC}"
-        return
-    fi
-    
-    $PYTHON_CMD - "$CONFIG_FILE" "$action" "$val" "$val2" <<'PY'
+    python3 - "$CONFIG_FILE" "$action" "$val" "$val2" <<'PY'
 import json, sys
 cfg_file, act, val = sys.argv[1:4]
 val2 = sys.argv[4] if len(sys.argv) > 4 else ""
@@ -663,7 +529,7 @@ elif act == "add_id":
 
 with open(cfg_file, "w") as f: json.dump(cfg, f, indent=2)
 PY
-    manage_service restart
+    systemctl restart v2ray >/dev/null 2>&1
 }
 
 if [[ "$1" == "run" ]] || [[ "$1" == "-config" ]] || [[ "$1" == "run-config" ]]; then
@@ -676,13 +542,16 @@ fi
 touch "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
 
+# 1. Verificar root e instalar núcleo
 check_root
 install_core_if_missing
 
+# 2. Abrir DIRECTAMENTE el menú de SELECCIONA UN PROTOCOLO si no hay config previa
 if [[ ! -f "$CONFIG_FILE" ]]; then
     configure_protocol
 fi
 
+# 3. Menú principal administrativo
 while true; do
     header
     echo -e " ${YELLOW}${BOLD}⚠️  PANEL PRINCIPAL V2RAY${NC}"
@@ -734,33 +603,17 @@ while true; do
         7)
             echo -e "\n${YELLOW}Presiona CTRL + C para detener logs...${NC}\n"
             sleep 1.5
-            if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-                if [[ -f /var/log/v2ray/error.log ]]; then
-                    tail -f /var/log/v2ray/error.log
-                else
-                    echo -e "${RED}No se encontraron logs.${NC}"
-                    pause_screen
-                fi
-            else
-                journalctl -u v2ray -f
-            fi
+            journalctl -u v2ray -f
             ;;
         8)
-            manage_service restart
+            systemctl restart v2ray >/dev/null 2>&1
             echo -e "${GREEN}✔ V2Ray reiniciado.${NC}"
             sleep 1.5
             ;;
         9)
-            manage_service stop
-            manage_service disable 2>/dev/null
-            if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-                update-rc.d v2ray remove >/dev/null 2>&1
-                rm -f "$SERVICE_FILE_SYSV"
-            else
-                systemctl disable v2ray >/dev/null 2>&1
-                rm -f "$SERVICE_FILE"
-            fi
-            rm -rf /usr/local/v2ray /usr/local/bin/v2ray
+            systemctl stop v2ray 2>/dev/null
+            systemctl disable v2ray 2>/dev/null
+            rm -rf /usr/local/v2ray /etc/systemd/system/v2ray.service /usr/local/bin/v2ray
             systemctl daemon-reload >/dev/null 2>&1
             rm -f "$LOCK_FILE"
             echo -e "${GREEN}✔ Desinstalación completa hecha.${NC}"
