@@ -1,10 +1,8 @@
 #!/bin/bash
-# Instalador Caddy Proxy + Panel Pro (Con opciones de agregar puertos)
+# Autoinstalador Profesional Caddy Server + Enrutador DinÃ¡mico + V2Ray Multiprotocolo + Panel cadmin
 
 CONF_FILE="/usr/local/etc/caddy_panel.conf"
 CADDY_CONF="/etc/caddy/Caddyfile"
-V2RAY_PORT=9090
-OTHER_PORT=8888
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,46 +16,82 @@ NC='\033[0m'
 
 check_root(){
     if [[ $EUID -ne 0 ]]; then
-       echo -e "\n${RED}${BOLD}[ERROR] Este script debe ejecutarse como root:${NC} ${YELLOW}sudo bash install.sh${NC}\n"
+       echo -e "\n${RED}${BOLD}[âœ—] Este script debe ejecutarse como root:${NC} ${YELLOW}bash $0${NC}\n"
        exit 1
     fi
 }
 
+sanitize_ports() {
+    # Convierte espacios en comas, elimina caracteres no numÃ©ricos extra
+    echo "$1" | tr ' ' ',' | tr -s ',' | sed 's/^,//;s/,$//'
+}
+
+check_root
+
 clear
-echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-echo -e "${CYAN}${BOLD}│                                                        │${NC}"
-echo -e "${CYAN}${BOLD}│       INSTALADOR PROFESIONAL DE CADDY PROXY            │${NC}"
-echo -e "${CYAN}${BOLD}│                 FREENET HN CLOUD                       │${NC}"
-echo -e "${CYAN}${BOLD}│                                                        │${NC}"
-echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+echo -e "${CYAN}${BOLD}â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”${NC}"
+echo -e "${CYAN}${BOLD}â”‚                                                        â”‚${NC}"
+echo -e "${CYAN}${BOLD}â”‚       AUTOINSTALADOR PROFESIONAL CADDY PROXY           â”‚${NC}"
+echo -e "${CYAN}${BOLD}â”‚       ENRUTADOR DINÃMICO + V2RAY MULTIPROTOCOLO        â”‚${NC}"
+echo -e "${CYAN}${BOLD}â”‚                                                        â”‚${NC}"
+echo -e "${CYAN}${BOLD}â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜${NC}"
 echo ""
 
-echo -e "${PURPLE}${BOLD}[ CONFIGURACIÓN INICIAL ]${NC}"
-echo -e "${WHITE}Ingresa los datos requeridos (Presiona ${YELLOW}ENTER${WHITE} para predeterminado):${NC}\n"
+echo -e "${PURPLE}${BOLD}[ CONFIGURACIÃ“N INICIAL ]${NC}\n"
 
-echo -ne " ${CYAN}❯ Dominio${NC} [${YELLOW}arm1.freenethn.org${NC}]: "
-read INPUT_DOM
-DOMAIN=${INPUT_DOM:-arm1.freenethn.org}
+# 1. Solicitar Dominio
+while true; do
+    echo -e "${CYAN}âžœ Agrega un dominio (ejemplo: midominio.com):${NC}"
+    read -p "  Dominio: " INPUT_DOM
+    INPUT_DOM=$(echo "$INPUT_DOM" | tr -d ' ')
+    if [[ -n "$INPUT_DOM" ]]; then
+        DOMAIN="$INPUT_DOM"
+        break
+    else
+        echo -e "  ${RED}[!] El dominio no puede estar vacÃ­o. Intenta de nuevo.${NC}\n"
+    fi
+done
+echo ""
 
-echo -ne " ${CYAN}❯ Puertos HTTP${NC} [${GREEN}80, 8080${NC}]: "
-read INPUT_HTTP
-HTTP_PORTS=${INPUT_HTTP:-"80, 8080"}
+# 2. Solicitar Puertos HTTP
+while true; do
+    echo -e "${CYAN}âžœ Agrega puertos HTTP (ejemplo: 80, 8880):${NC}"
+    read -p "  Puertos HTTP: " INPUT_HTTP
+    CLEAN_HTTP=$(sanitize_ports "$INPUT_HTTP")
+    if [[ -n "$CLEAN_HTTP" ]]; then
+        HTTP_PORTS="$CLEAN_HTTP"
+        break
+    else
+        echo -e "  ${RED}[!] Debes agregar al menos un puerto HTTP.${NC}\n"
+    fi
+done
+echo ""
 
-echo -ne " ${CYAN}❯ Puertos HTTPS${NC} [${GREEN}443, 8443${NC}]: "
-read INPUT_HTTPS
-HTTPS_PORTS=${INPUT_HTTPS:-"443, 8443"}
+# 3. Solicitar Puertos HTTPS
+while true; do
+    echo -e "${CYAN}âžœ Agrega puertos HTTPS (ejemplo: 443, 8443):${NC}"
+    read -p "  Puertos HTTPS: " INPUT_HTTPS
+    CLEAN_HTTPS=$(sanitize_ports "$INPUT_HTTPS")
+    if [[ -n "$CLEAN_HTTPS" ]]; then
+        HTTPS_PORTS="$CLEAN_HTTPS"
+        break
+    else
+        echo -e "  ${RED}[!] Debes agregar al menos un puerto HTTPS.${NC}\n"
+    fi
+done
 
-echo -e "\n${PURPLE}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-echo -e "${PURPLE}${BOLD}│ RESUMEN DE PARÁMETROS SELECCIONADOS                    │${NC}"
-echo -e "${PURPLE}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
-echo -e "  ${WHITE}• Dominio        :${NC} ${YELLOW}${BOLD}$DOMAIN${NC}"
-echo -e "  ${WHITE}• Puertos HTTP   :${NC} ${GREEN}${BOLD}$HTTP_PORTS${NC}"
-echo -e "  ${WHITE}• Puertos HTTPS  :${NC} ${GREEN}${BOLD}$HTTPS_PORTS${NC}"
-echo -e "  ${WHITE}• Backend V2Ray  :${NC} ${CYAN}127.0.0.1:9090${NC}"
-echo -e "  ${WHITE}• Backend SSH WS :${NC} ${CYAN}127.0.0.1:8888${NC}"
-echo -e "${PURPLE}${BOLD}──────────────────────────────────────────────────────────${NC}\n"
+echo -e "\n${PURPLE}${BOLD}â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”${NC}"
+echo -e "${PURPLE}${BOLD}â”‚ RESUMEN DE PARÃMETROS SELECCIONADOS                    â”‚${NC}"
+echo -e "${PURPLE}${BOLD}â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜${NC}"
+echo -e "  ${WHITE}â€¢ Dominio Configurado :${NC} ${YELLOW}${BOLD}$DOMAIN${NC}"
+echo -e "  ${WHITE}â€¢ Puertos HTTP        :${NC} ${GREEN}${BOLD}$HTTP_PORTS${NC}"
+echo -e "  ${WHITE}â€¢ Puertos HTTPS       :${NC} ${GREEN}${BOLD}$HTTPS_PORTS${NC}"
+echo -e "  ${WHITE}â€¢ Rutas V2Ray (WS)    :${NC} ${CYAN}/vmess*, /vless*, /trojan*, /ss* -> 127.0.0.1:9090${NC}"
+echo -e "  ${WHITE}â€¢ Enrutador DinÃ¡mico  :${NC} ${CYAN}/puerto_XXXX -> 127.0.0.1:XXXX${NC}"
+echo -e "  ${WHITE}â€¢ Puerto Fallback     :${NC} ${CYAN}127.0.0.1:8888${NC}"
+echo -e "${PURPLE}${BOLD}â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€${NC}\n"
 
-read -p "Presiona ENTER para iniciar el proceso de instalación..."
+read -p "Presiona ENTER para iniciar la instalaciÃ³n..."
 
 mkdir -p /usr/local/etc
 cat > "$CONF_FILE" <<EOF
@@ -84,15 +118,14 @@ build_https_list() {
 }
 
 build_http_list() {
-    local dom="$1"
-    local ports="$2"
+    local ports="$1"
     local res=""
     IFS=',' read -ra ADDR <<< "$ports"
     for i in "${ADDR[@]}"; do
         p=$(echo "$i" | tr -d ' ')
         if [ -n "$p" ]; then
             [ -n "$res" ] && res="${res}, "
-            res="${res}http://${dom}:${p}"
+            res="${res}:${p}"
         fi
     done
     echo "$res"
@@ -104,71 +137,106 @@ build_caddyfile() {
     local https_p="$3"
 
     local HTTPS_LIST=$(build_https_list "$dom" "$https_p")
-    local HTTP_LIST=$(build_http_list "$dom" "$http_p")
+    local HTTP_LIST=$(build_http_list "$http_p")
 
-    cat > "$CADDY_CONF" <<EOF
+    cat > "$CADDY_CONF" << EOF
 {
-    email admin@$dom
-    admin off
+    auto_https disable_redirects
 }
 
-# Configuración HTTPS
-$HTTPS_LIST {
-    log { output discard }
-
-    # VMess, VLESS, Trojan, Shadowsocks
-    @v2ray path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
-    handle @v2ray {
-        reverse_proxy 127.0.0.1:$V2RAY_PORT
-    }
-
-    # Tu otro servicio (SSH WS)
-    handle {
-        reverse_proxy 127.0.0.1:$OTHER_PORT
-    }
-}
-
-# Configuración HTTP
+# ========================================================
+# ENRUTADOR DINÃMICO + V2RAY MULTIPROTOCOLO - HTTP
+# ========================================================
 $HTTP_LIST {
-    log { output discard }
-
-    @v2ray path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
-    handle @v2ray {
-        reverse_proxy 127.0.0.1:$V2RAY_PORT
+    
+    # Enrutador dinÃ¡mico por URL (/puerto_XXXX) - Restringido a puertos > 1024 para evitar SSRF en SSH/BBDD
+    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+    handle @dinamico_http {
+        uri strip_prefix /puerto_{re.puerto.target}
+        reverse_proxy 127.0.0.1:{re.puerto.target} {
+            flush_interval -1
+        }
     }
 
-    # Tu otro servicio (SSH WS)
+    # V2Ray Multiprotocolo (VMess, VLESS, Trojan, Shadowsocks, Xray)
+    @v2ray_http path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
+    handle @v2ray_http {
+        reverse_proxy 127.0.0.1:9090 {
+            flush_interval -1
+        }
+    }
+
+    # Fallback predeterminado
     handle {
-        reverse_proxy 127.0.0.1:$OTHER_PORT
+        reverse_proxy 127.0.0.1:8888 {
+            flush_interval -1
+        }
+    }
+}
+
+# ========================================================
+# ENRUTADOR DINÃMICO + V2RAY MULTIPROTOCOLO - HTTPS
+# ========================================================
+$HTTPS_LIST {
+    
+    # Enrutador dinÃ¡mico por URL (/puerto_XXXX) - Restringido a puertos > 1024
+    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+    handle @dinamico_https {
+        uri strip_prefix /puerto_{re.puerto.target}
+        reverse_proxy 127.0.0.1:{re.puerto.target} {
+            flush_interval -1
+        }
+    }
+
+    # V2Ray Multiprotocolo (VMess, VLESS, Trojan, Shadowsocks, Xray)
+    @v2ray_https path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
+    handle @v2ray_https {
+        reverse_proxy 127.0.0.1:9090 {
+            flush_interval -1
+        }
+    }
+
+    # Fallback predeterminado
+    handle {
+        reverse_proxy 127.0.0.1:8888 {
+            flush_interval -1
+        }
     }
 }
 EOF
     caddy fmt --overwrite "$CADDY_CONF" 2>/dev/null
 }
 
-echo -e "\n${BLUE}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}${BOLD}│ [ 1 / 3 ] Instalando Repositorio Oficial de Caddy...   │${NC}"
-echo -e "${BLUE}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
-apt update -y >/dev/null 2>&1
-apt install -y debian-keyring debian-archive-keyring apt-transport-https curl >/dev/null 2>&1
+echo -e "\n${BLUE}${BOLD}â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”${NC}"
+echo -e "${BLUE}${BOLD}â”‚ [ 1 / 3 ] Instalando Repositorio Oficial de Caddy...   â”‚${NC}"
+echo -e "${BLUE}${BOLD}â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜${NC}"
+apt update -qq
+apt install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl >/dev/null 2>&1
 
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg >/dev/null 2>&1
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null 2>&1
-apt update -y >/dev/null 2>&1
-apt install -y caddy >/dev/null 2>&1
-echo -e "${GREEN}✔ Repositorio e instalación de Caddy completados.${NC}"
+# CorrecciÃ³n: Eliminado 'sudo'
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes 2>/dev/null
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
 
-echo -e "\n${BLUE}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}${BOLD}│ [ 2 / 3 ] Generando Caddyfile y Enrutamiento Pro...    │${NC}"
-echo -e "${BLUE}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+apt update -qq
+apt install -y -qq caddy >/dev/null 2>&1
+
+if ! command -v caddy &>/dev/null; then
+    echo -e "${RED}${BOLD}[âœ—] Hubo un problema instalando Caddy.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}âœ” Caddy instalado correctamente: $(caddy version | awk '{print $1}')${NC}"
+
+echo -e "\n${BLUE}${BOLD}â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”${NC}"
+echo -e "${BLUE}${BOLD}â”‚ [ 2 / 3 ] Generando Caddyfile con Enrutador y V2Ray...  â”‚${NC}"
+echo -e "${BLUE}${BOLD}â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜${NC}"
 build_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
-echo -e "${GREEN}✔ Caddyfile generado correctamente.${NC}"
+echo -e "${GREEN}âœ” Caddyfile generado correctamente en /etc/caddy/Caddyfile.${NC}"
 
-echo -e "\n${BLUE}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}${BOLD}│ [ 3 / 3 ] Instalando Panel Administrativo Pro ('panel')│${NC}"
-echo -e "${BLUE}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+echo -e "\n${BLUE}${BOLD}â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”${NC}"
+echo -e "${BLUE}${BOLD}â”‚ [ 3 / 3 ] Instalando Panel Administrativo ('cadmin')   â”‚${NC}"
+echo -e "${BLUE}${BOLD}â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜${NC}"
 
-cat > /usr/local/bin/panel <<'PANEL'
+cat > /usr/local/bin/cadmin <<'PANEL'
 #!/bin/bash
 
 CONF_FILE="/usr/local/etc/caddy_panel.conf"
@@ -184,15 +252,17 @@ WHITE='\033[1;37m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+sanitize_ports() {
+    echo "$1" | tr ' ' ',' | tr -s ',' | sed 's/^,//;s/,$//'
+}
+
 load_conf(){
     if [ -f "$CONF_FILE" ]; then
         source "$CONF_FILE"
     else
         DOMAIN="arm1.freenethn.org"
-        HTTP_PORTS="80, 8080"
+        HTTP_PORTS="80, 8880"
         HTTPS_PORTS="443, 8443"
-        V2RAY_PORT=9090
-        OTHER_PORT=8888
     fi
 }
 
@@ -222,15 +292,14 @@ build_https_list() {
 }
 
 build_http_list() {
-    local dom="$1"
-    local ports="$2"
+    local ports="$1"
     local res=""
     IFS=',' read -ra ADDR <<< "$ports"
     for i in "${ADDR[@]}"; do
         p=$(echo "$i" | tr -d ' ')
         if [ -n "$p" ]; then
             [ -n "$res" ] && res="${res}, "
-            res="${res}http://${dom}:${p}"
+            res="${res}:${p}"
         fi
     done
     echo "$res"
@@ -242,39 +311,64 @@ generate_caddyfile() {
     local https_p="$3"
 
     local HTTPS_LIST=$(build_https_list "$dom" "$https_p")
-    local HTTP_LIST=$(build_http_list "$dom" "$http_p")
+    local HTTP_LIST=$(build_http_list "$http_p")
 
-    cat > "$CADDY_CONF" <<EOF
+    cat > "$CADDY_CONF" << EOF
 {
-    email admin@$dom
-    admin off
+    auto_https disable_redirects
 }
 
-# Configuración HTTPS
-$HTTPS_LIST {
-    log { output discard }
-
-    @v2ray path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
-    handle @v2ray {
-        reverse_proxy 127.0.0.1:9090
-    }
-
-    handle {
-        reverse_proxy 127.0.0.1:8888
-    }
-}
-
-# Configuración HTTP
+# ========================================================
+# ENRUTADOR DINÃMICO + V2RAY MULTIPROTOCOLO - HTTP
+# ========================================================
 $HTTP_LIST {
-    log { output discard }
+    
+    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+    handle @dinamico_http {
+        uri strip_prefix /puerto_{re.puerto.target}
+        reverse_proxy 127.0.0.1:{re.puerto.target} {
+            flush_interval -1
+        }
+    }
 
-    @v2ray path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
-    handle @v2ray {
-        reverse_proxy 127.0.0.1:9090
+    @v2ray_http path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
+    handle @v2ray_http {
+        reverse_proxy 127.0.0.1:9090 {
+            flush_interval -1
+        }
     }
 
     handle {
-        reverse_proxy 127.0.0.1:8888
+        reverse_proxy 127.0.0.1:8888 {
+            flush_interval -1
+        }
+    }
+}
+
+# ========================================================
+# ENRUTADOR DINÃMICO + V2RAY MULTIPROTOCOLO - HTTPS
+# ========================================================
+$HTTPS_LIST {
+    
+    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+    handle @dinamico_https {
+        uri strip_prefix /puerto_{re.puerto.target}
+        reverse_proxy 127.0.0.1:{re.puerto.target} {
+            flush_interval -1
+        }
+    }
+
+    @v2ray_https path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
+    handle @v2ray_https {
+        reverse_proxy 127.0.0.1:9090 {
+            flush_interval -1
+        }
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8888 {
+            flush_interval -1
+        }
     }
 }
 EOF
@@ -292,14 +386,14 @@ get_status(){
 header(){
     load_conf
     clear
-    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}${BOLD}│       PANEL DE CONTROL CADDY - FREENET HN CLOUD        │${NC}"
-    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
+    echo -e "${CYAN}${BOLD}â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”${NC}"
+    echo -e "${CYAN}${BOLD}â”‚       PANEL DE CONTROL CADDY - CADMIN PRO              â”‚${NC}"
+    echo -e "${CYAN}${BOLD}â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜${NC}"
     echo -e " ${PURPLE}${BOLD}Dominio Actual  :${NC} ${YELLOW}${BOLD}$DOMAIN${NC}"
     echo -e " ${PURPLE}${BOLD}Puertos HTTP    :${NC} ${GREEN}${BOLD}$HTTP_PORTS${NC}"
     echo -e " ${PURPLE}${BOLD}Puertos HTTPS   :${NC} ${GREEN}${BOLD}$HTTPS_PORTS${NC}"
     echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} $(get_status)"
-    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}${BOLD}â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€${NC}"
 }
 
 while true; do
@@ -313,53 +407,56 @@ while true; do
     echo -e " ${WHITE}${BOLD}[ 7 ]${NC} ${GREEN}Reiniciar Caddy${NC}"
     echo -e " ${WHITE}${BOLD}[ 8 ]${NC} ${RED}Desinstalar Caddy Completamente${NC}"
     echo -e " ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Salir${NC}"
-    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
-    read -p " Selecciona una opción [0-8]: " op
+    echo -e "${CYAN}${BOLD}â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€${NC}"
+    read -p " Selecciona una opciÃ³n [0-8]: " op
 
     case $op in
         1)
             echo -e "\n${YELLOW}${BOLD}=== CAMBIAR DOMINIO ===${NC}"
             echo -e "Dominio actual: ${CYAN}$DOMAIN${NC}"
             read -p "Ingrese el nuevo dominio: " new_dom
+            new_dom=$(echo "$new_dom" | tr -d ' ')
             if [ -n "$new_dom" ]; then
                 DOMAIN="$new_dom"
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Dominio actualizado a: $DOMAIN${NC}"
+                echo -e "\n${GREEN}âœ” Dominio actualizado a: $DOMAIN${NC}"
             else
-                echo -e "\n${RED}✘ Dominio inválido.${NC}"
+                echo -e "\n${RED}âœ˜ Dominio invÃ¡lido.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
         2)
             echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTP ===${NC}"
             echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
-            read -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080): " new_http
+            read -p "Nuevos puertos HTTP separados por coma (ej: 80, 8880): " new_http
+            new_http=$(sanitize_ports "$new_http")
             if [ -n "$new_http" ]; then
                 HTTP_PORTS="$new_http"
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puertos HTTP reemplazados por: $HTTP_PORTS${NC}"
+                echo -e "\n${GREEN}âœ” Puertos HTTP reemplazados por: $HTTP_PORTS${NC}"
             else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
+                echo -e "\n${RED}âœ˜ Entrada invÃ¡lida.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
         3)
             echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTP NUEVO ===${NC}"
             echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
-            read -p "Ingrese el puerto HTTP a agregar (ej: 8888): " add_http
+            read -p "Ingrese el puerto HTTP a agregar (ej: 8081): " add_http
             add_http=$(echo "$add_http" | tr -d ' ')
             if [ -n "$add_http" ]; then
                 HTTP_PORTS="${HTTP_PORTS}, ${add_http}"
+                HTTP_PORTS=$(sanitize_ports "$HTTP_PORTS")
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puerto HTTP $add_http agregado. Nuevos puertos: $HTTP_PORTS${NC}"
+                echo -e "\n${GREEN}âœ” Puerto HTTP $add_http agregado. Nuevos puertos: $HTTP_PORTS${NC}"
             else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
+                echo -e "\n${RED}âœ˜ Entrada invÃ¡lida.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
@@ -367,30 +464,32 @@ while true; do
             echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTPS ===${NC}"
             echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
             read -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https
+            new_https=$(sanitize_ports "$new_https")
             if [ -n "$new_https" ]; then
                 HTTPS_PORTS="$new_https"
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puertos HTTPS reemplazados por: $HTTPS_PORTS${NC}"
+                echo -e "\n${GREEN}âœ” Puertos HTTPS reemplazados por: $HTTPS_PORTS${NC}"
             else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
+                echo -e "\n${RED}âœ˜ Entrada invÃ¡lida.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
         5)
             echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTPS NUEVO ===${NC}"
             echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
-            read -p "Ingrese el puerto HTTPS a agregar (ej: 2083): " add_https
+            read -p "Ingrese el puerto HTTPS a agregar (ej: 2087): " add_https
             add_https=$(echo "$add_https" | tr -d ' ')
             if [ -n "$add_https" ]; then
                 HTTPS_PORTS="${HTTPS_PORTS}, ${add_https}"
+                HTTPS_PORTS=$(sanitize_ports "$HTTPS_PORTS")
                 save_conf
                 generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
                 systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puerto HTTPS $add_https agregado. Nuevos puertos: $HTTPS_PORTS${NC}"
+                echo -e "\n${GREEN}âœ” Puerto HTTPS $add_https agregado. Nuevos puertos: $HTTPS_PORTS${NC}"
             else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
+                echo -e "\n${RED}âœ˜ Entrada invÃ¡lida.${NC}"
             fi
             read -p "Presione ENTER para continuar..."
             ;;
@@ -402,24 +501,24 @@ while true; do
         7)
             echo -e "\n${YELLOW}Reiniciando Caddy...${NC}"
             systemctl restart caddy
-            echo -e "${GREEN}✔ Caddy reiniciado correctamente.${NC}"
+            echo -e "${GREEN}âœ” Caddy reiniciado correctamente.${NC}"
             sleep 2
             ;;
         8)
             echo -e "\n${RED}${BOLD}=== DESINSTALAR CADDY COMPLETAMENTE ===${NC}"
-            read -p "¿Está SEGURO de eliminar Caddy y el Panel? (s/n): " confirm
+            read -p "Â¿EstÃ¡ SEGURO de eliminar Caddy y cadmin? (s/n): " confirm
             if [[ "$confirm" == "s" || "$confirm" == "S" ]]; then
-                echo -e "${YELLOW}Eliminando Caddy y archivos de configuración...${NC}"
+                echo -e "${YELLOW}Eliminando Caddy y archivos de configuraciÃ³n...${NC}"
                 systemctl stop caddy 2>/dev/null
                 systemctl disable caddy 2>/dev/null
                 
                 apt purge -y caddy 2>/dev/null
-                rm -rf /etc/caddy /usr/local/bin/panel "$CONF_FILE" /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+                rm -rf /etc/caddy /usr/local/bin/cadmin /usr/local/bin/panel "$CONF_FILE" /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
                 
-                echo -e "\n${GREEN}✔ Desinstalación completa realizada con éxito.${NC}"
+                echo -e "\n${GREEN}âœ” DesinstalaciÃ³n completa realizada con Ã©xito.${NC}"
                 exit 0
             else
-                echo -e "\n${GREEN}Desinstalación cancelada.${NC}"
+                echo -e "\n${GREEN}DesinstalaciÃ³n cancelada.${NC}"
                 sleep 1
             fi
             ;;
@@ -428,25 +527,35 @@ while true; do
             exit 0
             ;;
         *)
-            echo -e "\n${RED}Opción inválida.${NC}"
+            echo -e "\n${RED}OpciÃ³n invÃ¡lida.${NC}"
             sleep 1
             ;;
     esac
 done
 PANEL
 
-chmod +x /usr/local/bin/panel
-echo -e "${GREEN}✔ Panel 'panel' creado e instalado en /usr/local/bin/panel.${NC}"
+chmod +x /usr/local/bin/cadmin
+ln -sf /usr/local/bin/cadmin /usr/local/bin/panel
+echo -e "${GREEN}âœ” Panel 'cadmin' instalado en /usr/local/bin/cadmin.${NC}"
 
+systemctl daemon-reload
 systemctl enable caddy >/dev/null 2>&1
 systemctl restart caddy >/dev/null 2>&1
 
-echo -e "\n${GREEN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-echo -e "${GREEN}${BOLD}│       ¡INSTALACIÓN COMPLETADA CON ÉXITO!               │${NC}"
-echo -e "${GREEN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
-echo -e " ${PURPLE}${BOLD}Dominio        :${NC} ${YELLOW}${BOLD}$DOMAIN${NC}"
-echo -e " ${PURPLE}${BOLD}Puertos HTTP   :${NC} ${GREEN}${BOLD}$HTTP_PORTS${NC}"
-echo -e " ${PURPLE}${BOLD}Puertos HTTPS  :${NC} ${GREEN}${BOLD}$HTTPS_PORTS${NC}"
-echo -e " ${PURPLE}${BOLD}Rutas V2Ray    :${NC} ${CYAN}/vmess*, /vless*, /trojan*, /ss*${NC}"
-echo -e " ${PURPLE}${BOLD}Comando Panel  :${NC} ${YELLOW}${BOLD}panel${NC}"
-echo -e "${GREEN}${BOLD}──────────────────────────────────────────────────────────${NC}\n"
+sleep 2
+
+if systemctl is-active --quiet caddy; then
+    echo -e "\n${GREEN}${BOLD}â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”${NC}"
+    echo -e "${GREEN}${BOLD}â”‚       Â¡INSTALACIÃ“N COMPLETADA CON Ã‰XITO!               â”‚${NC}"
+    echo -e "${GREEN}${BOLD}â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜${NC}"
+    echo -e " ${PURPLE}${BOLD}Dominio        :${NC} ${YELLOW}${BOLD}$DOMAIN${NC}"
+    echo -e " ${PURPLE}${BOLD}Puertos HTTP   :${NC} ${GREEN}${BOLD}$HTTP_PORTS${NC}"
+    echo -e " ${PURPLE}${BOLD}Puertos HTTPS  :${NC} ${GREEN}${BOLD}$HTTPS_PORTS${NC}"
+    echo -e " ${PURPLE}${BOLD}V2Ray WS       :${NC} ${CYAN}/vmess*, /vless*, /trojan*, /ss* -> 127.0.0.1:9090${NC}"
+    echo -e " ${PURPLE}${BOLD}Regla DinÃ¡mica :${NC} ${CYAN}/puerto_XXXX -> 127.0.0.1:XXXX${NC}"
+    echo -e " ${PURPLE}${BOLD}Puerto Fallback:${NC} ${CYAN}127.0.0.1:8888${NC}"
+    echo -e " ${PURPLE}${BOLD}Comando Panel  :${NC} ${YELLOW}${BOLD}cadmin${NC}"
+    echo -e "${GREEN}${BOLD}â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€${NC}\n"
+else
+    echo -e "\n${RED}${BOLD}[âœ—] Caddy fallÃ³ al arrancar. Revisa los logs con: journalctl -u caddy -n 20 --no-pager${NC}\n"
+fi
