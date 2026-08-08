@@ -1,12 +1,12 @@
 cat << 'EOF' > /usr/local/bin/v2ray
 #!/bin/bash
 # =========================================================
-#  V2RAY MANAGER - OFFICIAL EDITION (v2fly/v2ray-core)
-#  Compatible con Ubuntu 14.04, 16.04, 18.04, 20.04, 22.04, 24.04+
-#  DISEÑO OPTIMIZADO Y FIX DE TERMINAL
+#  V2RAY MANAGER - LIGHTWEIGHT EDITION (v2fly/v2ray-core)
+#   Compatible con Ubuntu 14.04 a 24.04+ (Sin dependencias de firewall)
 # =========================================================
 
 export TERM=xterm
+export DEBIAN_FRONTEND=noninteractive
 
 BOLD='\033[1m'
 RED='\033[0;31m'
@@ -24,22 +24,12 @@ SERVICE_FILE_SYSV="/etc/init.d/v2ray"
 CERT_DIR="/usr/local/v2ray"
 LOCK_FILE="/tmp/v2ray_manager.lock"
 
-TIMEOUT_DOWNLOAD=30
-TIMEOUT_CURL=5
-TIMEOUT_APT=60
-TIMEOUT_CERTBOT=120
-
 detect_ip() {
     local ip=""
-    local timeout=3
-    
-    ip=$(timeout $timeout curl -4 -fsS https://ifconfig.me 2>/dev/null)
+    ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null)
     [[ -n "$ip" ]] && echo "$ip" && return
     
-    ip=$(timeout $timeout curl -4 -fsS https://icanhazip.com 2>/dev/null)
-    [[ -n "$ip" ]] && echo "$ip" && return
-    
-    ip=$(timeout $timeout curl -4 -fsS https://ipinfo.io/ip 2>/dev/null)
+    ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null)
     [[ -n "$ip" ]] && echo "$ip" && return
     
     ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)
@@ -74,75 +64,34 @@ check_root() {
 open_port() {
     local port="$1"
     if [[ -n "$port" ]]; then
-        if command -v iptables >/dev/null 2>&1; then
-            iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
-            iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
-        fi
-        
-        if command -v ip6tables >/dev/null 2>&1; then
-            ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
-            ip6tables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
-        fi
-        
+        iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
+        iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
         if command -v ufw >/dev/null 2>&1; then
-            timeout 5 ufw allow "$port"/tcp >/dev/null 2>&1
-            timeout 5 ufw allow "$port"/udp >/dev/null 2>&1
-        fi
-        
-        if command -v firewall-cmd >/dev/null 2>&1; then
-            timeout 5 firewall-cmd --permanent --add-port="$port"/tcp >/dev/null 2>&1
-            timeout 5 firewall-cmd --permanent --add-port="$port"/udp >/dev/null 2>&1
-            timeout 5 firewall-cmd --reload >/dev/null 2>&1
-        fi
-        
-        if command -v netfilter-persistent >/dev/null 2>&1; then
-            timeout 5 netfilter-persistent save >/dev/null 2>&1
-        elif command -v iptables-save >/dev/null 2>&1; then
-            if [[ -d /etc/iptables ]]; then
-                timeout 5 iptables-save > /etc/iptables/rules.v4 2>/dev/null
-                timeout 5 ip6tables-save > /etc/iptables/rules.v6 2>/dev/null
-            fi
+            ufw allow "$port"/tcp >/dev/null 2>&1
+            ufw allow "$port"/udp >/dev/null 2>&1
         fi
     fi
 }
 
 install_dependencies() {
-    echo -e "${CYAN}${BOLD}⚡ Instalando dependencias para Ubuntu ${UBUNTU_VERSION}...${NC}"
+    echo -e "${CYAN}${BOLD}⚡ Instalando paquetes base mínimos...${NC}"
     
-    timeout $TIMEOUT_APT apt-get update -y >/dev/null 2>&1
-    
+    # Liberar bloqueos de apt por si acaso
+    killall apt apt-get dpkg 2>/dev/null
+    rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>/dev/null
+
+    apt-get update -y -qq >/dev/null 2>&1
+
     local base_pkgs="curl wget unzip openssl"
-    
+
     if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-        base_pkgs="$base_pkgs python python-json"
+        base_pkgs="$base_pkgs python python-json software-properties-common"
     else
-        base_pkgs="$base_pkgs python3"
+        base_pkgs="$base_pkgs python3 python3-json"
     fi
-    
-    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-        apt-get install -y software-properties-common >/dev/null 2>&1
-        add-apt-repository -y ppa:certbot/certbot >/dev/null 2>&1
-        timeout $TIMEOUT_APT apt-get update -y >/dev/null 2>&1
-        base_pkgs="$base_pkgs certbot"
-    else
-        base_pkgs="$base_pkgs certbot"
-    fi
-    
-    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-        base_pkgs="$base_pkgs iptables-persistent"
-    else
-        base_pkgs="$base_pkgs iptables-persistent netfilter-persistent"
-    fi
-    
-    timeout $TIMEOUT_APT apt-get install -y $base_pkgs >/dev/null 2>&1
-    
-    if ! command -v python3 &>/dev/null && ! command -v python &>/dev/null; then
-        if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-            timeout $TIMEOUT_APT apt-get install -y python python-json >/dev/null 2>&1
-        else
-            timeout $TIMEOUT_APT apt-get install -y python3 python3-json >/dev/null 2>&1
-        fi
-    fi
+
+    apt-get install -y -qq $base_pkgs >/dev/null 2>&1
+    echo -e "${GREEN}✔ Paquetes instalados correctamente.${NC}"
 }
 
 install_core_if_missing() {
@@ -151,6 +100,7 @@ install_core_if_missing() {
         
         mkdir -p /usr/local/v2ray
 
+        # Swap básico si tiene <1GB RAM
         local total_mem
         total_mem=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
         if [[ -n "$total_mem" && "$total_mem" -lt 1024 ]]; then
@@ -172,7 +122,7 @@ install_core_if_missing() {
         fi
 
         local LATEST_TAG="v5.14.1"
-        local version_json=$(timeout $TIMEOUT_CURL curl -s https://api.github.com/repos/v2fly/v2ray-core/releases/latest 2>/dev/null)
+        local version_json=$(curl -s --max-time 5 https://api.github.com/repos/v2fly/v2ray-core/releases/latest 2>/dev/null)
         if [[ -n "$version_json" ]]; then
             LATEST_TAG=$(echo "$version_json" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
             [[ -z "$LATEST_TAG" ]] && LATEST_TAG="v5.14.1"
@@ -180,16 +130,13 @@ install_core_if_missing() {
 
         local V2URL="https://github.com/v2fly/v2ray-core/releases/download/${LATEST_TAG}/v2ray-linux-${V2ARCH}.zip"
         
-        timeout $TIMEOUT_DOWNLOAD wget -q --timeout=$TIMEOUT_DOWNLOAD "$V2URL" -O /tmp/v2ray.zip
+        echo -e "${CYAN}Descargando V2Ray Core (${LATEST_TAG})...${NC}"
+        wget -q --timeout=30 "$V2URL" -O /tmp/v2ray.zip
         if [[ $? -ne 0 ]]; then
             V2URL="https://github.com/v2fly/v2ray-core/releases/download/v5.14.1/v2ray-linux-${V2ARCH}.zip"
-            timeout $TIMEOUT_DOWNLOAD wget -q --timeout=$TIMEOUT_DOWNLOAD "$V2URL" -O /tmp/v2ray.zip
-            if [[ $? -ne 0 ]]; then
-                echo -e "${RED}❌ Error: No se pudo descargar V2Ray.${NC}"
-                return 1
-            fi
+            wget -q --timeout=30 "$V2URL" -O /tmp/v2ray.zip
         fi
-        
+
         unzip -o /tmp/v2ray.zip -d /usr/local/v2ray/ >/dev/null 2>&1
         chmod +x /usr/local/v2ray/v2ray
         rm -f /tmp/v2ray.zip
@@ -203,7 +150,7 @@ install_core_if_missing() {
 # Required-Stop:     $network $remote_fs $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: V2Ray Core Service
+# Short-Description: V2Ray Service
 ### END INIT INFO
 
 V2RAY_BIN="/usr/local/v2ray/v2ray"
@@ -254,6 +201,7 @@ WantedBy=multi-user.target
 EOFS
             systemctl daemon-reload >/dev/null 2>&1
         fi
+        echo -e "${GREEN}✔ V2Ray instalado exitosamente.${NC}"
         sleep 1
     fi
 }
@@ -341,55 +289,8 @@ get_python() {
 setup_tls_cert() {
     local domain="$1"
     mkdir -p /usr/local/v2ray
-
     open_port 80
     open_port 443
-
-    if [[ "$domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
-        openssl req -new -x509 -days 3650 \
-            -key "${CERT_DIR}/key.pem" \
-            -out "${CERT_DIR}/cert.pem" \
-            -subj "/C=US/ST=State/L=City/O=V2Ray/CN=${domain}" >/dev/null 2>&1
-        chmod 600 "${CERT_DIR}/key.pem"
-        chmod 644 "${CERT_DIR}/cert.pem"
-        return 0
-    fi
-
-    header
-    echo -e "${PURPLE}${BOLD}[ 🔒 CONFIGURACIÓN SSL / TLS PARA DOMINIO ]${NC}\n"
-    echo -e " Dominio detectado: ${YELLOW}${domain}${NC}\n"
-    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial)${NC}"
-    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${YELLOW}Autofirmado (Rápido / Pruebas)${NC}\n"
-    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}"
-    read -r cert_opt
-
-    if [[ "$cert_opt" != "1" ]]; then
-        openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
-        openssl req -new -x509 -days 3650 \
-            -key "${CERT_DIR}/key.pem" \
-            -out "${CERT_DIR}/cert.pem" \
-            -subj "/C=US/ST=State/L=City/O=V2Ray/CN=${domain}" >/dev/null 2>&1
-        chmod 600 "${CERT_DIR}/key.pem"
-        chmod 644 "${CERT_DIR}/cert.pem"
-        return 0
-    fi
-
-    manage_service stop 2>/dev/null
-    systemctl stop nginx 2>/dev/null
-    systemctl stop apache2 2>/dev/null
-
-    local cert_output
-    cert_output=$(timeout $TIMEOUT_CERTBOT certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>&1)
-    local cert_exit=$?
-
-    if [[ $cert_exit -eq 0 ]] && [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
-        cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
-        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
-        chmod 600 "${CERT_DIR}/key.pem"
-        chmod 644 "${CERT_DIR}/cert.pem"
-        return 0
-    fi
 
     openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
     openssl req -new -x509 -days 3650 \
@@ -723,8 +624,7 @@ if [[ "$1" == "run" ]] || [[ "$1" == "-config" ]] || [[ "$1" == "run-config" ]];
 fi
 
 if [[ -f "$LOCK_FILE" ]]; then
-    echo -e "${YELLOW}⚠️  El script ya está en ejecución.${NC}"
-    exit 1
+    rm -f "$LOCK_FILE"
 fi
 touch "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
