@@ -164,7 +164,7 @@ EOF
 }
 
 get_status(){
-    if systemctl is-active --quiet caddy; then
+    if systemctl is-active --quiet caddy 2>/dev/null; then
         echo -e "${GREEN}[ACTIVO / RUNNING]${NC}"
     else
         echo -e "${RED}[DETENIDO / STOPPED]${NC}"
@@ -464,8 +464,12 @@ caddyfile = "/etc/caddy/Caddyfile"
 ports = set()
 if os.path.exists(caddyfile):
     with open(caddyfile, "r") as f:
-        for match in re.finditer(r"(?<![a-zA-Z0-9.-]):([0-9]+)", f.read()):
-            ports.add(int(match.group(1)))
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or "reverse_proxy" in line or "handle" in line: continue
+            for match in re.finditer(r"(?<![a-zA-Z0-9.-]):([0-9]+)", line):
+                p = int(match.group(1))
+                if p not in [9090, 8888]: ports.add(p)
 if ports: print(" ".join(str(x) for x in sorted(ports)))
 ' 2>/dev/null
 }
@@ -477,8 +481,12 @@ caddyfile = "/etc/caddy/Caddyfile"
 ports = set()
 if os.path.exists(caddyfile):
     with open(caddyfile, "r") as f:
-        for match in re.finditer(r"[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:([0-9]+)", f.read()):
-            ports.add(int(match.group(1)))
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or "reverse_proxy" in line or "handle" in line: continue
+            for match in re.finditer(r"[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:([0-9]+)", line):
+                p = int(match.group(1))
+                if p not in [9090, 8888]: ports.add(p)
 if ports: print(" ".join(str(x) for x in sorted(ports)))
 ' 2>/dev/null
 }
@@ -518,11 +526,11 @@ if ports: print(" ".join(map(str, sorted(ports))))
 get_ports_summary() {
     ACTIVE_ITEMS=()
 
-    # 1. Caddy
-    if systemctl is-active --quiet caddy 2>/dev/null || command_exists caddy; then
+    # 1. Caddy (SOLO si el servicio Caddy está corriendo activamente en systemd)
+    if systemctl is-active --quiet caddy 2>/dev/null; then
         local c_http=$(get_caddy_ports_http 2>/dev/null)
         local c_https=$(get_caddy_ports_https 2>/dev/null)
-        local all_caddy=$(echo "$c_http $c_https" | tr ' ' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+        local all_caddy=$(echo "$c_http $c_https" | xargs -n1 2>/dev/null | grep -v '^$' | sort -u -n | paste -sd, -)
         if [[ -n "$all_caddy" ]]; then
             ACTIVE_ITEMS+=("🌐 Caddy  : $(truncate_str "$all_caddy")")
         else
@@ -668,7 +676,7 @@ download_to_path() {
     printf "\n  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
 
     if curl -fsSL --connect-timeout 15 --max-time 300 \
-        "$BASE_URL/$script_name" -o "$destination"; then
+        "$BASE_URL/$script_name" -o "$destination" 2>/dev/null; then
         chmod 700 "$destination"
         info "Archivo instalado en $destination"
         return 0
@@ -683,11 +691,8 @@ download_and_execute() {
     local script_name="$1"
     local temporary="/tmp/${script_name##*/}.$$"
 
-    printf "\n  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
-
-    if ! curl -fsSL --connect-timeout 15 --max-time 300 \
-        "$BASE_URL/$script_name" -o "$temporary"; then
-        error_msg "No se pudo descargar $script_name."
+    # Intentar descargar de forma silenciosa sin arrojar error 404
+    if ! curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$temporary" 2>/dev/null; then
         rm -f "$temporary"
         return 1
     fi
@@ -719,42 +724,42 @@ is_python_installed() {
 # =======================================================
 
 caddy_menu() {
-    if command_exists caddy || [[ -f /usr/local/bin/cadmin || -f /etc/caddy/Caddyfile ]]; then
+    if systemctl is-active --quiet caddy 2>/dev/null; then
         if [[ -x /usr/local/bin/cadmin ]]; then
             /usr/local/bin/cadmin
         elif [[ -x /usr/bin/cadmin ]]; then
             /usr/bin/cadmin
         else
             panel_header "INSTALANDO/EJECUTANDO CADDY PROXY (GITHUB)" "🌐"
-            download_and_execute "caddy.sh" || download_and_execute "install-caddy.sh"
+            download_and_execute "install-caddy.sh" || download_and_execute "caddy.sh"
         fi
     else
         panel_header "INSTALANDO CADDY PROXY DESDE GITHUB" "🌐"
-        download_and_execute "caddy.sh" || download_and_execute "install-caddy.sh"
+        download_and_execute "install-caddy.sh" || download_and_execute "caddy.sh"
     fi
 }
 
 v2ray_menu() {
     panel_header "INSTALANDO/EJECUTANDO V2RAY (GITHUB)" "⚡"
-    download_and_execute "v2ray.sh" || download_and_execute "install-v2ray.sh"
+    download_and_execute "install-v2ray.sh" || download_and_execute "v2ray.sh"
     pause_screen
 }
 
 xray_menu() {
     if command_exists menuV2; then
         menuV2
-    elif command_exists xray || [[ -x /usr/local/bin/xray || -x /usr/bin/xray ]]; then
+    elif systemctl is-active --quiet xray 2>/dev/null; then
         if [[ -x /usr/local/bin/xray ]]; then
             /usr/local/bin/xray
         elif [[ -x /usr/bin/xray ]]; then
             /usr/bin/xray
         else
             panel_header "EJECUTANDO XRAY PANEL" "🔰"
-            download_and_execute "xray.sh" || download_and_execute "install-xray.sh"
+            download_and_execute "install-xray.sh" || download_and_execute "xray.sh"
         fi
     else
         panel_header "INSTALANDO XRAY PANEL DESDE GITHUB" "🔰"
-        download_and_execute "xray.sh" || download_and_execute "install-xray.sh"
+        download_and_execute "install-xray.sh" || download_and_execute "xray.sh"
     fi
 }
 
@@ -819,7 +824,7 @@ monitor_menu() {
 
 status_menu() {
     panel_header "ESTADO GENERAL" "📋"
-    printf "  Caddy:   "; (systemctl is-active --quiet caddy 2>/dev/null || command_exists caddy) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Caddy:   "; systemctl is-active --quiet caddy 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
     printf "  V2Ray:   "; systemctl is-active --quiet v2ray 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
     printf "  SSH-Go:  "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
     printf "  BadVPN:  "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
