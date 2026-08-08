@@ -2,7 +2,7 @@ cat << 'EOF' > /usr/local/bin/v2ray
 #!/bin/bash
 # =========================================================
 #  V2RAY MANAGER - LIGHTWEIGHT EDITION (v2fly/v2ray-core)
-#   Compatible con Ubuntu 14.04 a 24.04+ (Sin dependencias de firewall)
+#  Con menú de selección de certificados SSL (Let's Encrypt / Autofirmado)
 # =========================================================
 
 export TERM=xterm
@@ -76,13 +76,12 @@ open_port() {
 install_dependencies() {
     echo -e "${CYAN}${BOLD}⚡ Instalando paquetes base mínimos...${NC}"
     
-    # Liberar bloqueos de apt por si acaso
     killall apt apt-get dpkg 2>/dev/null
     rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>/dev/null
 
     apt-get update -y -qq >/dev/null 2>&1
 
-    local base_pkgs="curl wget unzip openssl"
+    local base_pkgs="curl wget unzip openssl certbot"
 
     if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
         base_pkgs="$base_pkgs python python-json software-properties-common"
@@ -100,7 +99,6 @@ install_core_if_missing() {
         
         mkdir -p /usr/local/v2ray
 
-        # Swap básico si tiene <1GB RAM
         local total_mem
         total_mem=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
         if [[ -n "$total_mem" && "$total_mem" -lt 1024 ]]; then
@@ -292,6 +290,53 @@ setup_tls_cert() {
     open_port 80
     open_port 443
 
+    # Si se ingresó una dirección IP directa, forzar autofirmado
+    if [[ "$domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        echo -e "${YELLOW}⚠️ IP detectada, generando certificado autofirmado...${NC}"
+        openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
+        openssl req -new -x509 -days 3650 \
+            -key "${CERT_DIR}/key.pem" \
+            -out "${CERT_DIR}/cert.pem" \
+            -subj "/C=US/ST=State/L=City/O=V2Ray/CN=${domain}" >/dev/null 2>&1
+        chmod 600 "${CERT_DIR}/key.pem"
+        chmod 644 "${CERT_DIR}/cert.pem"
+        echo -e "${GREEN}✔ Certificado autofirmado generado.${NC}"
+        sleep 1
+        return 0
+    fi
+
+    header
+    echo -e "${PURPLE}${BOLD}[ 🔒 CONFIGURACIÓN SSL / TLS PARA DOMINIO ]${NC}\n"
+    echo -e " Dominio detectado: ${YELLOW}${domain}${NC}\n"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial / Valido)${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${YELLOW}Autofirmado (Rápido / Pruebas)${NC}\n"
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}"
+    read -r cert_opt
+
+    if [[ "$cert_opt" == "1" ]]; then
+        echo -e "\n${CYAN}⚡ Solicitando certificado Let's Encrypt...${NC}"
+        
+        manage_service stop 2>/dev/null
+        systemctl stop nginx 2>/dev/null
+        systemctl stop apache2 2>/dev/null
+
+        DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
+
+        if [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
+            cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
+            cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
+            chmod 600 "${CERT_DIR}/key.pem"
+            chmod 644 "${CERT_DIR}/cert.pem"
+            echo -e "${GREEN}✔ Certificado Let's Encrypt instalado exitosamente.${NC}"
+            sleep 1.5
+            return 0
+        else
+            echo -e "${RED}❌ Falló la solicitud en Let's Encrypt. Generando autofirmado como respaldo...${NC}"
+            sleep 1.5
+        fi
+    fi
+
+    echo -e "${YELLOW}⚠️ Generando certificado autofirmado...${NC}"
     openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
     openssl req -new -x509 -days 3650 \
         -key "${CERT_DIR}/key.pem" \
@@ -299,6 +344,8 @@ setup_tls_cert() {
         -subj "/C=US/ST=State/L=City/O=V2Ray/CN=${domain}" >/dev/null 2>&1
     chmod 600 "${CERT_DIR}/key.pem"
     chmod 644 "${CERT_DIR}/cert.pem"
+    echo -e "${GREEN}✔ Certificado autofirmado generado.${NC}"
+    sleep 1
     return 0
 }
 
