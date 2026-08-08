@@ -2,6 +2,7 @@ cat << 'EOF' > /usr/local/bin/v2ray
 #!/bin/bash
 # =========================================================
 #  V2RAY MANAGER - OFFICIAL EDITION (v2fly/v2ray-core)
+#  Compatible con Ubuntu 14.04, 16.04, 18.04, 20.04, 22.04, 24.04+
 # =========================================================
 
 export TERM=xterm
@@ -19,8 +20,48 @@ NC='\033[0m'
 CONFIG_FILE="/usr/local/v2ray/config.json"
 V2RAY_BIN="/usr/local/v2ray/v2ray"
 SERVICE_FILE="/etc/systemd/system/v2ray.service"
+SERVICE_FILE_SYSV="/etc/init.d/v2ray"
 CERT_DIR="/usr/local/v2ray"
-SERVER_IP=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null || echo "127.0.0.1")
+
+# Detectar IP del servidor (múltiples métodos para compatibilidad)
+detect_ip() {
+    local ip=""
+    # Método 1: ifconfig.me (preferido)
+    ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    # Método 2: icanhazip.com
+    ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    # Método 3: ipinfo.io
+    ip=$(curl -4 -fsS --max-time 3 https://ipinfo.io/ip 2>/dev/null)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    # Método 4: interfaz de red
+    ip=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    # Fallback
+    echo "127.0.0.1"
+}
+
+SERVER_IP=$(detect_ip)
+
+# Detectar versión de Ubuntu
+detect_ubuntu_version() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        echo "$VERSION_ID"
+    elif [[ -f /etc/lsb-release ]]; then
+        . /etc/lsb-release
+        echo "$DISTRIB_RELEASE"
+    else
+        echo "unknown"
+    fi
+}
+
+UBUNTU_VERSION=$(detect_ubuntu_version)
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -29,33 +70,98 @@ check_root() {
     fi
 }
 
+# Función para abrir puertos con compatibilidad extendida
 open_port() {
     local port="$1"
     if [[ -n "$port" ]]; then
-        iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
-        iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
-        ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
-        ip6tables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
+        # iptables (si existe)
+        if command -v iptables >/dev/null 2>&1; then
+            iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
+            iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
+        fi
+        
+        # ip6tables (si existe)
+        if command -v ip6tables >/dev/null 2>&1; then
+            ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
+            ip6tables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
+        fi
+        
+        # UFW (si existe)
         if command -v ufw >/dev/null 2>&1; then
             ufw allow "$port"/tcp >/dev/null 2>&1
             ufw allow "$port"/udp >/dev/null 2>&1
         fi
+        
+        # FirewallD (si existe)
+        if command -v firewall-cmd >/dev/null 2>&1; then
+            firewall-cmd --permanent --add-port="$port"/tcp >/dev/null 2>&1
+            firewall-cmd --permanent --add-port="$port"/udp >/dev/null 2>&1
+            firewall-cmd --reload >/dev/null 2>&1
+        fi
+        
+        # Guardar reglas iptables (compatible con múltiples versiones)
         if command -v netfilter-persistent >/dev/null 2>&1; then
             netfilter-persistent save >/dev/null 2>&1
+        elif command -v iptables-save >/dev/null 2>&1; then
+            if [[ -d /etc/iptables ]]; then
+                iptables-save > /etc/iptables/rules.v4 2>/dev/null
+                ip6tables-save > /etc/iptables/rules.v6 2>/dev/null
+            fi
+        fi
+    fi
+}
+
+# Función para instalar dependencias según versión de Ubuntu
+install_dependencies() {
+    echo -e "${CYAN}${BOLD}⚡ Instalando dependencias para Ubuntu ${UBUNTU_VERSION}...${NC}"
+    
+    # Actualizar repositorios
+    apt-get update -y >/dev/null 2>&1
+    
+    # Paquetes base
+    local base_pkgs="curl wget unzip openssl"
+    
+    # Python según versión
+    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+        base_pkgs="$base_pkgs python python-json"
+    else
+        base_pkgs="$base_pkgs python3"
+    fi
+    
+    # Certbot según versión
+    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+        # Versiones antiguas usan certbot desde repositorio externo
+        apt-get install -y software-properties-common >/dev/null 2>&1
+        add-apt-repository -y ppa:certbot/certbot >/dev/null 2>&1
+        apt-get update -y >/dev/null 2>&1
+        base_pkgs="$base_pkgs certbot"
+    else
+        base_pkgs="$base_pkgs certbot"
+    fi
+    
+    # iptables-persistent (diferente nombre en versiones antiguas)
+    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+        base_pkgs="$base_pkgs iptables-persistent"
+    else
+        base_pkgs="$base_pkgs iptables-persistent netfilter-persistent"
+    fi
+    
+    apt-get install -y $base_pkgs >/dev/null 2>&1
+    
+    # Verificar Python
+    if ! command -v python3 &>/dev/null && ! command -v python &>/dev/null; then
+        echo -e "${YELLOW}⚠️  Python no encontrado, instalando...${NC}"
+        if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+            apt-get install -y python python-json >/dev/null 2>&1
+        else
+            apt-get install -y python3 python3-json >/dev/null 2>&1
         fi
     fi
 }
 
 install_core_if_missing() {
     if [[ ! -x "$V2RAY_BIN" || ! -f "$SERVICE_FILE" ]]; then
-        echo -e "${CYAN}${BOLD}⚡ Instalando dependencias y V2Ray Core oficial (v2fly)...${NC}"
-        apt-get update -y >/dev/null 2>&1
-        apt-get install -y python3 wget unzip curl openssl certbot iptables-persistent >/dev/null 2>&1
-        
-        if ! command -v python3 &>/dev/null; then
-            echo -e "${YELLOW}⚠️ Python3 no encontrado, instalando...${NC}"
-            apt-get install -y python3 python3-json >/dev/null 2>&1
-        fi
+        install_dependencies
         
         mkdir -p /usr/local/v2ray
 
@@ -64,10 +170,12 @@ install_core_if_missing() {
         total_mem=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
         if [[ -n "$total_mem" && "$total_mem" -lt 1024 ]]; then
             if [[ $(swapon --show 2>/dev/null | wc -l) -eq 0 ]]; then
+                echo -e "${YELLOW}⚠️  RAM baja, configurando Swap de 1GB...${NC}"
                 fallocate -l 1G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=1024 2>/dev/null
                 chmod 600 /swapfile
                 mkswap /swapfile >/dev/null 2>&1
                 swapon /swapfile >/dev/null 2>&1
+                echo '/swapfile none swap sw 0 0' >> /etc/fstab
             fi
         fi
 
@@ -78,6 +186,12 @@ install_core_if_missing() {
             V2ARCH="arm64-v8a"
         elif [[ "$ARCH" == *"armv7"* ]]; then
             V2ARCH="arm32-v7a"
+        elif [[ "$ARCH" == *"arm"* ]]; then
+            V2ARCH="arm32-v7a"
+        elif [[ "$ARCH" == *"x86_64"* ]] || [[ "$ARCH" == *"amd64"* ]]; then
+            V2ARCH="64"
+        else
+            V2ARCH="64"
         fi
 
         local LATEST_TAG
@@ -86,14 +200,73 @@ install_core_if_missing() {
 
         local V2URL="https://github.com/v2fly/v2ray-core/releases/download/${LATEST_TAG}/v2ray-linux-${V2ARCH}.zip"
         
-        echo -e "${CYAN}Descargando V2Ray Core (${LATEST_TAG})...${NC}"
-        wget -q "$V2URL" -O /tmp/v2ray.zip
+        echo -e "${CYAN}Descargando V2Ray Core (${LATEST_TAG}) para arquitectura ${V2ARCH}...${NC}"
+        wget -q --timeout=30 "$V2URL" -O /tmp/v2ray.zip
+        if [[ $? -ne 0 ]]; then
+            echo -e "${RED}Error al descargar V2Ray. Usando versión alternativa...${NC}"
+            V2URL="https://github.com/v2fly/v2ray-core/releases/download/v5.14.1/v2ray-linux-${V2ARCH}.zip"
+            wget -q --timeout=30 "$V2URL" -O /tmp/v2ray.zip
+        fi
+        
         unzip -o /tmp/v2ray.zip -d /usr/local/v2ray/ >/dev/null 2>&1
         chmod +x /usr/local/v2ray/v2ray
         rm -f /tmp/v2ray.zip
 
-        # Crear servicio systemd
-        cat > "$SERVICE_FILE" <<EOFS
+        # Crear servicio según versión de Ubuntu
+        if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+            # SysV init para versiones antiguas
+            cat > "$SERVICE_FILE_SYSV" <<'EOFS'
+#!/bin/bash
+### BEGIN INIT INFO
+# Provides:          v2ray
+# Required-Start:    $network $remote_fs $syslog
+# Required-Stop:     $network $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: V2Ray Core Service
+# Description:       V2Ray Core Service
+### END INIT INFO
+
+V2RAY_BIN="/usr/local/v2ray/v2ray"
+CONFIG_FILE="/usr/local/v2ray/config.json"
+PID_FILE="/var/run/v2ray.pid"
+
+case "$1" in
+    start)
+        echo "Starting V2Ray..."
+        $V2RAY_BIN run -config $CONFIG_FILE > /dev/null 2>&1 &
+        echo $! > $PID_FILE
+        ;;
+    stop)
+        echo "Stopping V2Ray..."
+        kill $(cat $PID_FILE) 2>/dev/null
+        rm -f $PID_FILE
+        ;;
+    restart)
+        $0 stop
+        sleep 2
+        $0 start
+        ;;
+    status)
+        if [[ -f $PID_FILE ]] && kill -0 $(cat $PID_FILE) 2>/dev/null; then
+            echo "V2Ray is running"
+        else
+            echo "V2Ray is stopped"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+exit 0
+EOFS
+            chmod +x "$SERVICE_FILE_SYSV"
+            update-rc.d v2ray defaults >/dev/null 2>&1
+            echo -e "${GREEN}✔ Servicio SysV init creado para Ubuntu ${UBUNTU_VERSION}${NC}"
+        else
+            # Systemd para versiones modernas
+            cat > "$SERVICE_FILE" <<EOFS
 [Unit]
 Description=V2Ray Core Service
 After=network.target
@@ -104,14 +277,78 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOFS
-        systemctl daemon-reload >/dev/null 2>&1
+            systemctl daemon-reload >/dev/null 2>&1
+            echo -e "${GREEN}✔ Servicio systemd creado para Ubuntu ${UBUNTU_VERSION}${NC}"
+        fi
+        
         echo -e "${GREEN}✔ Instalación base de V2Ray Core completada.${NC}\n"
         sleep 1
     fi
 }
 
+# Función para gestionar el servicio (compatible con systemd y sysv)
+manage_service() {
+    local action="$1"
+    
+    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+        # Usar SysV init
+        case "$action" in
+            start)
+                /etc/init.d/v2ray start >/dev/null 2>&1
+                ;;
+            stop)
+                /etc/init.d/v2ray stop >/dev/null 2>&1
+                ;;
+            restart)
+                /etc/init.d/v2ray restart >/dev/null 2>&1
+                ;;
+            enable)
+                update-rc.d v2ray defaults >/dev/null 2>&1
+                ;;
+            status)
+                /etc/init.d/v2ray status >/dev/null 2>&1
+                return $?
+                ;;
+        esac
+    else
+        # Usar systemd
+        case "$action" in
+            start)
+                systemctl start v2ray >/dev/null 2>&1
+                ;;
+            stop)
+                systemctl stop v2ray >/dev/null 2>&1
+                ;;
+            restart)
+                systemctl restart v2ray >/dev/null 2>&1
+                ;;
+            enable)
+                systemctl enable v2ray >/dev/null 2>&1
+                ;;
+            status)
+                systemctl is-active --quiet v2ray >/dev/null 2>&1
+                return $?
+                ;;
+        esac
+    fi
+}
+
+# Función para verificar estado del servicio (compatible)
+service_status() {
+    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+        if [[ -f /var/run/v2ray.pid ]] && kill -0 $(cat /var/run/v2ray.pid) 2>/dev/null; then
+            return 0
+        else
+            return 1
+        fi
+    else
+        systemctl is-active --quiet v2ray >/dev/null 2>&1
+        return $?
+    fi
+}
+
 get_status() {
-    if systemctl is-active --quiet v2ray 2>/dev/null; then
+    if service_status; then
         echo -e "${GREEN}● ONLINE / FUNCIONANDO${NC}"
     elif [[ -f "$CONFIG_FILE" ]]; then
         echo -e "${RED}● OFFLINE / DETENIDO${NC}"
@@ -126,6 +363,8 @@ header() {
     echo -e "${CYAN}${BOLD}║             V2RAY MANAGER PANEL (v2fly-core)             ║${NC}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════════╝${NC}"
     echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC} ${YELLOW}${SERVER_IP}${NC}"
+    echo -e " ${PURPLE}${BOLD}▸ Ubuntu:${NC} ${YELLOW}${UBUNTU_VERSION}${NC}"
+    echo -e " ${PURPLE}${BOLD}▸ Arquitectura:${NC} ${YELLOW}$(uname -m)${NC}"
     echo -e " ${PURPLE}${BOLD}▸ Estado V2Ray:${NC} $(get_status)"
     echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────────────${NC}"
 }
@@ -142,6 +381,17 @@ read_val() {
     printf -v "$var" '%s' "$val"
 }
 
+# Función para obtener el ejecutable de Python
+get_python() {
+    if command -v python3 >/dev/null 2>&1; then
+        echo "python3"
+    elif command -v python >/dev/null 2>&1; then
+        echo "python"
+    else
+        echo ""
+    fi
+}
+
 setup_tls_cert() {
     local domain="$1"
     mkdir -p /usr/local/v2ray
@@ -150,7 +400,7 @@ setup_tls_cert() {
     open_port 443
 
     if [[ "$domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        echo -e "${YELLOW}⚠️ Generando certificado autofirmado para IP (${domain})...${NC}"
+        echo -e "${YELLOW}⚠️  Generando certificado autofirmado para IP (${domain})...${NC}"
         openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
         openssl req -new -x509 -days 3650 \
             -key "${CERT_DIR}/key.pem" \
@@ -170,7 +420,7 @@ setup_tls_cert() {
     read -r -p "$(echo -e "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}")" cert_opt
 
     if [[ "$cert_opt" != "1" ]]; then
-        echo -e "${YELLOW}⚠️ Generando certificado autofirmado...${NC}"
+        echo -e "${YELLOW}⚠️  Generando certificado autofirmado...${NC}"
         openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
         openssl req -new -x509 -days 3650 \
             -key "${CERT_DIR}/key.pem" \
@@ -182,15 +432,21 @@ setup_tls_cert() {
         return 0
     fi
 
-    echo -e "\n${CYAN}⚠️ Solicitando certificado Let's Encrypt...${NC}"
-    apt-get install -y certbot >/dev/null 2>&1
-
-    systemctl stop v2ray 2>/dev/null
+    echo -e "\n${CYAN}⚠️  Solicitando certificado Let's Encrypt...${NC}"
+    
+    # Detener servicios que puedan ocupar el puerto 80
+    manage_service stop 2>/dev/null
     systemctl stop nginx 2>/dev/null
     systemctl stop apache2 2>/dev/null
 
-    local cert_output
-    cert_output=$(certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>&1)
+    # Certbot según versión
+    if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+        # Usar certbot con standalone para versiones antiguas
+        cert_output=$(certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>&1)
+    else
+        # Usar certbot con webroot o standalone
+        cert_output=$(certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>&1)
+    fi
     local cert_exit=$?
 
     if [[ $cert_exit -eq 0 ]] && [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
@@ -203,7 +459,7 @@ setup_tls_cert() {
         return 0
     fi
 
-    echo -e "\n${YELLOW}⚠️ Let's Encrypt falló. Generando certificado autofirmado...${NC}"
+    echo -e "\n${YELLOW}⚠️  Let's Encrypt falló. Generando certificado autofirmado...${NC}"
     openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
     openssl req -new -x509 -days 3650 \
         -key "${CERT_DIR}/key.pem" \
@@ -218,7 +474,15 @@ setup_tls_cert() {
 show_info() {
     header
     echo -e "${PURPLE}${BOLD}[ 📋 DATOS DE CONEXIÓN ACTUAL ]${NC}\n"
-    python3 - "$CONFIG_FILE" <<'PY'
+    
+    local PYTHON_CMD=$(get_python)
+    if [[ -z "$PYTHON_CMD" ]]; then
+        echo -e "${RED}Error: Python no encontrado.${NC}"
+        pause_screen
+        return
+    fi
+    
+    $PYTHON_CMD - "$CONFIG_FILE" <<'PY'
 import json, sys, base64, urllib.parse
 
 try:
@@ -347,8 +611,9 @@ configure_protocol() {
     open_port "$port"
 
     local auto_user
-    if command -v python3 &>/dev/null; then
-        auto_user=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+    local PYTHON_CMD=$(get_python)
+    if [[ -n "$PYTHON_CMD" ]]; then
+        auto_user=$($PYTHON_CMD -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
     fi
     if [[ -z "$auto_user" ]]; then
         auto_user=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s | sha256sum | head -c 32)
@@ -400,7 +665,14 @@ configure_protocol() {
         setup_tls_cert "$dom"
     fi
 
-    python3 - "$CONFIG_FILE" "$proto" "$port" "$trans" "$sec" "$user" "$extra" "$dom" "$host_header" "$CERT_DIR" <<'PY'
+    local PYTHON_CMD=$(get_python)
+    if [[ -z "$PYTHON_CMD" ]]; then
+        echo -e "${RED}Error: Python no encontrado. No se puede configurar.${NC}"
+        pause_screen
+        return
+    fi
+
+    $PYTHON_CMD - "$CONFIG_FILE" "$proto" "$port" "$trans" "$sec" "$user" "$extra" "$dom" "$host_header" "$CERT_DIR" <<'PY'
 import json, sys
 
 cfg_file    = sys.argv[1]
@@ -465,23 +737,32 @@ with open(cfg_file, "w") as f:
     json.dump(config, f, indent=2)
 PY
 
-    systemctl daemon-reload >/dev/null 2>&1
-    systemctl enable v2ray >/dev/null 2>&1
-    systemctl restart v2ray >/dev/null 2>&1
+    manage_service enable
+    manage_service restart
 
     sleep 1
-    if systemctl is-active --quiet v2ray; then
+    if service_status; then
         echo -e "\n${GREEN}✔ Configuración aplicada y V2Ray reiniciado exitosamente.${NC}"
     else
         echo -e "\n${RED}❌ Error: V2Ray no pudo iniciar. Revisa los logs.${NC}"
-        journalctl -u v2ray -n 10 --no-pager
+        if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+            echo -e "${YELLOW}Logs disponibles en: /var/log/v2ray/ o usando 'service v2ray status'${NC}"
+        else
+            journalctl -u v2ray -n 10 --no-pager
+        fi
     fi
     show_info
 }
 
 modify_param() {
     local action="$1" val="$2" val2="$3"
-    python3 - "$CONFIG_FILE" "$action" "$val" "$val2" <<'PY'
+    local PYTHON_CMD=$(get_python)
+    if [[ -z "$PYTHON_CMD" ]]; then
+        echo -e "${RED}Error: Python no encontrado.${NC}"
+        return
+    fi
+    
+    $PYTHON_CMD - "$CONFIG_FILE" "$action" "$val" "$val2" <<'PY'
 import json, sys
 cfg_file, act, val = sys.argv[1:4]
 val2 = sys.argv[4] if len(sys.argv) > 4 else ""
@@ -514,7 +795,7 @@ elif act == "add_id":
 
 with open(cfg_file, "w") as f: json.dump(cfg, f, indent=2)
 PY
-    systemctl restart v2ray >/dev/null 2>&1
+    manage_service restart
 }
 
 # Redireccionar comandos de servicio
@@ -582,18 +863,33 @@ while true; do
         7)
             echo -e "\n${YELLOW}Presiona CTRL + C para detener el monitoreo de logs...${NC}\n"
             sleep 1.5
-            journalctl -u v2ray -f
+            if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+                if [[ -f /var/log/v2ray/error.log ]]; then
+                    tail -f /var/log/v2ray/error.log
+                else
+                    echo -e "${RED}No se encontraron logs de V2Ray.${NC}"
+                fi
+            else
+                journalctl -u v2ray -f
+            fi
             ;;
         8)
-            systemctl restart v2ray >/dev/null 2>&1
+            manage_service restart
             echo -e "${GREEN}✔ V2Ray reiniciado exitosamente.${NC}"
             sleep 1.5
             ;;
         9)
-            systemctl stop v2ray 2>/dev/null
-            systemctl disable v2ray 2>/dev/null
-            rm -rf /usr/local/v2ray /etc/systemd/system/v2ray.service /usr/local/bin/v2ray
-            systemctl daemon-reload
+            manage_service stop
+            manage_service disable 2>/dev/null
+            if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+                update-rc.d v2ray remove >/dev/null 2>&1
+                rm -f "$SERVICE_FILE_SYSV"
+            else
+                systemctl disable v2ray >/dev/null 2>&1
+                rm -f "$SERVICE_FILE"
+            fi
+            rm -rf /usr/local/v2ray /usr/local/bin/v2ray
+            systemctl daemon-reload >/dev/null 2>&1
             echo -e "${GREEN}✔ Desinstalación completa realizada.${NC}"
             exit 0
             ;;
