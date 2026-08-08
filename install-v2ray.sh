@@ -20,21 +20,7 @@ CONFIG_FILE="/usr/local/v2ray/config.json"
 V2RAY_BIN="/usr/local/v2ray/v2ray"
 SERVICE_FILE="/etc/systemd/system/v2ray.service"
 CERT_DIR="/usr/local/v2ray"
-
-# Obtener IP de la VPS de forma local y ultra rápida
-get_server_ip() {
-    local ip
-    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
-    if [[ -z "$ip" ]]; then
-        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    fi
-    if [[ -z "$ip" || "$ip" == "127.0.0.1" ]]; then
-        ip=$(curl -4 -fsS --connect-timeout 2 -m 2 https://ifconfig.me 2>/dev/null || echo "127.0.0.1")
-    fi
-    echo "$ip"
-}
-
-SERVER_IP=$(get_server_ip)
+SERVER_IP=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null || echo "127.0.0.1")
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -62,20 +48,13 @@ open_port() {
 
 install_core_if_missing() {
     if [[ ! -x "$V2RAY_BIN" || ! -f "$SERVICE_FILE" ]]; then
-        echo -e "${CYAN}${BOLD}⚡ Verificando dependencias y V2Ray Core...${NC}"
+        echo -e "${CYAN}${BOLD}⚡ Instalando dependencias y V2Ray Core oficial (v2fly)...${NC}"
+        apt-get update -y >/dev/null 2>&1
+        apt-get install -y python3 wget unzip curl openssl certbot iptables-persistent >/dev/null 2>&1
         
-        # Instalar solo los paquetes que no existan
-        local PKGS=""
-        for pkg in python3 wget unzip curl openssl certbot iptables-persistent; do
-            if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-                PKGS="$PKGS $pkg"
-            fi
-        done
-
-        if [[ -n "$PKGS" ]]; then
-            echo -e "${YELLOW}⚙️ Instalando paquetes faltantes:${PKGS}...${NC}"
-            apt-get update -y >/dev/null 2>&1
-            apt-get install -y $PKGS >/dev/null 2>&1
+        if ! command -v python3 &>/dev/null; then
+            echo -e "${YELLOW}⚠️ Python3 no encontrado, instalando...${NC}"
+            apt-get install -y python3 python3-json >/dev/null 2>&1
         fi
         
         mkdir -p /usr/local/v2ray
@@ -92,23 +71,22 @@ install_core_if_missing() {
             fi
         fi
 
-        # Detectar arquitectura instantáneamente con 'case'
+        # Detectar arquitectura y obtener la versión
+        local ARCH=$(uname -m)
         local V2ARCH="64"
-        case "$(uname -m)" in
-            aarch64|arm64) V2ARCH="arm64-v8a" ;;
-            armv7*|armhf)  V2ARCH="arm32-v7a" ;;
-            x86_64|amd64)  V2ARCH="64" ;;
-            *)             V2ARCH="64" ;;
-        esac
+        if [[ "$ARCH" == *"aarch64"* || "$ARCH" == *"arm64"* ]]; then
+            V2ARCH="arm64-v8a"
+        elif [[ "$ARCH" == *"armv7"* ]]; then
+            V2ARCH="arm32-v7a"
+        fi
 
-        # Consulta a GitHub con tiempo límite (timeout) de 2s
         local LATEST_TAG
-        LATEST_TAG=$(curl -s --connect-timeout 2 -m 3 https://api.github.com/repos/v2fly/v2ray-core/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        LATEST_TAG=$(curl -s https://api.github.com/repos/v2fly/v2ray-core/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         [[ -z "$LATEST_TAG" ]] && LATEST_TAG="v5.14.1"
 
         local V2URL="https://github.com/v2fly/v2ray-core/releases/download/${LATEST_TAG}/v2ray-linux-${V2ARCH}.zip"
         
-        echo -e "${CYAN}Descargando V2Ray Core (${V2ARCH} - ${LATEST_TAG})...${NC}"
+        echo -e "${CYAN}Descargando V2Ray Core (${LATEST_TAG})...${NC}"
         wget -q "$V2URL" -O /tmp/v2ray.zip
         unzip -o /tmp/v2ray.zip -d /usr/local/v2ray/ >/dev/null 2>&1
         chmod +x /usr/local/v2ray/v2ray
@@ -144,12 +122,12 @@ get_status() {
 
 header() {
     clear
-    echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}${BOLD}║             V2RAY MANAGER PANEL (v2fly-core)             ║${NC}"
-    echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════════╝${NC}"
     echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC} ${YELLOW}${SERVER_IP}${NC}"
     echo -e " ${PURPLE}${BOLD}▸ Estado V2Ray:${NC} $(get_status)"
-    echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────────────${NC}"
 }
 
 pause_screen() {
@@ -172,7 +150,7 @@ setup_tls_cert() {
     open_port 443
 
     if [[ "$domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        echo -e "${YELLOW}⚙️ Generando certificado autofirmado para IP (${domain})...${NC}"
+        echo -e "${YELLOW}⚠️ Generando certificado autofirmado para IP (${domain})...${NC}"
         openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
         openssl req -new -x509 -days 3650 \
             -key "${CERT_DIR}/key.pem" \
@@ -192,7 +170,7 @@ setup_tls_cert() {
     read -r -p "$(echo -e "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}")" cert_opt
 
     if [[ "$cert_opt" != "1" ]]; then
-        echo -e "${YELLOW}⚙️ Generando certificado autofirmado...${NC}"
+        echo -e "${YELLOW}⚠️ Generando certificado autofirmado...${NC}"
         openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
         openssl req -new -x509 -days 3650 \
             -key "${CERT_DIR}/key.pem" \
@@ -204,7 +182,7 @@ setup_tls_cert() {
         return 0
     fi
 
-    echo -e "\n${CYAN}⚙️ Solicitando certificado Let's Encrypt...${NC}"
+    echo -e "\n${CYAN}⚠️ Solicitando certificado Let's Encrypt...${NC}"
     apt-get install -y certbot >/dev/null 2>&1
 
     systemctl stop v2ray 2>/dev/null
@@ -217,7 +195,7 @@ setup_tls_cert() {
 
     if [[ $cert_exit -eq 0 ]] && [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
         cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
-        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/privkey.pem" 2>/dev/null || cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
+        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
         chmod 600 "${CERT_DIR}/key.pem"
         chmod 644 "${CERT_DIR}/cert.pem"
         echo -e "${GREEN}✔ Certificado Let's Encrypt instalado.${NC}"
@@ -556,7 +534,7 @@ fi
 # 3. Menú administrativo
 while true; do
     header
-    echo -e " ${YELLOW}${BOLD}⚙️  PANEL PRINCIPAL V2RAY${NC}"
+    echo -e " ${YELLOW}${BOLD}⚠️  PANEL PRINCIPAL V2RAY${NC}"
     echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}🔄 Cambiar Protocolo / Transmisión${NC}"
     echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}🔌 Cambiar Puerto${NC}"
     echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}🛤️  Cambiar Path WS / Host Header / ServiceName gRPC${NC}"
@@ -567,7 +545,7 @@ while true; do
     echo -e "  ${WHITE}${BOLD}[ 8 ]${NC} ${CYAN}🔄 Reiniciar Servicio V2Ray${NC}"
     echo -e "  ${WHITE}${BOLD}[ 9 ]${NC} ${RED}🗑️  Desinstalar V2Ray por Completo${NC}"
     echo -e "  ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}🚪 Salir del Menú${NC}"
-    echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────────────${NC}"
     read -r -p "$(echo -e "${YELLOW}➜ ${NC}${BOLD}Opción [0-9]: ${NC}")" op
 
     case "$op" in
@@ -627,6 +605,6 @@ EOF
 
 chmod +x /usr/local/bin/v2ray
 
-# EJECUTAR AUTOMÁTICAMENTE
+# EJECUTAR AUTOMÁTICAMENTE LA PRIMERA VEZ
 echo -e "\n${CYAN}${BOLD}🚀 Iniciando V2Ray Manager...${NC}\n"
 /usr/local/bin/v2ray
