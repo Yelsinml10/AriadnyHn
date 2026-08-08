@@ -492,13 +492,13 @@ if ports: print(" ".join(str(x) for x in sorted(ports)))
 }
 
 get_v2ray_cfg_path() {
-    for path in /usr/local/etc/v2ray/config.json /etc/v2ray/config.json /etc/v2ray/config.yml; do
+    for path in /usr/local/v2ray/config.json /usr/local/etc/v2ray/config.json /etc/v2ray/config.json /etc/v2ray/config.yml; do
         if [[ -f "$path" ]]; then
             echo "$path"
             return 0
         fi
     done
-    echo "/usr/local/etc/v2ray/config.json"
+    echo "/usr/local/v2ray/config.json"
 }
 
 get_sshgo_ports() {
@@ -542,14 +542,25 @@ get_ports_summary() {
     local v_cfg=$(get_v2ray_cfg_path)
     if systemctl is-active --quiet v2ray 2>/dev/null; then
         local v_out=$(python3 -c '
-import json, sys
+import json, sys, re, subprocess
+ports = []
 try:
     with open(sys.argv[1], "r") as f: data = json.load(f)
     inbounds = data.get("inbounds", [])
     if isinstance(data, dict) and "inbounds" not in data and "inbound" in data: inbounds = [data["inbound"]]
     ports = sorted(list(set(str(inb["port"]) for inb in inbounds if "port" in inb)))
-    print(",".join(ports))
 except Exception: pass
+
+if not ports:
+    try:
+        out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+        for line in out.splitlines():
+            if "v2ray" in line:
+                for m in re.findall(r":(\d+)\s", line): ports.append(m)
+        ports = sorted(list(set(ports)))
+    except Exception: pass
+
+if ports: print(",".join(ports))
 ' "$v_cfg" 2>/dev/null)
         if [[ -n "$v_out" ]]; then
             ACTIVE_ITEMS+=("⚡ V2Ray  : $(truncate_str "$v_out")")
