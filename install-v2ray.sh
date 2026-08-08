@@ -107,6 +107,9 @@ install_core_if_missing() {
         chmod +x /usr/local/v2ray/v2ray
         rm -f /tmp/v2ray.zip
 
+        # BORRAR CONFIG.JSON DE MUESTRA QUE VIENE EN EL ZIP
+        rm -f /usr/local/v2ray/config.json
+
         cat > "$SERVICE_FILE" <<EOFS
 [Unit]
 Description=V2Ray Core Service
@@ -542,16 +545,14 @@ fi
 touch "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
 
-# 1. Verificar root e instalar núcleo
 check_root
 install_core_if_missing
 
-# 2. Abrir DIRECTAMENTE el menú de SELECCIONA UN PROTOCOLO si no hay config previa
-if [[ ! -f "$CONFIG_FILE" ]]; then
+# Abrir OBLIGATORIAMENTE la selección de protocolos si no hay una config personalizada
+if [[ ! -f "$CONFIG_FILE" ]] || ! grep -q '"_domain"' "$CONFIG_FILE" 2>/dev/null; then
     configure_protocol
 fi
 
-# 3. Menú principal administrativo
 while true; do
     header
     echo -e " ${YELLOW}${BOLD}⚠️  PANEL PRINCIPAL V2RAY${NC}"
@@ -606,14 +607,21 @@ while true; do
             journalctl -u v2ray -f
             ;;
         8)
-            systemctl restart v2ray >/dev/null 2>&1
+            manage_service restart
             echo -e "${GREEN}✔ V2Ray reiniciado.${NC}"
             sleep 1.5
             ;;
         9)
-            systemctl stop v2ray 2>/dev/null
-            systemctl disable v2ray 2>/dev/null
-            rm -rf /usr/local/v2ray /etc/systemd/system/v2ray.service /usr/local/bin/v2ray
+            manage_service stop
+            manage_service disable 2>/dev/null
+            if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
+                update-rc.d v2ray remove >/dev/null 2>&1
+                rm -f "$SERVICE_FILE_SYSV"
+            else
+                systemctl disable v2ray >/dev/null 2>&1
+                rm -f "$SERVICE_FILE"
+            fi
+            rm -rf /usr/local/v2ray /usr/local/bin/v2ray
             systemctl daemon-reload >/dev/null 2>&1
             rm -f "$LOCK_FILE"
             echo -e "${GREEN}✔ Desinstalación completa hecha.${NC}"
