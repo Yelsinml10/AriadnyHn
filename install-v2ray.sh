@@ -20,7 +20,21 @@ CONFIG_FILE="/usr/local/v2ray/config.json"
 V2RAY_BIN="/usr/local/v2ray/v2ray"
 SERVICE_FILE="/etc/systemd/system/v2ray.service"
 CERT_DIR="/usr/local/v2ray"
-SERVER_IP=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null || echo "127.0.0.1")
+
+# Obtener IP de la VPS de forma local y ultra rápida
+get_server_ip() {
+    local ip
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
+    if [[ -z "$ip" ]]; then
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    if [[ -z "$ip" || "$ip" == "127.0.0.1" ]]; then
+        ip=$(curl -4 -fsS --connect-timeout 2 -m 2 https://ifconfig.me 2>/dev/null || echo "127.0.0.1")
+    fi
+    echo "$ip"
+}
+
+SERVER_IP=$(get_server_ip)
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -48,13 +62,20 @@ open_port() {
 
 install_core_if_missing() {
     if [[ ! -x "$V2RAY_BIN" || ! -f "$SERVICE_FILE" ]]; then
-        echo -e "${CYAN}${BOLD}⚡ Instalando dependencias y V2Ray Core oficial (v2fly)...${NC}"
-        apt-get update -y >/dev/null 2>&1
-        apt-get install -y python3 wget unzip curl openssl certbot iptables-persistent >/dev/null 2>&1
+        echo -e "${CYAN}${BOLD}⚡ Verificando dependencias y V2Ray Core...${NC}"
         
-        if ! command -v python3 &>/dev/null; then
-            echo -e "${YELLOW}⚠️ Python3 no encontrado, instalando...${NC}"
-            apt-get install -y python3 python3-json >/dev/null 2>&1
+        # Instalar solo los paquetes que no existan
+        local PKGS=""
+        for pkg in python3 wget unzip curl openssl certbot iptables-persistent; do
+            if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+                PKGS="$PKGS $pkg"
+            fi
+        done
+
+        if [[ -n "$PKGS" ]]; then
+            echo -e "${YELLOW}⚙️ Instalando paquetes faltantes:${PKGS}...${NC}"
+            apt-get update -y >/dev/null 2>&1
+            apt-get install -y $PKGS >/dev/null 2>&1
         fi
         
         mkdir -p /usr/local/v2ray
@@ -71,22 +92,23 @@ install_core_if_missing() {
             fi
         fi
 
-        # Detectar arquitectura y obtener la versión
-        local ARCH=$(uname -m)
+        # Detectar arquitectura instantáneamente con 'case'
         local V2ARCH="64"
-        if [[ "$ARCH" == *"aarch64"* || "$ARCH" == *"arm64"* ]]; then
-            V2ARCH="arm64-v8a"
-        elif [[ "$ARCH" == *"armv7"* ]]; then
-            V2ARCH="arm32-v7a"
-        fi
+        case "$(uname -m)" in
+            aarch64|arm64) V2ARCH="arm64-v8a" ;;
+            armv7*|armhf)  V2ARCH="arm32-v7a" ;;
+            x86_64|amd64)  V2ARCH="64" ;;
+            *)             V2ARCH="64" ;;
+        esac
 
+        # Consulta a GitHub con tiempo límite (timeout) de 2s
         local LATEST_TAG
-        LATEST_TAG=$(curl -s https://api.github.com/repos/v2fly/v2ray-core/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        LATEST_TAG=$(curl -s --connect-timeout 2 -m 3 https://api.github.com/repos/v2fly/v2ray-core/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         [[ -z "$LATEST_TAG" ]] && LATEST_TAG="v5.14.1"
 
         local V2URL="https://github.com/v2fly/v2ray-core/releases/download/${LATEST_TAG}/v2ray-linux-${V2ARCH}.zip"
         
-        echo -e "${CYAN}Descargando V2Ray Core (${LATEST_TAG})...${NC}"
+        echo -e "${CYAN}Descargando V2Ray Core (${V2ARCH} - ${LATEST_TAG})...${NC}"
         wget -q "$V2URL" -O /tmp/v2ray.zip
         unzip -o /tmp/v2ray.zip -d /usr/local/v2ray/ >/dev/null 2>&1
         chmod +x /usr/local/v2ray/v2ray
@@ -195,7 +217,7 @@ setup_tls_cert() {
 
     if [[ $cert_exit -eq 0 ]] && [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
         cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
-        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
+        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/privkey.pem" 2>/dev/null || cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
         chmod 600 "${CERT_DIR}/key.pem"
         chmod 644 "${CERT_DIR}/cert.pem"
         echo -e "${GREEN}✔ Certificado Let's Encrypt instalado.${NC}"
@@ -605,6 +627,6 @@ EOF
 
 chmod +x /usr/local/bin/v2ray
 
-# EJECUTAR AUTOMÁTICAMENTE LA PRIMERA VEZ
+# EJECUTAR AUTOMÁTICAMENTE
 echo -e "\n${CYAN}${BOLD}🚀 Iniciando V2Ray Manager...${NC}\n"
 /usr/local/bin/v2ray
