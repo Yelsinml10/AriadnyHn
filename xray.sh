@@ -1,10 +1,11 @@
 cat << 'EOF' > /usr/local/bin/xray
 #!/bin/bash
 # =========================================================
-#  XRAY MANAGER - TRANSFORMED EDITION
+#  XRAY MANAGER - TRANSFORMED & OPTIMIZED EDITION
 # =========================================================
 
 export TERM=xterm
+export DEBIAN_FRONTEND=noninteractive
 
 BOLD='\033[1m'
 RED='\033[0;31m'
@@ -15,12 +16,27 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-# Rutas originales respetadas
 CONFIG_FILE="/usr/local/xray/config.json"
 XRAY_BIN="/usr/local/xray/xray"
 SERVICE_FILE="/etc/systemd/system/xray.service"
 CERT_DIR="/usr/local/xray"
-SERVER_IP=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null || echo "127.0.0.1")
+LOCK_FILE="/tmp/xray_manager.lock"
+
+detect_ip() {
+    local ip=""
+    ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    echo "127.0.0.1"
+}
+
+SERVER_IP=$(detect_ip)
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -40,22 +56,18 @@ open_port() {
             ufw allow "$port"/tcp >/dev/null 2>&1
             ufw allow "$port"/udp >/dev/null 2>&1
         fi
-        if command -v netfilter-persistent >/dev/null 2>&1; then
-            netfilter-persistent save >/dev/null 2>&1
-        fi
     fi
 }
 
 install_core_if_missing() {
     if [[ ! -x "$XRAY_BIN" || ! -f "$SERVICE_FILE" ]]; then
         echo -e "${CYAN}${BOLD}⚡ Instalando dependencias básicas y Xray Core...${NC}"
-        apt-get update -y >/dev/null 2>&1
-        apt-get install -y python3 wget unzip curl openssl certbot iptables-persistent >/dev/null 2>&1
         
-        if ! command -v python3 &>/dev/null; then
-            echo -e "${YELLOW}⚠️ Python3 no encontrado, instalando...${NC}"
-            apt-get install -y python3 python3-json >/dev/null 2>&1
-        fi
+        killall apt apt-get dpkg 2>/dev/null
+        rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>/dev/null
+
+        apt-get update -y -qq >/dev/null 2>&1
+        apt-get install -y -qq python3 python3-json wget unzip curl openssl certbot >/dev/null 2>&1
         
         mkdir -p /usr/local/xray
 
@@ -75,7 +87,9 @@ install_core_if_missing() {
         if [[ "$ARCH" == *"aarch64"* || "$ARCH" == *"arm64"* ]]; then
             XURL="https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-arm64-v8a.zip"
         fi
-        wget -q "$XURL" -O /tmp/xray.zip
+
+        echo -e "${CYAN}Descargando Xray Core...${NC}"
+        wget -q --timeout=30 "$XURL" -O /tmp/xray.zip
         unzip -o /tmp/xray.zip -d /usr/local/xray/ >/dev/null 2>&1
         chmod +x /usr/local/xray/xray
         rm -f /tmp/xray.zip
@@ -109,22 +123,24 @@ get_status() {
 
 header() {
     clear
-    echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}${BOLD}║                XRAY MANAGER PANEL (v1.8.24)             ║${NC}"
-    echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
-    echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC} ${YELLOW}${SERVER_IP}${NC}"
-    echo -e " ${PURPLE}${BOLD}▸ Estado Xray:${NC} $(get_status)"
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}${BOLD}                XRAY MANAGER PANEL (v1.8.24)             ${NC}"
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
+    echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC}  ${YELLOW}${SERVER_IP}${NC}"
+    echo -e " ${PURPLE}${BOLD}▸ Estado Xray:${NC}  $(get_status)"
     echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────${NC}"
 }
 
 pause_screen() {
     echo
-    read -r -p "$(echo -e "${YELLOW}Presiona [ENTER] para regresar al menú...${NC}")" _
+    echo -e -n "${YELLOW}Presiona [ENTER] para regresar al menú...${NC}"
+    read -r _
 }
 
 read_val() {
     local var="$1" prompt="$2" def="$3" val
-    read -r -p "$(echo -e "${CYAN}➜ ${NC}${WHITE}${prompt}${NC} ")" val
+    echo -e -n "${CYAN}➜ ${NC}${WHITE}${prompt}${NC} "
+    read -r val
     [[ -z "$val" ]] && val="$def"
     printf -v "$var" '%s' "$val"
 }
@@ -146,52 +162,43 @@ setup_tls_cert() {
         chmod 600 "${CERT_DIR}/key.pem"
         chmod 644 "${CERT_DIR}/cert.pem"
         echo -e "${GREEN}✔ Certificado autofirmado generado.${NC}"
+        sleep 1
         return 0
     fi
 
     header
     echo -e "${PURPLE}${BOLD}[ 🔒 CONFIGURACIÓN SSL / TLS PARA DOMINIO ]${NC}\n"
     echo -e " Dominio detectado: ${YELLOW}${domain}${NC}\n"
-    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial)${NC}"
-    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${YELLOW}Autofirmado (Recomendado)${NC}\n"
-    read -r -p "$(echo -e "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}")" cert_opt
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial / Valido)${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${YELLOW}Autofirmado (Rápido / Pruebas)${NC}\n"
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}"
+    read -r cert_opt
 
-    if [[ "$cert_opt" != "1" ]]; then
-        echo -e "${YELLOW}⚙️ Generando certificado autofirmado...${NC}"
-        openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
-        openssl req -new -x509 -days 3650 \
-            -key "${CERT_DIR}/key.pem" \
-            -out "${CERT_DIR}/cert.pem" \
-            -subj "/C=US/ST=State/L=City/O=Xray/CN=${domain}" >/dev/null 2>&1
-        chmod 600 "${CERT_DIR}/key.pem"
-        chmod 644 "${CERT_DIR}/cert.pem"
-        echo -e "${GREEN}✔ Certificado autofirmado generado.${NC}"
-        return 0
+    if [[ "$cert_opt" == "1" ]]; then
+        echo -e "\n${CYAN}⚙️ Solicitando certificado Let's Encrypt...${NC}"
+
+        systemctl stop xray 2>/dev/null
+        systemctl stop nginx 2>/dev/null
+        systemctl stop apache2 2>/dev/null
+        systemctl stop caddy 2>/dev/null
+
+        DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
+
+        if [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
+            cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
+            cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
+            chmod 600 "${CERT_DIR}/key.pem"
+            chmod 644 "${CERT_DIR}/cert.pem"
+            echo -e "${GREEN}✔ Certificado Let's Encrypt instalado.${NC}"
+            sleep 1.5
+            return 0
+        else
+            echo -e "\n${YELLOW}⚠️ Let's Encrypt no disponible. Usando autofirmado...${NC}"
+            sleep 1.5
+        fi
     fi
 
-    echo -e "\n${CYAN}⚙️ Solicitando certificado Let's Encrypt...${NC}"
-    apt-get install -y certbot >/dev/null 2>&1
-
-    systemctl stop xray 2>/dev/null
-    systemctl stop nginx 2>/dev/null
-    systemctl stop apache2 2>/dev/null
-    systemctl stop caddy 2>/dev/null
-
-    local cert_output
-    cert_output=$(certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>&1)
-    local cert_exit=$?
-
-    if [[ $cert_exit -eq 0 ]] && [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
-        cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
-        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
-        chmod 600 "${CERT_DIR}/key.pem"
-        chmod 644 "${CERT_DIR}/cert.pem"
-        echo -e "${GREEN}✔ Certificado Let's Encrypt instalado.${NC}"
-        sleep 1.5
-        return 0
-    fi
-
-    echo -e "\n${YELLOW}⚠️ Let's Encrypt no disponible. Usando autofirmado...${NC}"
+    echo -e "${YELLOW}⚙️ Generando certificado autofirmado...${NC}"
     openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
     openssl req -new -x509 -days 3650 \
         -key "${CERT_DIR}/key.pem" \
@@ -199,7 +206,8 @@ setup_tls_cert() {
         -subj "/C=US/ST=State/L=City/O=Xray/CN=${domain}" >/dev/null 2>&1
     chmod 600 "${CERT_DIR}/key.pem"
     chmod 644 "${CERT_DIR}/cert.pem"
-    echo -e "${GREEN}✔ Certificado autofirmado generado (funciona igual para TLS).${NC}"
+    echo -e "${GREEN}✔ Certificado autofirmado generado.${NC}"
+    sleep 1
     return 0
 }
 
@@ -260,7 +268,7 @@ print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n")
 
 for idx, c in enumerate(clients, 1):
     user_id = c.get("id") or c.get("password") or ""
-    print(f"\033[1;37m[Usuario {idx}]\033[0m Contraseña / ID: \033[1;33m{user_id}\033[0m")
+    print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
     
     link = ""
     if proto == "vless":
@@ -308,7 +316,7 @@ for idx, c in enumerate(clients, 1):
         link = f"socks5://{dom}:{port}#Xray-SOCKS5"
 
     if link:
-        print(f"\033[0;32mEnlace de Conexión:\033[0m\n{link}\n")
+        print(f"\033[0;32mEnlace:\033[0m {link}\n")
 
 PY
     pause_screen
@@ -323,7 +331,8 @@ configure_protocol() {
     echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Shadowsocks${NC}"
     echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${CYAN}SOCKS5${NC}"
     echo -e "  ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Volver al Menú${NC}\n"
-    read -r -p "$(echo -e "${YELLOW}➜ ${NC}${BOLD}Opción [0-5]: ${NC}")" popt
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción [0-5]: ${NC}"
+    read -r popt
 
     local proto=""
     case "$popt" in
@@ -371,7 +380,8 @@ configure_protocol() {
         echo -e "  ${WHITE}${BOLD}[ 7 ]${NC} ${GREEN}VLESS + REALITY (Vision)${NC}"
     fi
     echo
-    read -r -p "$(echo -e "${YELLOW}➜ ${NC}${BOLD}Opción: ${NC}")" topt
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción: ${NC}"
+    read -r topt
 
     local trans="tcp" sec="none" sni="" dest="" priv_key="" pub_key="" short_id=""
     case "$topt" in
@@ -562,21 +572,23 @@ PY
     systemctl restart xray >/dev/null 2>&1
 }
 
-# Si se ejecuta con argumentos de servicio, pasar al binario real
 if [[ "$1" == "run" ]] || [[ "$1" == "-config" ]] || [[ "$1" == "run-config" ]]; then
     exec /usr/local/xray/xray "$@"
 fi
 
-# 1. Verificar root e instalar binaries base si no están
+if [[ -f "$LOCK_FILE" ]]; then
+    rm -f "$LOCK_FILE"
+fi
+touch "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
+
 check_root
 install_core_if_missing
 
-# 2. Si no hay configuración previa, abrir directo la selección de protocolos
 if [[ ! -f "$CONFIG_FILE" ]]; then
     configure_protocol
 fi
 
-# 3. Bucle del menú administrativo
 while true; do
     header
     echo -e " ${YELLOW}${BOLD}⚙️  PANEL PRINCIPAL XRAY${NC}"
@@ -591,7 +603,8 @@ while true; do
     echo -e "  ${WHITE}${BOLD}[ 9 ]${NC} ${RED}🗑️  Desinstalar Xray por Completo${NC}"
     echo -e "  ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}🚪 Salir del Menú${NC}"
     echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────${NC}"
-    read -r -p "$(echo -e "${YELLOW}➜ ${NC}${BOLD}Opción [0-9]: ${NC}")" op
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción [0-9]: ${NC}"
+    read -r op
 
     case "$op" in
         1) configure_protocol ;;
@@ -599,7 +612,7 @@ while true; do
             read_val np "Nuevo Puerto:" "443"
             open_port "$np"
             modify_param "port" "$np"
-            echo -e "${GREEN}✔ Puerto actualizado a $np y abierto en Firewall.${NC}"
+            echo -e "${GREEN}✔ Puerto actualizado a $np.${NC}"
             pause_screen
             ;;
         3)
@@ -625,7 +638,7 @@ while true; do
             ;;
         6) show_info ;;
         7)
-            echo -e "\n${YELLOW}Presiona CTRL + C para detener el monitoreo de logs...${NC}\n"
+            echo -e "\n${YELLOW}Presiona CTRL + C para detener logs...${NC}\n"
             sleep 1.5
             journalctl -u xray -f
             ;;
@@ -639,10 +652,14 @@ while true; do
             systemctl disable xray 2>/dev/null
             rm -rf /usr/local/xray /etc/systemd/system/xray.service /usr/local/bin/xray
             systemctl daemon-reload
+            rm -f "$LOCK_FILE"
             echo -e "${GREEN}✔ Desinstalación completa realizada.${NC}"
             exit 0
             ;;
-        0) exit 0 ;;
+        0) 
+            rm -f "$LOCK_FILE"
+            exit 0 
+            ;;
         *) sleep 1 ;;
     esac
 done
@@ -650,6 +667,5 @@ EOF
 
 chmod +x /usr/local/bin/xray
 
-# 🔥 EJECUTAR AUTOMÁTICAMENTE LA PRIMERA VEZ
-echo -e "\n${CYAN}${BOLD}🚀 Iniciando instalación automática...${NC}\n"
+echo -e "\n${CYAN}${BOLD}🚀 Iniciando instalación automática de Xray...${NC}\n"
 /usr/local/bin/xray
