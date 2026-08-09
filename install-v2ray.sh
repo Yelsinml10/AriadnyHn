@@ -106,18 +106,18 @@ install_core_if_missing() {
         unzip -o /tmp/v2ray.zip -d /usr/local/v2ray/ >/dev/null 2>&1
         chmod +x /usr/local/v2ray/v2ray
         rm -f /tmp/v2ray.zip
-
-        # BORRAR CONFIG.JSON DE MUESTRA QUE VIENE EN EL ZIP
         rm -f /usr/local/v2ray/config.json
 
         cat > "$SERVICE_FILE" <<EOFS
 [Unit]
 Description=V2Ray Core Service
 After=network.target
+
 [Service]
 ExecStart=${V2RAY_BIN} run -config ${CONFIG_FILE}
 Restart=on-failure
 RestartSec=5
+
 [Install]
 WantedBy=multi-user.target
 EOFS
@@ -249,7 +249,6 @@ except Exception:
     sys.exit(1)
 
 dom = cfg.get("_domain", "127.0.0.1")
-
 inb = cfg["inbounds"][0]
 proto = inb.get("protocol", "desconocido")
 port = inb.get("port", 443)
@@ -279,57 +278,60 @@ if trans == "ws":
 elif trans == "grpc":
     print(f"\033[1;37mServiceName :\033[0m \033[0;36m{extra}\033[0m")
 
-clients = st.get("clients", [])
 print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n")
 
-for idx, c in enumerate(clients, 1):
-    user_id = c.get("id") or c.get("password") or ""
-    print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
-    
-    link = ""
-    if proto == "vless":
-        params = f"encryption=none&type={trans}&security={sec}"
-        if trans == "ws":
-            params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
-        elif trans == "grpc":
-            params += f"&serviceName={urllib.parse.quote(extra)}&mode=gun"
-        if sec == "tls":
-            params += f"&sni={urllib.parse.quote(dom)}"
-        link = f"vless://{user_id}@{dom}:{port}?{params}#V2Ray-VLESS"
+if proto == "shadowsocks":
+    method = st.get("method", "aes-256-gcm")
+    pass_val = st.get("password", "")
+    b64_ss = base64.b64encode(f"{method}:{pass_val}".encode()).decode()
+    link = f"ss://{b64_ss}@{dom}:{port}#V2Ray-Shadowsocks"
+    print(f"\033[1;37m[Usuario 1]\033[0m Clave: \033[1;33m{pass_val}\033[0m")
+    print(f"\033[0;32mEnlace:\033[0m {link}\n")
+else:
+    clients = st.get("clients", [])
+    for idx, c in enumerate(clients, 1):
+        user_id = c.get("id") or c.get("password") or ""
+        print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
+        
+        link = ""
+        if proto == "vless":
+            params = f"encryption=none&type={trans}&security={sec}"
+            if trans == "ws":
+                params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
+            elif trans == "grpc":
+                params += f"&serviceName={urllib.parse.quote(extra)}&mode=gun"
+            if sec == "tls":
+                params += f"&sni={urllib.parse.quote(dom)}"
+            link = f"vless://{user_id}@{dom}:{port}?{params}#V2Ray-VLESS"
 
-    elif proto == "vmess":
-        v_json = {
-            "v": "2", "ps": f"V2Ray-VMess-{idx}", "add": dom, "port": str(port),
-            "id": user_id, "aid": "0", "net": trans, "type": "none",
-            "host": ws_host if trans == "ws" else "",
-            "path": extra if trans == "ws" else "",
-            "tls": "tls" if sec == "tls" else "",
-            "sni": dom if sec == "tls" else "",
-            "serviceName": extra if trans == "grpc" else ""
-        }
-        b64 = base64.b64encode(json.dumps(v_json).encode()).decode()
-        link = f"vmess://{b64}"
+        elif proto == "vmess":
+            v_json = {
+                "v": "2", "ps": f"V2Ray-VMess-{idx}", "add": dom, "port": str(port),
+                "id": user_id, "aid": "0", "net": trans, "type": "none",
+                "host": ws_host if trans == "ws" else "",
+                "path": extra if trans == "ws" else "",
+                "tls": "tls" if sec == "tls" else "",
+                "sni": dom if sec == "tls" else "",
+                "serviceName": extra if trans == "grpc" else ""
+            }
+            b64 = base64.b64encode(json.dumps(v_json).encode()).decode()
+            link = f"vmess://{b64}"
 
-    elif proto == "trojan":
-        params = f"type={trans}&security={sec}"
-        if trans == "ws":
-            params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
-        elif trans == "grpc":
-            params += f"&serviceName={urllib.parse.quote(extra)}"
-        if sec == "tls":
-            params += f"&sni={urllib.parse.quote(dom)}"
-        link = f"trojan://{user_id}@{dom}:{port}?{params}#V2Ray-Trojan"
+        elif proto == "trojan":
+            params = f"type={trans}&security={sec}"
+            if trans == "ws":
+                params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
+            elif trans == "grpc":
+                params += f"&serviceName={urllib.parse.quote(extra)}"
+            if sec == "tls":
+                params += f"&sni={urllib.parse.quote(dom)}"
+            link = f"trojan://{user_id}@{dom}:{port}?{params}#V2Ray-Trojan"
 
-    elif proto == "shadowsocks":
-        method = st.get("method", "aes-256-gcm")
-        b64_ss = base64.b64encode(f"{method}:{user_id}".encode()).decode()
-        link = f"ss://{b64_ss}@{dom}:{port}#V2Ray-Shadowsocks"
+        elif proto == "socks":
+            link = f"socks5://{dom}:{port}#V2Ray-SOCKS5"
 
-    elif proto == "socks":
-        link = f"socks5://{dom}:{port}#V2Ray-SOCKS5"
-
-    if link:
-        print(f"\033[0;32mEnlace:\033[0m {link}\n")
+        if link:
+            print(f"\033[0;32mEnlace:\033[0m {link}\n")
 
 PY
     pause_screen
@@ -354,8 +356,7 @@ configure_protocol() {
         3) proto="trojan" ;;
         4) proto="shadowsocks" ;;
         5) proto="socks" ;;
-        0) return ;;
-        *) return ;;
+        0|*) return ;;
     esac
 
     header
@@ -373,8 +374,8 @@ configure_protocol() {
     fi
     
     local prompt_user="Contraseña / ID (UUID) [Auto]:"
-    if [[ "$proto" == "trojan" ]]; then
-        prompt_user="Contraseña Trojan [Auto]:"
+    if [[ "$proto" == "trojan" || "$proto" == "shadowsocks" ]]; then
+        prompt_user="Contraseña [Auto]:"
     fi
     read_val user "$prompt_user" "$auto_user"
 
@@ -507,11 +508,13 @@ val2 = sys.argv[4] if len(sys.argv) > 4 else ""
 try:
     with open(cfg_file, "r") as f: cfg = json.load(f)
 except: sys.exit(1)
+
 inb = cfg["inbounds"][0]
 st = inb.get("settings", {})
 str_st = inb.get("streamSettings", {})
 
-if act == "port": inb["port"] = int(val)
+if act == "port":
+    inb["port"] = int(val)
 elif act == "path":
     if str_st.get("network") == "ws":
         str_st.setdefault("wsSettings", {})["path"] = val
@@ -520,11 +523,13 @@ elif act == "path":
     elif str_st.get("network") == "grpc":
         str_st.setdefault("grpcSettings", {})["serviceName"] = val
 elif act == "id":
-    if "clients" in st and len(st["clients"]) > 0:
+    if "password" in st and "clients" not in st:
+        st["password"] = val
+    elif "clients" in st and len(st["clients"]) > 0:
         if "id" in st["clients"][0]: st["clients"][0]["id"] = val
         elif "password" in st["clients"][0]: st["clients"][0]["password"] = val
 elif act == "add_id":
-    if "clients" in st:
+    if "clients" in st and len(st["clients"]) > 0:
         client_obj = {}
         if "id" in st["clients"][0]: client_obj["id"] = val
         elif "password" in st["clients"][0]: client_obj["password"] = val
@@ -548,7 +553,6 @@ trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
 check_root
 install_core_if_missing
 
-# Abrir OBLIGATORIAMENTE la selección de protocolos si no hay una config personalizada
 if [[ ! -f "$CONFIG_FILE" ]] || ! grep -q '"_domain"' "$CONFIG_FILE" 2>/dev/null; then
     configure_protocol
 fi
@@ -607,24 +611,20 @@ while true; do
             journalctl -u v2ray -f
             ;;
         8)
-            manage_service restart
+            systemctl restart v2ray >/dev/null 2>&1
             echo -e "${GREEN}✔ V2Ray reiniciado.${NC}"
             sleep 1.5
             ;;
         9)
-            manage_service stop
-            manage_service disable 2>/dev/null
-            if [[ "$UBUNTU_VERSION" == "14.04" ]] || [[ "$UBUNTU_VERSION" == "16.04" ]]; then
-                update-rc.d v2ray remove >/dev/null 2>&1
-                rm -f "$SERVICE_FILE_SYSV"
-            else
-                systemctl disable v2ray >/dev/null 2>&1
-                rm -f "$SERVICE_FILE"
-            fi
-            rm -rf /usr/local/v2ray /usr/local/bin/v2ray
+            echo -e "\n${YELLOW}⚡ Desinstalando V2Ray por completo...${NC}"
+            systemctl stop v2ray >/dev/null 2>&1
+            systemctl disable v2ray >/dev/null 2>&1
+            rm -f "$SERVICE_FILE"
             systemctl daemon-reload >/dev/null 2>&1
+            rm -rf /usr/local/v2ray
+            rm -f /usr/local/bin/v2ray
             rm -f "$LOCK_FILE"
-            echo -e "${GREEN}✔ Desinstalación completa hecha.${NC}"
+            echo -e "${GREEN}✔ Desinstalación completa realizada con éxito.${NC}"
             exit 0
             ;;
         0) 
