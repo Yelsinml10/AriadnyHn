@@ -33,7 +33,7 @@ print_banner() {
     clear
     echo -e "${CYAN}${BOLD}====================================================${NC}"
     echo -e "${CYAN}${BOLD}      AUTOINSTALADOR SLOWDNS / DNSTT SERVER         ${NC}"
-    echo -e "${CYAN}${BOLD}       TUNEL DNS MULTI-ARCH (V2RAY / SSH)           ${NC}"
+    echo -e "${CYAN}${BOLD}     TUNEL DNS MULTI-ARCH (V2RAY/XRAY/PYTHON/SSH)   ${NC}"
     echo -e "${CYAN}${BOLD}====================================================${NC}\n"
 }
 
@@ -49,8 +49,20 @@ fi
 
 install_dependencies() {
     echo -e "\n${BLUE}${BOLD}[ 1 / 5 ] Instalando Repositorios y Dependencias (${SYS_ARCH})...${NC}"
+    
+    # Preconfiguración de iptables-persistent para evitar prompts en Ubuntu
+    echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections 2>/dev/null
+    echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections 2>/dev/null
+    
+    # Liberar puerto 53 en Ubuntu si systemd-resolved está en uso
+    if [ -f /etc/systemd/resolved.conf ]; then
+        sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf 2>/dev/null
+        sed -i 's/DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf 2>/dev/null
+        systemctl restart systemd-resolved 2>/dev/null
+    fi
+
     apt-get update -qq
-    apt-get install -y -qq golang git iptables iptables-persistent net-tools curl wget >/dev/null 2>&1
+    apt-get install -y -qq lsb-release golang git iptables iptables-persistent net-tools curl wget >/dev/null 2>&1
     echo -e "${GREEN}✔ Dependencias de sistema instaladas.${NC}"
 }
 
@@ -74,25 +86,52 @@ prompt_installation_data() {
     done
     echo ""
 
-    # 2. SUGERENCIA DE DESTINO (V2RAY VS SSH)
+    # 2. SUGERENCIA DE DESTINO (V2RAY / XRAY / PYTHON / SSH)
     echo -e "${CYAN}➜ Selecciona el Destino Interno del Túnel DNS:${NC}"
-    echo -e "  ${WHITE}[ 1 ]${NC} ${GREEN}${BOLD}V2Ray Proxy (RECOMENDADO)${NC} ${CYAN}⚡ Mayor velocidad / Menos Lag con Mux${NC}"
-    echo -e "  ${WHITE}[ 2 ]${NC} ${YELLOW}SSH Directo (Puerto 22)${NC} ${CYAN}Túnel tradicional SSH por DNS${NC}"
-    echo -e -n "  ${WHITE}Opcion [1-2]:${NC} "
+    echo -e "  ${WHITE}[ 1 ]${NC} ${GREEN}${BOLD}V2Ray Proxy${NC} ${CYAN}⚡ Mayor velocidad / Menos Lag con Mux${NC}"
+    echo -e "  ${WHITE}[ 2 ]${NC} ${GREEN}${BOLD}Xray Proxy${NC} ${CYAN}⚡ Soporte VLESS / VMess / Trojan${NC}"
+    echo -e "  ${WHITE}[ 3 ]${NC} ${PURPLE}${BOLD}Python Proxy / Socks${NC} ${CYAN}🐍 Servidor Python Directo${NC}"
+    echo -e "  ${WHITE}[ 4 ]${NC} ${YELLOW}SSH Directo (Puerto 22)${NC} ${CYAN}Túnel tradicional SSH por DNS${NC}"
+    echo -e -n "  ${WHITE}Opcion [1-4]:${NC} "
     read -r DEST_OPT
 
-    if [[ "$DEST_OPT" == "2" ]]; then
-        REDIRECT_TARGET="ssh"
-        TARGET_PORT="22"
-    else
-        REDIRECT_TARGET="v2ray"
-        echo ""
-        echo -e "${CYAN}➜ Puerto donde escucha tu V2Ray (ejemplo: 8080):${NC}"
-        echo -e -n "  ${WHITE}Puerto V2Ray [Default 8080]:${NC} "
-        read -r INPUT_V2_PORT
-        INPUT_V2_PORT=$(echo "$INPUT_V2_PORT" | tr -d ' ')
-        TARGET_PORT=${INPUT_V2_PORT:-8080}
-    fi
+    case "$DEST_OPT" in
+        1)
+            REDIRECT_TARGET="v2ray"
+            echo ""
+            echo -e "${CYAN}➜ Puerto donde escucha tu V2Ray (ejemplo: 8080):${NC}"
+            echo -e -n "  ${WHITE}Puerto V2Ray [Default 8080]:${NC} "
+            read -r INPUT_PORT
+            INPUT_PORT=$(echo "$INPUT_PORT" | tr -d ' ')
+            TARGET_PORT=${INPUT_PORT:-8080}
+            ;;
+        2)
+            REDIRECT_TARGET="xray"
+            echo ""
+            echo -e "${CYAN}➜ Puerto donde escucha tu Xray (ejemplo: 8080 o 443):${NC}"
+            echo -e -n "  ${WHITE}Puerto Xray [Default 8080]:${NC} "
+            read -r INPUT_PORT
+            INPUT_PORT=$(echo "$INPUT_PORT" | tr -d ' ')
+            TARGET_PORT=${INPUT_PORT:-8080}
+            ;;
+        3)
+            REDIRECT_TARGET="python"
+            echo ""
+            echo -e "${CYAN}➜ Puerto donde escucha tu Servidor Python (ejemplo: 80 u 8799):${NC}"
+            echo -e -n "  ${WHITE}Puerto Python [Default 80]:${NC} "
+            read -r INPUT_PORT
+            INPUT_PORT=$(echo "$INPUT_PORT" | tr -d ' ')
+            TARGET_PORT=${INPUT_PORT:-80}
+            ;;
+        4)
+            REDIRECT_TARGET="ssh"
+            TARGET_PORT="22"
+            ;;
+        *)
+            REDIRECT_TARGET="v2ray"
+            TARGET_PORT="8080"
+            ;;
+    esac
 
     echo -e "\n${PURPLE}${BOLD}====================================================${NC}"
     echo -e "  ${WHITE}• Sistema / ARQ       :${NC} ${GREEN}${BOLD}$SYS_OS ($SYS_ARCH)${NC}"
@@ -248,9 +287,11 @@ header() {
 switch_target() {
     header
     echo -e "${PURPLE}${BOLD}[ CAMBIAR DESTINO DEL TÚNEL SLOWDNS ]${NC}\n"
-    echo -e " ${WHITE}[ 1 ]${NC} ${GREEN}V2Ray Proxy${NC} ${CYAN}(Recomendado - Mayor velocidad con Mux)${NC}"
-    echo -e " ${WHITE}[ 2 ]${NC} ${YELLOW}SSH Directo (Puerto 22)${NC} ${CYAN}(Túnel tradicional)${NC}"
-    echo -e -n "\n${YELLOW}➜ Selecciona una opcion [1-2]: ${NC}"
+    echo -e " ${WHITE}[ 1 ]${NC} ${GREEN}V2Ray Proxy${NC}"
+    echo -e " ${WHITE}[ 2 ]${NC} ${GREEN}Xray Proxy${NC}"
+    echo -e " ${WHITE}[ 3 ]${NC} ${PURPLE}Python Proxy / Socks${NC}"
+    echo -e " ${WHITE}[ 4 ]${NC} ${YELLOW}SSH Directo (Puerto 22)${NC}"
+    echo -e -n "\n${YELLOW}➜ Selecciona una opcion [1-4]: ${NC}"
     read -r opt
     case $opt in
         1)
@@ -261,6 +302,20 @@ switch_target() {
             TARGET_PORT=${new_p:-8080}
             ;;
         2)
+            REDIRECT_TARGET="xray"
+            echo -e -n "\n${CYAN}Puerto donde escucha tu Xray [Default 8080]: ${NC}"
+            read -r new_p
+            new_p=$(echo "$new_p" | tr -d ' ')
+            TARGET_PORT=${new_p:-8080}
+            ;;
+        3)
+            REDIRECT_TARGET="python"
+            echo -e -n "\n${CYAN}Puerto donde escucha tu Servidor Python [Default 80]: ${NC}"
+            read -r new_p
+            new_p=$(echo "$new_p" | tr -d ' ')
+            TARGET_PORT=${new_p:-80}
+            ;;
+        4)
             REDIRECT_TARGET="ssh"
             TARGET_PORT="22"
             ;;
@@ -292,7 +347,7 @@ view_info() {
 while true; do
     header
     echo -e " ${WHITE}[ 1 ]${NC} ${CYAN}Ver Clave Pública (Public Key) y Datos de Conexión${NC}"
-    echo -e " ${WHITE}[ 2 ]${NC} ${GREEN}Cambiar Destino (V2Ray <-> SSH 22)${NC}"
+    echo -e " ${WHITE}[ 2 ]${NC} ${GREEN}Cambiar Destino (V2Ray / Xray / Python / SSH 22)${NC}"
     echo -e " ${WHITE}[ 3 ]${NC} ${CYAN}Ver Registros / Logs en Tiempo Real${NC}"
     echo -e " ${WHITE}[ 4 ]${NC} ${GREEN}Reiniciar Servicio SlowDNS${NC}"
     echo -e " ${WHITE}[ 5 ]${NC} ${RED}Desinstalar SlowDNS${NC}"
