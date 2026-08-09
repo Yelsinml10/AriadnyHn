@@ -54,10 +54,16 @@ install_dependencies() {
     echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections 2>/dev/null
     echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections 2>/dev/null
     
-    # Liberar puerto 53 en Ubuntu si systemd-resolved está en uso
+    # Liberar puerto 53 sin perder la conexión a internet/DNS en el VPS
     if [ -f /etc/systemd/resolved.conf ]; then
         sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf 2>/dev/null
         sed -i 's/DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf 2>/dev/null
+        
+        # Mantener DNS activos para que curl/wget resuelvan dominios
+        rm -f /etc/resolv.conf
+        echo "nameserver 1.1.1.1" > /etc/resolv.conf
+        echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+        
         systemctl restart systemd-resolved 2>/dev/null
     fi
 
@@ -145,6 +151,7 @@ prompt_installation_data() {
     mkdir -p $CONFIG_DIR
 }
 
+# RESTAURADA TU FUNCIÓN ORIGINAL TAL CUAL LA TENÍAS
 compile_dnstt() {
     echo -e "\n${BLUE}${BOLD}[ 2 / 5 ] Instalando binario dnstt-server para ${SYS_ARCH}...${NC}"
     
