@@ -523,10 +523,48 @@ if ports: print(" ".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
 
+get_slowdns_ports() {
+    python3 -c '
+import subprocess, re
+ports = set()
+try:
+    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+    for line in out.splitlines():
+        if any(x in line for x in ["dns-server", "slowdns", "dnstt", "server-dns"]):
+            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
+except Exception: pass
+if ports: print(",".join(map(str, sorted(ports))))
+' 2>/dev/null
+}
+
+get_ssl_ports() {
+    python3 -c '
+import os, re, subprocess
+ports = set()
+conf = "/etc/stunnel/stunnel.conf"
+if os.path.exists(conf):
+    try:
+        with open(conf, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("accept"):
+                    m = re.search(r"=\s*(?:[0-9.]+:)?([0-9]+)", line)
+                    if m: ports.add(int(m.group(1)))
+    except Exception: pass
+try:
+    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+    for line in out.splitlines():
+        if "stunnel" in line or "stunnel4" in line:
+            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
+except Exception: pass
+if ports: print(",".join(map(str, sorted(ports))))
+' 2>/dev/null
+}
+
 get_ports_summary() {
     ACTIVE_ITEMS=()
 
-    # 1. Caddy (SOLO si el servicio Caddy está corriendo activamente en systemd)
+    # 1. Caddy
     if systemctl is-active --quiet caddy 2>/dev/null; then
         local c_http=$(get_caddy_ports_http 2>/dev/null)
         local c_https=$(get_caddy_ports_https 2>/dev/null)
@@ -631,7 +669,19 @@ except Exception: pass
         [[ -n "$p_p" ]] && ACTIVE_ITEMS+=("🐍 Python : $(truncate_str "$p_p")") || ACTIVE_ITEMS+=("🐍 Python : ON")
     fi
 
-    # 9. SSH Sistema
+    # 9. SlowDNS
+    if systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null || pgrep -f "slowdns" >/dev/null || pgrep -f "dnstt" >/dev/null; then
+        local dns_p=$(get_slowdns_ports)
+        [[ -n "$dns_p" ]] && ACTIVE_ITEMS+=("🐌 SlowDNS: $(truncate_str "$dns_p")") || ACTIVE_ITEMS+=("🐌 SlowDNS: ON")
+    fi
+
+    # 10. SSL / Stunnel
+    if systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null; then
+        local ssl_p=$(get_ssl_ports)
+        [[ -n "$ssl_p" ]] && ACTIVE_ITEMS+=("🔒 SSL/TLS: $(truncate_str "$ssl_p")") || ACTIVE_ITEMS+=("🔒 SSL/TLS: ON")
+    fi
+
+    # 11. SSH Sistema
     SSH_PORT_DISPLAY="22"
     if [[ -f /etc/ssh/sshd_config ]]; then
         local ssh_p=$(grep -i "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tr '\n' ',' | sed 's/,$//')
@@ -702,7 +752,6 @@ download_and_execute() {
     local script_name="$1"
     local temporary="/tmp/${script_name##*/}.$$"
 
-    # Intentar descargar de forma silenciosa sin arrojar error 404
     if ! curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$temporary" 2>/dev/null; then
         rm -f "$temporary"
         return 1
@@ -786,6 +835,45 @@ badvpn_menu() {
     pause_screen
 }
 
+slowdns_menu() {
+    panel_header "SLOWDNS PANEL (GITHUB)" "🐌"
+    download_and_execute "slowdns.sh"
+    pause_screen
+}
+
+ssl_menu() {
+    panel_header "CERTIFICADO SSL / STUNNEL (GITHUB)" "🔒"
+    download_and_execute "ssl.sh"
+    pause_screen
+}
+
+# =======================================================
+# SUBMENÚ "MÁS OPCIONES / HERRAMIENTAS NUEVAS" [12]
+# =======================================================
+mas_opciones_menu() {
+    while true; do
+        panel_header "MÁS OPCIONES & HERRAMIENTAS" "📁"
+        printf "  %b[ 1]%b ⚙️  %bNueva Función 1 (Disponible)%b\n" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 2]%b ⚙️  %bNueva Función 2 (Disponible)%b\n" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 0]%b ⬅️  %bVolver al Menú Principal%b\n\n" "$RED" "$NC" "$WHITE" "$NC"
+
+        read -r -p "  ❯ Selecciona una opción [0-2]: " sub_op
+
+        case "$sub_op" in
+            1)
+                info "Aquí puedes vincular tu nueva función 1."
+                pause_screen
+                ;;
+            2)
+                info "Aquí puedes vincular tu nueva función 2."
+                pause_screen
+                ;;
+            0) break ;;
+            *) warn "Opción inválida."; sleep 1 ;;
+        esac
+    done
+}
+
 firewall_menu() {
     panel_header "FIREWALL (GITHUB)" "🛡️"
     download_and_execute "firewall.sh"
@@ -835,10 +923,26 @@ monitor_menu() {
 
 status_menu() {
     panel_header "ESTADO GENERAL" "📋"
-    printf "  Caddy:   "; systemctl is-active --quiet caddy 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  V2Ray:   "; systemctl is-active --quiet v2ray 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  SSH-Go:  "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  BadVPN:  "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
+    printf "  Caddy:       "; systemctl is-active --quiet caddy 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
+    printf "  V2Ray:       "; systemctl is-active --quiet v2ray 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
+    printf "  SSH-Go:      "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  BadVPN:      "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
+    
+    local dns_p=$(get_slowdns_ports)
+    printf "  SlowDNS:     "
+    if (systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null || pgrep -f "slowdns" >/dev/null); then
+        [[ -n "$dns_p" ]] && info "ACTIVO (Puerto: $dns_p)" || info "ACTIVO"
+    else
+        warn "INACTIVO"
+    fi
+
+    local ssl_p=$(get_ssl_ports)
+    printf "  SSL/Stunnel: "
+    if (systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null); then
+        [[ -n "$ssl_p" ]] && info "ACTIVO (Puerto: $ssl_p)" || info "ACTIVO"
+    else
+        warn "INACTIVO"
+    fi
     pause_screen
 }
 
@@ -847,18 +951,19 @@ main_menu() {
         header
 
         section_divider "PROTOCOLOS & PROXIES"
-        printf "  %b[ 1]%b 🌐 %bCaddy Server%b       %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 3]%b 🚀 %bSSH-Go Proxy%b       %b[ 4]%b 🔰 %bXRay Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 5]%b ⚡ %bUDP Panel%b          %b[ 6]%b 🦀 %bSOCKS Proxy Rust%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b %b[ 8]%b 👥 %bSSH Panel / User%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 9]%b 🚀 %bBadVPN UDPGW%b\n\n" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 1]%b 🌐 %bCaddy Server%b         %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 3]%b 🚀 %bSSH-Go Proxy%b         %b[ 4]%b 🔰 %bXRay Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 5]%b ⚡ %bUDP Panel%b            %b[ 6]%b 🦀 %bSOCKS Proxy Rust%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b   %b[ 8]%b 👥 %bSSH Panel / User%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 9]%b 🚀 %bBadVPN UDPGW%b         %b[10]%b 🐌 %bSlowDNS Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[11]%b 🔒 %bSSL / TLS Manager%b    %b[12]%b 📁 %bMás Opciones...%b\n\n" "$CYAN" "$NC" "$WHITE" "$NC" "$YELLOW" "$NC" "$YELLOW" "$NC"
 
         section_divider "GESTIÓN & MANTENIMIENTO"
-        printf "  %b[10]%b 🛡️  %bFirewall%b           %b[11]%b 🔐 %bConfigurar SSH%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[12]%b 📊 %bMonitoreo Sistema%b   %b[13]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n" "$RED" "$NC" "$WHITE" "$NC"
+        printf "  %b[13]%b 🛡️  %bFirewall%b           %b[14]%b 🔐 %bConfigurar SSH%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[15]%b 📊 %bMonitoreo Sistema%b   %b[16]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n\n" "$RED" "$NC" "$WHITE" "$NC"
 
-        read -r -p "  ❯ Selecciona una opción [0-13]: " option
+        read -r -p "  ❯ Selecciona una opción [0-16]: " option
 
         case "$option" in
             1) caddy_menu ;;
@@ -870,10 +975,13 @@ main_menu() {
             7) python_menu ;;
             8) ssh_panel_menu ;;
             9) badvpn_menu ;;
-            10) firewall_menu ;;
-            11) configure_ssh ;;
-            12) monitor_menu ;;
-            13) status_menu ;;
+            10) slowdns_menu ;;
+            11) ssl_menu ;;
+            12) mas_opciones_menu ;;
+            13) firewall_menu ;;
+            14) configure_ssh ;;
+            15) monitor_menu ;;
+            16) status_menu ;;
             0)
                 clear_screen
                 printf "\n  %b¡Gracias por usar el panel VPN!%b\n\n" "$GREEN" "$NC"
