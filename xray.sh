@@ -67,7 +67,7 @@ install_core_if_missing() {
         rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>/dev/null
 
         apt-get update -y -qq >/dev/null 2>&1
-        apt-get install -y -qq python3 python3-json wget unzip curl openssl certbot >/dev/null 2>&1
+        apt-get install -y -qq python3 wget unzip curl openssl certbot psmisc >/dev/null 2>&1
         
         mkdir -p /usr/local/xray
 
@@ -98,10 +98,12 @@ install_core_if_missing() {
 [Unit]
 Description=Xray Core Service
 After=network.target
+
 [Service]
 ExecStart=${XRAY_BIN} run -config ${CONFIG_FILE}
 Restart=on-failure
 RestartSec=5
+
 [Install]
 WantedBy=multi-user.target
 EOFS
@@ -169,7 +171,7 @@ setup_tls_cert() {
     header
     echo -e "${PURPLE}${BOLD}[ 🔒 CONFIGURACIÓN SSL / TLS PARA DOMINIO ]${NC}\n"
     echo -e " Dominio detectado: ${YELLOW}${domain}${NC}\n"
-    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial / Valido)${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial / Válido)${NC}"
     echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${YELLOW}Autofirmado (Rápido / Pruebas)${NC}\n"
     echo -e -n "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}"
     read -r cert_opt
@@ -177,10 +179,17 @@ setup_tls_cert() {
     if [[ "$cert_opt" == "1" ]]; then
         echo -e "\n${CYAN}⚙️ Solicitando certificado Let's Encrypt...${NC}"
 
+        if ! command -v certbot >/dev/null 2>&1; then
+            echo -e "${YELLOW}⚙️ Instalando Certbot...${NC}"
+            apt-get update -y -qq >/dev/null 2>&1
+            apt-get install -y -qq certbot >/dev/null 2>&1
+        fi
+
         systemctl stop xray 2>/dev/null
         systemctl stop nginx 2>/dev/null
         systemctl stop apache2 2>/dev/null
         systemctl stop caddy 2>/dev/null
+        fuser -k 80/tcp >/dev/null 2>&1
 
         DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
 
@@ -263,60 +272,63 @@ if sec == "reality":
     print(f"\033[1;37mSNI         :\033[0m \033[0;36m{sni}\033[0m")
     print(f"\033[1;37mShort ID    :\033[0m \033[0;36m{short_id}\033[0m")
 
-clients = st.get("clients", [])
 print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n")
 
-for idx, c in enumerate(clients, 1):
-    user_id = c.get("id") or c.get("password") or ""
-    print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
-    
-    link = ""
-    if proto == "vless":
-        if sec == "reality":
-            link = f"vless://{user_id}@{dom}:{port}?type=tcp&security=reality&encryption=none&pbk={pub_key}&fp=chrome&sni={sni}&sid={short_id}&flow=xtls-rprx-vision#Xray-VLESS-REALITY"
-        else:
-            params = f"encryption=none&type={trans}&security={sec}"
+if proto == "shadowsocks":
+    method = st.get("method", "aes-256-gcm")
+    pass_val = st.get("password", "")
+    b64_ss = base64.b64encode(f"{method}:{pass_val}".encode()).decode()
+    link = f"ss://{b64_ss}@{dom}:{port}#Xray-Shadowsocks"
+    print(f"\033[1;37m[Usuario 1]\033[0m Clave: \033[1;33m{pass_val}\033[0m")
+    print(f"\033[0;32mEnlace:\033[0m {link}\n")
+else:
+    clients = st.get("clients", [])
+    for idx, c in enumerate(clients, 1):
+        user_id = c.get("id") or c.get("password") or ""
+        print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
+        
+        link = ""
+        if proto == "vless":
+            if sec == "reality":
+                link = f"vless://{user_id}@{dom}:{port}?type=tcp&security=reality&encryption=none&pbk={pub_key}&fp=chrome&sni={sni}&sid={short_id}&flow=xtls-rprx-vision#Xray-VLESS-REALITY"
+            else:
+                params = f"encryption=none&type={trans}&security={sec}"
+                if trans == "ws":
+                    params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
+                elif trans == "grpc":
+                    params += f"&serviceName={urllib.parse.quote(extra)}&mode=gun"
+                if sec == "tls":
+                    params += f"&sni={urllib.parse.quote(dom)}"
+                link = f"vless://{user_id}@{dom}:{port}?{params}#Xray-VLESS"
+
+        elif proto == "vmess":
+            v_json = {
+                "v": "2", "ps": f"Xray-VMess-{idx}", "add": dom, "port": str(port),
+                "id": user_id, "aid": "0", "net": trans, "type": "none",
+                "host": ws_host if trans == "ws" else "",
+                "path": extra if trans == "ws" else "",
+                "tls": "tls" if sec == "tls" else "",
+                "sni": dom if sec == "tls" else "",
+                "serviceName": extra if trans == "grpc" else ""
+            }
+            b64 = base64.b64encode(json.dumps(v_json).encode()).decode()
+            link = f"vmess://{b64}"
+
+        elif proto == "trojan":
+            params = f"type={trans}&security={sec}"
             if trans == "ws":
                 params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
             elif trans == "grpc":
-                params += f"&serviceName={urllib.parse.quote(extra)}&mode=gun"
+                params += f"&serviceName={urllib.parse.quote(extra)}"
             if sec == "tls":
                 params += f"&sni={urllib.parse.quote(dom)}"
-            link = f"vless://{user_id}@{dom}:{port}?{params}#Xray-VLESS"
+            link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
 
-    elif proto == "vmess":
-        v_json = {
-            "v": "2", "ps": f"Xray-VMess-{idx}", "add": dom, "port": str(port),
-            "id": user_id, "aid": "0", "net": trans, "type": "none",
-            "host": ws_host if trans == "ws" else "",
-            "path": extra if trans == "ws" else "",
-            "tls": "tls" if sec == "tls" else "",
-            "sni": dom if sec == "tls" else "",
-            "serviceName": extra if trans == "grpc" else ""
-        }
-        b64 = base64.b64encode(json.dumps(v_json).encode()).decode()
-        link = f"vmess://{b64}"
+        elif proto == "socks":
+            link = f"socks5://{dom}:{port}#Xray-SOCKS5"
 
-    elif proto == "trojan":
-        params = f"type={trans}&security={sec}"
-        if trans == "ws":
-            params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
-        elif trans == "grpc":
-            params += f"&serviceName={urllib.parse.quote(extra)}"
-        if sec == "tls":
-            params += f"&sni={urllib.parse.quote(dom)}"
-        link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
-
-    elif proto == "shadowsocks":
-        method = st.get("method", "aes-256-gcm")
-        b64_ss = base64.b64encode(f"{method}:{user_id}".encode()).decode()
-        link = f"ss://{b64_ss}@{dom}:{port}#Xray-Shadowsocks"
-
-    elif proto == "socks":
-        link = f"socks5://{dom}:{port}#Xray-SOCKS5"
-
-    if link:
-        print(f"\033[0;32mEnlace:\033[0m {link}\n")
+        if link:
+            print(f"\033[0;32mEnlace:\033[0m {link}\n")
 
 PY
     pause_screen
@@ -341,8 +353,7 @@ configure_protocol() {
         3) proto="trojan" ;;
         4) proto="shadowsocks" ;;
         5) proto="socks" ;;
-        0) return ;;
-        *) return ;;
+        0|*) return ;;
     esac
 
     header
@@ -363,8 +374,8 @@ configure_protocol() {
     fi
     
     local prompt_user="Contraseña / ID (UUID) [Auto]:"
-    if [[ "$proto" == "trojan" ]]; then
-        prompt_user="Contraseña Trojan [Auto]:"
+    if [[ "$proto" == "trojan" || "$proto" == "shadowsocks" ]]; then
+        prompt_user="Contraseña [Auto]:"
     fi
     read_val user "$prompt_user" "$auto_user"
 
@@ -411,15 +422,9 @@ configure_protocol() {
                 read_val sni "Target SNI (ej: www.apple.com):" "www.apple.com"
                 read_val dest "Target Dest (ej: www.apple.com:443):" "www.apple.com:443"
                 
-                if [[ -x "$XRAY_BIN" ]]; then
-                    local keypair=$($XRAY_BIN x25519 2>/dev/null)
-                    priv_key=$(echo "$keypair" | awk -F': ' '/Private key/ {print $2}' | tr -d ' ')
-                    pub_key=$(echo "$keypair" | awk -F': ' '/Public key/ {print $2}' | tr -d ' ')
-                fi
-                if [[ -z "$priv_key" ]]; then
-                    priv_key=$(openssl rand -base64 32 2>/dev/null | head -c 43)
-                    pub_key=$(openssl rand -base64 32 2>/dev/null | head -c 43)
-                fi
+                local keypair=$($XRAY_BIN x25519 2>/dev/null)
+                priv_key=$(echo "$keypair" | awk -F': ' '/Private key/ {print $2}' | tr -d ' ')
+                pub_key=$(echo "$keypair" | awk -F': ' '/Public key/ {print $2}' | tr -d ' ')
                 short_id=$(openssl rand -hex 4 2>/dev/null || echo "1a2b3c4d")
             else
                 trans="tcp"; sec="none"
@@ -542,11 +547,13 @@ val2 = sys.argv[4] if len(sys.argv) > 4 else ""
 try:
     with open(cfg_file, "r") as f: cfg = json.load(f)
 except: sys.exit(1)
+
 inb = cfg["inbounds"][0]
 st = inb.get("settings", {})
 str_st = inb.get("streamSettings", {})
 
-if act == "port": inb["port"] = int(val)
+if act == "port":
+    inb["port"] = int(val)
 elif act == "path":
     if str_st.get("network") == "ws":
         str_st.setdefault("wsSettings", {})["path"] = val
@@ -555,11 +562,13 @@ elif act == "path":
     elif str_st.get("network") == "grpc":
         str_st.setdefault("grpcSettings", {})["serviceName"] = val
 elif act == "id":
-    if "clients" in st and len(st["clients"]) > 0:
+    if "password" in st and "clients" not in st:
+        st["password"] = val
+    elif "clients" in st and len(st["clients"]) > 0:
         if "id" in st["clients"][0]: st["clients"][0]["id"] = val
         elif "password" in st["clients"][0]: st["clients"][0]["password"] = val
 elif act == "add_id":
-    if "clients" in st:
+    if "clients" in st and len(st["clients"]) > 0:
         client_obj = {}
         if "id" in st["clients"][0]: client_obj["id"] = val
         elif "password" in st["clients"][0]: client_obj["password"] = val
@@ -648,6 +657,7 @@ while true; do
             sleep 1.5
             ;;
         9)
+            echo -e "\n${YELLOW}⚡ Desinstalando Xray por completo...${NC}"
             systemctl stop xray 2>/dev/null
             systemctl disable xray 2>/dev/null
             rm -rf /usr/local/xray /etc/systemd/system/xray.service /usr/local/bin/xray
