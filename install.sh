@@ -847,9 +847,6 @@ ssl_menu() {
     pause_screen
 }
 
-# =======================================================
-# SUBMENÚ "MÁS OPCIONES / HERRAMIENTAS NUEVAS" [12]
-# =======================================================
 mas_opciones_menu() {
     while true; do
         panel_header "MÁS OPCIONES & HERRAMIENTAS" "📁"
@@ -961,7 +958,7 @@ main_menu() {
         section_divider "GESTIÓN & MANTENIMIENTO"
         printf "  %b[13]%b 🛡️  %bFirewall%b           %b[14]%b 🔐 %bConfigurar SSH%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[15]%b 📊 %bMonitoreo Sistema%b   %b[16]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n\n" "$RED" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n" "$RED" "$NC" "$WHITE" "$NC"
 
         read -r -p "  ❯ Selecciona una opción [0-16]: " option
 
