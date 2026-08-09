@@ -18,6 +18,12 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# VERIFICAR SI YA ESTÁ INSTALADO
+if [[ -x "/usr/local/bin/ssl" && -f "$CONFIG_FILE" ]]; then
+    /usr/local/bin/ssl
+    exit 0
+fi
+
 print_banner() {
     clear
     echo -e "${CYAN}${BOLD}====================================================${NC}"
