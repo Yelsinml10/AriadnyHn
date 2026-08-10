@@ -131,6 +131,11 @@ generate_caddyfile() {
     email admin@$dom
     admin off
 }
+EOF
+
+    # Solución a bloques vacíos en Caddyfile
+    if [ -n "$HTTPS_LIST" ]; then
+        cat >> "$CADDY_CONF" <<EOF
 
 # Configuración HTTPS
 $HTTPS_LIST {
@@ -145,6 +150,11 @@ $HTTPS_LIST {
         reverse_proxy 127.0.0.1:8888
     }
 }
+EOF
+    fi
+
+    if [ -n "$HTTP_LIST" ]; then
+        cat >> "$CADDY_CONF" <<EOF
 
 # Configuración HTTP
 $HTTP_LIST {
@@ -160,6 +170,8 @@ $HTTP_LIST {
     }
 }
 EOF
+    fi
+
     caddy fmt --overwrite "$CADDY_CONF" 2>/dev/null
 }
 
@@ -196,13 +208,13 @@ while true; do
     echo -e " ${WHITE}[ 8 ]${NC} ${RED}Desinstalar Caddy Completamente${NC}"
     echo -e " ${WHITE}[ 0 ]${NC} ${YELLOW}Salir${NC}"
     echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
-    read -p " Selecciona una opción [0-8]: " op
+    read -r -p " Selecciona una opción [0-8]: " op < /dev/tty 2>/dev/null || read -r -p " Selecciona una opción [0-8]: " op
 
     case $op in
         1)
             echo -e "\n${YELLOW}${BOLD}=== CAMBIAR DOMINIO ===${NC}"
             echo -e "Dominio actual: ${CYAN}$DOMAIN${NC}"
-            read -p "Ingrese el nuevo dominio: " new_dom
+            read -r -p "Ingrese el nuevo dominio: " new_dom < /dev/tty 2>/dev/null || read -r -p "Ingrese el nuevo dominio: " new_dom
             if [ -n "$new_dom" ]; then
                 DOMAIN="$new_dom"
                 save_conf
@@ -212,12 +224,12 @@ while true; do
             else
                 echo -e "\n${RED}✘ Dominio inválido.${NC}"
             fi
-            read -p "Presione ENTER para continuar..."
+            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
             ;;
         2)
             echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTP ===${NC}"
             echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
-            read -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080): " new_http
+            read -r -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080): " new_http < /dev/tty 2>/dev/null || read -r -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080): " new_http
             if [ -n "$new_http" ]; then
                 HTTP_PORTS="$new_http"
                 save_conf
@@ -227,12 +239,12 @@ while true; do
             else
                 echo -e "\n${RED}✘ Entrada inválida.${NC}"
             fi
-            read -p "Presione ENTER para continuar..."
+            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
             ;;
         3)
             echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTP NUEVO ===${NC}"
             echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
-            read -p "Ingrese el puerto HTTP a agregar (ej: 8888): " add_http
+            read -r -p "Ingrese el puerto HTTP a agregar (ej: 8888): " add_http < /dev/tty 2>/dev/null || read -r -p "Ingrese el puerto HTTP a agregar (ej: 8888): " add_http
             add_http=$(echo "$add_http" | tr -d ' ')
             if [ -n "$add_http" ]; then
                 HTTP_PORTS="${HTTP_PORTS}, ${add_http}"
@@ -243,12 +255,12 @@ while true; do
             else
                 echo -e "\n${RED}✘ Entrada inválida.${NC}"
             fi
-            read -p "Presione ENTER para continuar..."
+            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
             ;;
         4)
             echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTPS ===${NC}"
             echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
-            read -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https
+            read -r -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https < /dev/tty 2>/dev/null || read -r -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https
             if [ -n "$new_https" ]; then
                 HTTPS_PORTS="$new_https"
                 save_conf
@@ -258,12 +270,12 @@ while true; do
             else
                 echo -e "\n${RED}✘ Entrada inválida.${NC}"
             fi
-            read -p "Presione ENTER para continuar..."
+            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
             ;;
         5)
             echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTPS NUEVO ===${NC}"
             echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
-            read -p "Ingrese el puerto HTTPS a agregar (ej: 2083): " add_https
+            read -r -p "Ingrese el puerto HTTPS a agregar (ej: 2083): " add_https < /dev/tty 2>/dev/null || read -r -p "Ingrese el puerto HTTPS a agregar (ej: 2083): " add_https
             add_https=$(echo "$add_https" | tr -d ' ')
             if [ -n "$add_https" ]; then
                 HTTPS_PORTS="${HTTPS_PORTS}, ${add_https}"
@@ -274,12 +286,12 @@ while true; do
             else
                 echo -e "\n${RED}✘ Entrada inválida.${NC}"
             fi
-            read -p "Presione ENTER para continuar..."
+            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
             ;;
         6)
             echo -e "\n${YELLOW}${BOLD}=== ESTADO DETALLADO DEL SERVICIO ===${NC}"
             systemctl status caddy --no-pager -n 12
-            read -p "Presione ENTER para continuar..."
+            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
             ;;
         7)
             echo -e "\n${YELLOW}Reiniciando Caddy...${NC}"
@@ -289,7 +301,7 @@ while true; do
             ;;
         8)
             echo -e "\n${RED}${BOLD}=== DESINSTALAR CADDY COMPLETAMENTE ===${NC}"
-            read -p "¿Está SEGURO de eliminar Caddy y el Panel? (s/n): " confirm
+            read -r -p "¿Está SEGURO de eliminar Caddy y el Panel? (s/n): " confirm < /dev/tty 2>/dev/null || read -r -p "¿Está SEGURO de eliminar Caddy y el Panel? (s/n): " confirm
             if [[ "$confirm" == "s" || "$confirm" == "S" ]]; then
                 echo -e "${YELLOW}Eliminando Caddy y archivos de configuración...${NC}"
                 systemctl stop caddy 2>/dev/null
@@ -351,7 +363,7 @@ clear_screen() {
 
 pause_screen() {
     printf "\n  %bPresiona ENTER para continuar...%b" "$WHITE" "$NC"
-    read -r
+    read -r < /dev/tty 2>/dev/null || read -r
     clear_screen
 }
 
@@ -431,15 +443,15 @@ for cfg in ["/etc/udp/config.json", "/etc/udp-custom/config.json", "/etc/hysteri
     if os.path.isfile(cfg):
         try:
             with open(cfg, "r") as f:
-                for m in re.findall(r":(\d+)", f.read()): ports.add(m)
+                for m in re.findall(r":(\d+)", f.read()): ports.add(int(m))
         except Exception: pass
 try:
     out = subprocess.check_output("ss -ulpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
         if any(x in line for x in ["udp", "hysteria", "zivpn"]):
-            for m in re.findall(r":(\d+)\s", line): ports.add(m)
+            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
 except Exception: pass
-if ports: print(",".join(sorted(ports)))
+if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
 
@@ -451,8 +463,8 @@ if os.path.isfile(cfg):
     try:
         with open(cfg, "r") as f: data = json.load(f)
         p = data.get("ports") or data.get("port")
-        if isinstance(p, list): print(",".join(map(str, p)))
-        elif isinstance(p, int): print(str(p))
+        if isinstance(p, list): print(",".join(map(str, sorted([int(x) for x in p]))))
+        elif isinstance(p, (int, str)): print(str(p))
     except Exception: pass
 ' 2>/dev/null
 }
@@ -511,7 +523,7 @@ for cfg in ["/opt/vpn-proxy/config.json", "/etc/vpn-proxy/config.json", "/etc/ss
             with open(cfg, "r") as f: data = json.load(f)
             p = data.get("port") or data.get("ports")
             if isinstance(p, int): ports.add(p)
-            elif isinstance(p, list): ports.update([x for x in p if isinstance(x, int)])
+            elif isinstance(p, list): ports.update([int(x) for x in p if str(x).isdigit()])
         except Exception: pass
 try:
     out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
@@ -581,12 +593,13 @@ get_ports_summary() {
     if systemctl is-active --quiet v2ray 2>/dev/null; then
         local v_out=$(python3 -c '
 import json, sys, re, subprocess
-ports = []
+ports = set()
 try:
     with open(sys.argv[1], "r") as f: data = json.load(f)
     inbounds = data.get("inbounds", [])
     if isinstance(data, dict) and "inbounds" not in data and "inbound" in data: inbounds = [data["inbound"]]
-    ports = sorted(list(set(str(inb["port"]) for inb in inbounds if "port" in inb)))
+    for inb in inbounds:
+        if "port" in inb and str(inb["port"]).isdigit(): ports.add(int(inb["port"]))
 except Exception: pass
 
 if not ports:
@@ -594,11 +607,10 @@ if not ports:
         out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
         for line in out.splitlines():
             if "v2ray" in line:
-                for m in re.findall(r":(\d+)\s", line): ports.append(m)
-        ports = sorted(list(set(ports)))
+                for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
     except Exception: pass
 
-if ports: print(",".join(ports))
+if ports: print(",".join(str(x) for x in sorted(ports)))
 ' "$v_cfg" 2>/dev/null)
         if [[ -n "$v_out" ]]; then
             ACTIVE_ITEMS+=("⚡ V2Ray  : $(truncate_str "$v_out")")
@@ -613,26 +625,30 @@ if ports: print(",".join(ports))
         ACTIVE_ITEMS+=("🚀 SSH-Go : $(truncate_str "$(echo "$SSHGO_PORTS_RAW" | tr ' ' ',')")")
     fi
 
-    # 4. XRay
-    if systemctl is-active --quiet xray 2>/dev/null; then
-        local x_cfg=""
-        [[ -f /usr/local/etc/xray/config.json ]] && x_cfg="/usr/local/etc/xray/config.json"
-        [[ -f /etc/xray/config.json ]] && x_cfg="/etc/xray/config.json"
-        if [[ -n "$x_cfg" ]]; then
-            local x_out=$(python3 -c '
-import json, sys
+    # 4. XRay (NUEVO: Muestra puerto activo extraído de archivos de config o sockets ss)
+    if systemctl is-active --quiet xray 2>/dev/null || pgrep -x xray >/dev/null; then
+        local x_out=$(python3 -c '
+import json, os, re, subprocess
+ports = set()
+for cfg in ["/usr/local/etc/xray/config.json", "/etc/xray/config.json", "/etc/xray/config.yml"]:
+    if os.path.isfile(cfg):
+        try:
+            with open(cfg, "r") as f: data = json.load(f)
+            inbounds = data.get("inbounds", [])
+            if isinstance(data, dict) and "inbounds" not in data and "inbound" in data: inbounds = [data["inbound"]]
+            for inb in inbounds:
+                if "port" in inb and str(inb["port"]).isdigit(): ports.add(int(inb["port"]))
+        except Exception: pass
 try:
-    with open(sys.argv[1], "r") as f: data = json.load(f)
-    inbounds = data.get("inbounds", [])
-    ports = sorted(list(set(str(inb["port"]) for inb in inbounds if "port" in inb)))
-    print(",".join(ports))
+    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+    for line in out.splitlines():
+        if "xray" in line:
+            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
 except Exception: pass
-' "$x_cfg" 2>/dev/null)
-            if [[ -n "$x_out" ]]; then
-                ACTIVE_ITEMS+=("🔰 XRay   : $(truncate_str "$x_out")")
-            else
-                ACTIVE_ITEMS+=("🔰 XRay   : ACTIVO")
-            fi
+if ports: print(",".join(str(x) for x in sorted(ports)))
+' 2>/dev/null)
+        if [[ -n "$x_out" ]]; then
+            ACTIVE_ITEMS+=("🔰 XRay   : $(truncate_str "$x_out")")
         else
             ACTIVE_ITEMS+=("🔰 XRay   : ACTIVO")
         fi
@@ -650,8 +666,8 @@ except Exception: pass
 import subprocess, re
 try:
     out = subprocess.check_output("ps aux | grep badvpn-udpgw | grep -v grep", shell=True).decode()
-    ports = re.findall(r"--listen-addr\s+127\.0\.0\.1:(\d+)", out)
-    if ports: print(",".join(sorted(list(set(ports)))))
+    ports = [int(p) for p in re.findall(r"--listen-addr\s+127\.0\.0\.1:(\d+)", out)]
+    if ports: print(",".join(str(x) for x in sorted(list(set(ports)))))
 except Exception: pass
 ' 2>/dev/null)
         [[ -n "$badvpn_ports" ]] && ACTIVE_ITEMS+=("🚀 BadVPN : $(truncate_str "$badvpn_ports")") || ACTIVE_ITEMS+=("🚀 BadVPN : ON")
@@ -702,7 +718,7 @@ print_active_ports() {
         local item1="${ACTIVE_ITEMS[$i]}"
         local item2="${ACTIVE_ITEMS[$((i+1))]}"
         if [[ -n "$item2" ]]; then
-            printf "  %b%-24s %s%b\n" "$CYAN" "$item1" "$item2" "$NC"
+            printf "  %b%-28s %s%b\n" "$CYAN" "$item1" "$item2" "$NC"
             i=$((i+2))
         else
             printf "  %b%s%b\n" "$CYAN" "$item1" "$NC"
@@ -736,14 +752,13 @@ download_to_path() {
 
     printf "\n  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
 
-    if curl -fsSL --connect-timeout 15 --max-time 300 \
-        "$BASE_URL/$script_name" -o "$destination" 2>/dev/null; then
+    if curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$destination" 2>/dev/null && [[ -s "$destination" ]]; then
         chmod 700 "$destination"
         info "Archivo instalado en $destination"
         return 0
     fi
 
-    error_msg "No se pudo descargar $script_name."
+    error_msg "No se pudo descargar $script_name o el archivo está vacío."
     rm -f "$destination"
     return 1
 }
@@ -752,7 +767,8 @@ download_and_execute() {
     local script_name="$1"
     local temporary="/tmp/${script_name##*/}.$$"
 
-    if ! curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$temporary" 2>/dev/null; then
+    if ! curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$temporary" 2>/dev/null || [[ ! -s "$temporary" ]]; then
+        error_msg "No se pudo descargar $script_name o el archivo está vacío."
         rm -f "$temporary"
         return 1
     fi
@@ -776,11 +792,11 @@ download_and_execute() {
 }
 
 is_python_installed() {
-    [[ -f /root/proxy.py ]] || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && pgrep -f "proxy.py" >/dev/null)
+    [[ -f /root/proxy.py ]] || [[ -f /usr/local/bin/proxy ]] || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && pgrep -f "proxy.py" >/dev/null)
 }
 
 # =======================================================
-# LÓGICA INTEGLIGENTE DE EJECUCIÓN DESDE GITHUB / LOCAL
+# LÓGICA INTELIGENTE DE EJECUCIÓN DESDE GITHUB / LOCAL
 # =======================================================
 
 caddy_menu() {
@@ -854,7 +870,7 @@ mas_opciones_menu() {
         printf "  %b[ 2]%b ⚙️  %bNueva Función 2 (Disponible)%b\n" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 0]%b ⬅️  %bVolver al Menú Principal%b\n\n" "$RED" "$NC" "$WHITE" "$NC"
 
-        read -r -p "  ❯ Selecciona una opción [0-2]: " sub_op
+        read -r -p "  ❯ Selecciona una opción [0-2]: " sub_op < /dev/tty 2>/dev/null || read -r -p "  ❯ Selecciona una opción [0-2]: " sub_op
 
         case "$sub_op" in
             1)
@@ -891,8 +907,14 @@ rust_menu() {
 
 python_menu() {
     if is_python_installed; then
-        chmod +x /usr/local/bin/proxy 2>/dev/null
-        /usr/local/bin/proxy
+        if [[ -x /usr/local/bin/proxy ]]; then
+            /usr/local/bin/proxy
+        elif [[ -f /root/proxy.py ]]; then
+            python3 /root/proxy.py
+        else
+            panel_header "SOCKS PROXY PYTHON" "🐍"
+            download_and_execute "Python.sh"
+        fi
     else
         panel_header "SOCKS PROXY PYTHON" "🐍"
         download_and_execute "Python.sh"
@@ -960,7 +982,7 @@ main_menu() {
         printf "  %b[15]%b 📊 %bMonitoreo Sistema%b   %b[16]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
         printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n" "$RED" "$NC" "$WHITE" "$NC"
 
-        read -r -p "  ❯ Selecciona una opción [0-16]: " option
+        read -r -p "  ❯ Selecciona una opción [0-16]: " option < /dev/tty 2>/dev/null || read -r -p "  ❯ Selecciona una opción [0-16]: " option
 
         case "$option" in
             1) caddy_menu ;;
@@ -1017,7 +1039,10 @@ grep -q "alias menu=" /etc/profile 2>/dev/null || echo "alias menu='/usr/local/b
 grep -q "alias cadmin=" /etc/profile 2>/dev/null || echo "alias cadmin='/usr/local/bin/cadmin'" >> /etc/profile
 
 hash -r
-source /root/.bashrc 2>/dev/null
 
-# Abrir el menú inmediatamente
-/usr/local/bin/menu
+# Abrir el menú inmediatamente usando la TTY interactiva
+if [[ -t 0 ]]; then
+    /usr/local/bin/menu
+elif [[ -c /dev/tty ]]; then
+    /usr/local/bin/menu < /dev/tty
+fi
