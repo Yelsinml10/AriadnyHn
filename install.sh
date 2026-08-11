@@ -1,342 +1,8 @@
 #!/bin/bash
 
 # =======================================================
-# 1. DESACTIVAR MENSAJES DE RELLENO EN UBUNTU
+# ARIADNY MASTER PANEL - MAIN MENU SCRIPT
 # =======================================================
-chmod -x /etc/update-motd.d/10-help-text /etc/update-motd.d/60-unminimize 2>/dev/null
-
-# =======================================================
-# 2. CREAR BANNER COMPACTO Y OPTIMIZADO PARA CELULAR
-# =======================================================
-cat > /etc/update-motd.d/99-info-vps << 'MOTD_EOF'
-#!/bin/bash
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[0;37m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-OS=$(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2 2>/dev/null | cut -d' ' -f1,2,3)
-IP=$(curl -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
-UPTIME=$(uptime -p 2>/dev/null | sed 's/up //')
-RAM_USED=$(free -m 2>/dev/null | awk '/Mem:/ {print $3}')
-RAM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}')
-DISK_USED=$(df -h / 2>/dev/null | awk 'NR==2 {print $3}')
-DISK_TOTAL=$(df -h / 2>/dev/null | awk 'NR==2 {print $2}')
-
-echo ""
-echo -e "${CYAN}${BOLD}┌──────────────────────────────────────┐${NC}"
-echo -e "${CYAN}${BOLD}│        INFORMACIÓN DE LA VPS         │${NC}"
-echo -e "${CYAN}${BOLD}├──────────────────────────────────────┤${NC}"
-echo -e " • ${CYAN}Sistema:${NC}  $OS"
-echo -e " • ${CYAN}IP Pub:${NC}   $IP"
-echo -e " • ${CYAN}Activo:${NC}   $UPTIME"
-echo -e " • ${CYAN}RAM:${NC}      ${RAM_USED} MB / ${RAM_TOTAL} MB"
-echo -e " • ${CYAN}Disco:${NC}    ${DISK_USED} / ${DISK_TOTAL}"
-echo -e "${CYAN}${BOLD}────────────────────────────────────────${NC}"
-echo -e " ${YELLOW}➔ Escribe '${GREEN}menu${YELLOW}' para abrir el panel.${NC}"
-echo -e "${CYAN}${BOLD}└──────────────────────────────────────┘${NC}"
-echo ""
-MOTD_EOF
-
-chmod +x /etc/update-motd.d/99-info-vps
-
-# =======================================================
-# 3. CREAR SCRIPT ADMINISTRATIVO CADMIN (/usr/local/bin/cadmin)
-# =======================================================
-cat > /usr/local/bin/cadmin << 'CADMIN_EOF'
-#!/bin/bash
-
-CONF_FILE="/usr/local/etc/caddy_panel.conf"
-CADDY_CONF="/etc/caddy/Caddyfile"
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[0;37m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-load_conf(){
-    if [ -f "$CONF_FILE" ]; then
-        source "$CONF_FILE"
-    else
-        DOMAIN="arm1.freenethn.org"
-        HTTP_PORTS="80, 8080"
-        HTTPS_PORTS="443, 8443"
-        V2RAY_PORT=9090
-        OTHER_PORT=8888
-    fi
-}
-
-save_conf(){
-    mkdir -p /usr/local/etc
-    cat > "$CONF_FILE" <<EOF
-DOMAIN="$DOMAIN"
-HTTP_PORTS="$HTTP_PORTS"
-HTTPS_PORTS="$HTTPS_PORTS"
-V2RAY_PORT=9090
-OTHER_PORT=8888
-EOF
-}
-
-build_https_list() {
-    local dom="$1"
-    local ports="$2"
-    local res=""
-    IFS=',' read -ra ADDR <<< "$ports"
-    for i in "${ADDR[@]}"; do
-        p=$(echo "$i" | tr -d ' ')
-        if [ -n "$p" ]; then
-            [ -n "$res" ] && res="${res}, "
-            res="${res}${dom}:${p}"
-        fi
-    done
-    echo "$res"
-}
-
-build_http_list() {
-    local dom="$1"
-    local ports="$2"
-    local res=""
-    IFS=',' read -ra ADDR <<< "$ports"
-    for i in "${ADDR[@]}"; do
-        p=$(echo "$i" | tr -d ' ')
-        if [ -n "$p" ]; then
-            [ -n "$res" ] && res="${res}, "
-            res="${res}http://${dom}:${p}"
-        fi
-    done
-    echo "$res"
-}
-
-generate_caddyfile() {
-    local dom="$1"
-    local http_p="$2"
-    local https_p="$3"
-
-    local HTTPS_LIST=$(build_https_list "$dom" "$https_p")
-    local HTTP_LIST=$(build_http_list "$dom" "$http_p")
-
-    mkdir -p /etc/caddy
-    cat > "$CADDY_CONF" <<EOF
-{
-    email admin@$dom
-    admin off
-}
-EOF
-
-    # Solución a bloques vacíos en Caddyfile
-    if [ -n "$HTTPS_LIST" ]; then
-        cat >> "$CADDY_CONF" <<EOF
-
-# Configuración HTTPS
-$HTTPS_LIST {
-    log { output discard }
-
-    @v2ray path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
-    handle @v2ray {
-        reverse_proxy 127.0.0.1:9090
-    }
-
-    handle {
-        reverse_proxy 127.0.0.1:8888
-    }
-}
-EOF
-    fi
-
-    if [ -n "$HTTP_LIST" ]; then
-        cat >> "$CADDY_CONF" <<EOF
-
-# Configuración HTTP
-$HTTP_LIST {
-    log { output discard }
-
-    @v2ray path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
-    handle @v2ray {
-        reverse_proxy 127.0.0.1:9090
-    }
-
-    handle {
-        reverse_proxy 127.0.0.1:8888
-    }
-}
-EOF
-    fi
-
-    caddy fmt --overwrite "$CADDY_CONF" 2>/dev/null
-}
-
-get_status(){
-    if systemctl is-active --quiet caddy 2>/dev/null; then
-        echo -e "${GREEN}[ACTIVO / RUNNING]${NC}"
-    else
-        echo -e "${RED}[DETENIDO / STOPPED]${NC}"
-    fi
-}
-
-header(){
-    load_conf
-    clear
-    echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}${BOLD}│       PANEL DE CONTROL CADDY - FREENET HN CLOUD        │${NC}"
-    echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
-    echo -e " ${PURPLE}${BOLD}Dominio Actual  :${NC} ${YELLOW}${BOLD}$DOMAIN${NC}"
-    echo -e " ${PURPLE}${BOLD}Puertos HTTP    :${NC} ${GREEN}${BOLD}$HTTP_PORTS${NC}"
-    echo -e " ${PURPLE}${BOLD}Puertos HTTPS   :${NC} ${GREEN}${BOLD}$HTTPS_PORTS${NC}"
-    echo -e " ${PURPLE}${BOLD}Estado Servicio :${NC} $(get_status)"
-    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
-}
-
-while true; do
-    header
-    echo -e " ${WHITE}[ 1 ]${NC} ${CYAN}Cambiar Dominio${NC}"
-    echo -e " ${WHITE}[ 2 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTP${NC}"
-    echo -e " ${WHITE}[ 3 ]${NC} ${GREEN}Agregar un Puerto HTTP Nuevo${NC}"
-    echo -e " ${WHITE}[ 4 ]${NC} ${CYAN}Reemplazar Todos los Puertos HTTPS${NC}"
-    echo -e " ${WHITE}[ 5 ]${NC} ${GREEN}Agregar un Puerto HTTPS Nuevo${NC}"
-    echo -e " ${WHITE}[ 6 ]${NC} ${CYAN}Ver Estado Detallado de Caddy${NC}"
-    echo -e " ${WHITE}[ 7 ]${NC} ${GREEN}Reiniciar Caddy${NC}"
-    echo -e " ${WHITE}[ 8 ]${NC} ${RED}Desinstalar Caddy Completamente${NC}"
-    echo -e " ${WHITE}[ 0 ]${NC} ${YELLOW}Salir${NC}"
-    echo -e "${CYAN}${BOLD}──────────────────────────────────────────────────────────${NC}"
-    read -r -p " Selecciona una opción [0-8]: " op < /dev/tty 2>/dev/null || read -r -p " Selecciona una opción [0-8]: " op
-
-    case $op in
-        1)
-            echo -e "\n${YELLOW}${BOLD}=== CAMBIAR DOMINIO ===${NC}"
-            echo -e "Dominio actual: ${CYAN}$DOMAIN${NC}"
-            read -r -p "Ingrese el nuevo dominio: " new_dom < /dev/tty 2>/dev/null || read -r -p "Ingrese el nuevo dominio: " new_dom
-            if [ -n "$new_dom" ]; then
-                DOMAIN="$new_dom"
-                save_conf
-                generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
-                systemctl restart caddy
-                echo -e "\n${GREEN}✔ Dominio actualizado a: $DOMAIN${NC}"
-            else
-                echo -e "\n${RED}✘ Dominio inválido.${NC}"
-            fi
-            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
-            ;;
-        2)
-            echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTP ===${NC}"
-            echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
-            read -r -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080): " new_http < /dev/tty 2>/dev/null || read -r -p "Nuevos puertos HTTP separados por coma (ej: 80, 8080): " new_http
-            if [ -n "$new_http" ]; then
-                HTTP_PORTS="$new_http"
-                save_conf
-                generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
-                systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puertos HTTP reemplazados por: $HTTP_PORTS${NC}"
-            else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
-            fi
-            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
-            ;;
-        3)
-            echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTP NUEVO ===${NC}"
-            echo -e "Puertos HTTP actuales: ${GREEN}$HTTP_PORTS${NC}"
-            read -r -p "Ingrese el puerto HTTP a agregar (ej: 8888): " add_http < /dev/tty 2>/dev/null || read -r -p "Ingrese el puerto HTTP a agregar (ej: 8888): " add_http
-            add_http=$(echo "$add_http" | tr -d ' ')
-            if [ -n "$add_http" ]; then
-                HTTP_PORTS="${HTTP_PORTS}, ${add_http}"
-                save_conf
-                generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
-                systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puerto HTTP $add_http agregado. Nuevos puertos: $HTTP_PORTS${NC}"
-            else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
-            fi
-            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
-            ;;
-        4)
-            echo -e "\n${YELLOW}${BOLD}=== REEMPLAZAR PUERTOS HTTPS ===${NC}"
-            echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
-            read -r -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https < /dev/tty 2>/dev/null || read -r -p "Nuevos puertos HTTPS separados por coma (ej: 443, 8443): " new_https
-            if [ -n "$new_https" ]; then
-                HTTPS_PORTS="$new_https"
-                save_conf
-                generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
-                systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puertos HTTPS reemplazados por: $HTTPS_PORTS${NC}"
-            else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
-            fi
-            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
-            ;;
-        5)
-            echo -e "\n${YELLOW}${BOLD}=== AGREGAR PUERTO HTTPS NUEVO ===${NC}"
-            echo -e "Puertos HTTPS actuales: ${GREEN}$HTTPS_PORTS${NC}"
-            read -r -p "Ingrese el puerto HTTPS a agregar (ej: 2083): " add_https < /dev/tty 2>/dev/null || read -r -p "Ingrese el puerto HTTPS a agregar (ej: 2083): " add_https
-            add_https=$(echo "$add_https" | tr -d ' ')
-            if [ -n "$add_https" ]; then
-                HTTPS_PORTS="${HTTPS_PORTS}, ${add_https}"
-                save_conf
-                generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"
-                systemctl restart caddy
-                echo -e "\n${GREEN}✔ Puerto HTTPS $add_https agregado. Nuevos puertos: $HTTPS_PORTS${NC}"
-            else
-                echo -e "\n${RED}✘ Entrada inválida.${NC}"
-            fi
-            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
-            ;;
-        6)
-            echo -e "\n${YELLOW}${BOLD}=== ESTADO DETALLADO DEL SERVICIO ===${NC}"
-            systemctl status caddy --no-pager -n 12
-            read -r -p "Presione ENTER para continuar..." < /dev/tty 2>/dev/null || read -r -p "Presione ENTER para continuar..."
-            ;;
-        7)
-            echo -e "\n${YELLOW}Reiniciando Caddy...${NC}"
-            systemctl restart caddy
-            echo -e "${GREEN}✔ Caddy reiniciado correctamente.${NC}"
-            sleep 2
-            ;;
-        8)
-            echo -e "\n${RED}${BOLD}=== DESINSTALAR CADDY COMPLETAMENTE ===${NC}"
-            read -r -p "¿Está SEGURO de eliminar Caddy y el Panel? (s/n): " confirm < /dev/tty 2>/dev/null || read -r -p "¿Está SEGURO de eliminar Caddy y el Panel? (s/n): " confirm
-            if [[ "$confirm" == "s" || "$confirm" == "S" ]]; then
-                echo -e "${YELLOW}Eliminando Caddy y archivos de configuración...${NC}"
-                systemctl stop caddy 2>/dev/null
-                systemctl disable caddy 2>/dev/null
-                apt purge -y caddy 2>/dev/null || yum remove -y caddy 2>/dev/null
-                rm -rf /etc/caddy /usr/local/bin/cadmin "$CONF_FILE" /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-                echo -e "\n${GREEN}✔ Desinstalación completa realizada con éxito.${NC}"
-                exit 0
-            else
-                echo -e "\n${GREEN}Desinstalación cancelada.${NC}"
-                sleep 1
-            fi
-            ;;
-        0)
-            echo -e "\n${GREEN}Saliendo del panel Caddy...${NC}"
-            exit 0
-            ;;
-        *)
-            echo -e "\n${RED}Opción inválida.${NC}"
-            sleep 1
-            ;;
-    esac
-done
-CADMIN_EOF
-
-chmod +x /usr/local/bin/cadmin
-ln -sf /usr/local/bin/cadmin /usr/bin/cadmin 2>/dev/null
-
-# =======================================================
-# 4. INSTALAR EL PANEL PRINCIPAL (/usr/local/bin/menu)
-# =======================================================
-cat > /usr/local/bin/menu << 'MENU_EOF'
-#!/bin/bash
-
-set -o pipefail
 
 # Definición de Colores Estándar ANSI
 RED='\033[0;31m'
@@ -348,9 +14,8 @@ CYAN='\033[0;36m'
 WHITE='\033[0;37m'
 BOLD='\033[1m'
 NC='\033[0m'
-RESET='\033[0m'
 
-VERSION="PROFESSIONAL EDITION v2.1"
+VERSION="v2.1"
 BASE_URL="https://raw.githubusercontent.com/Yelsinml10/AriadnyHn/main"
 
 command_exists() {
@@ -363,7 +28,7 @@ clear_screen() {
 
 pause_screen() {
     printf "\n  %bPresiona ENTER para continuar...%b" "$WHITE" "$NC"
-    read -r < /dev/tty 2>/dev/null || read -r
+    read -r
     clear_screen
 }
 
@@ -381,7 +46,7 @@ error_msg() {
 
 section_divider() {
     local title="$1"
-    printf "  %b─ %s ───────────────────────%b\n" "$PURPLE$BOLD" "$title" "$NC"
+    printf "\n  %b─ %s ───────────────────────%b\n" "$PURPLE$BOLD" "$title" "$NC"
 }
 
 require_root() {
@@ -625,7 +290,7 @@ if ports: print(",".join(str(x) for x in sorted(ports)))
         ACTIVE_ITEMS+=("🚀 SSH-Go : $(truncate_str "$(echo "$SSHGO_PORTS_RAW" | tr ' ' ',')")")
     fi
 
-    # 4. XRay (NUEVO: Muestra puerto activo extraído de archivos de config o sockets ss)
+    # 4. XRay
     if systemctl is-active --quiet xray 2>/dev/null || pgrep -x xray >/dev/null; then
         local x_out=$(python3 -c '
 import json, os, re, subprocess
@@ -725,15 +390,14 @@ print_active_ports() {
             i=$((i+1))
         fi
     done
-    printf "\n"
 }
 
 header() {
     clear_screen
     get_sys_info
     get_ports_summary
-    printf "  %b🚀 ARIADNY MASTER PANEL %s%b\n" "$BOLD$CYAN" "$VERSION" "$NC"
-    printf "  %b%s%b • %b%s%b • %bRAM:%s%b\n\n" "$CYAN" "$IP_ADDR" "$NC" "$CYAN" "$OS_INFO" "$NC" "$GREEN" "$RAM_INFO" "$NC"
+    printf "          %b🚀 ARIADNY MASTER PANEL %s%b\n" "$BOLD$CYAN" "$VERSION" "$NC"
+    printf "  %b%s%b • %b%s%b • %bRAM:%s%b\n" "$CYAN" "$IP_ADDR" "$NC" "$CYAN" "$OS_INFO" "$NC" "$GREEN" "$RAM_INFO" "$NC"
 
     print_active_ports
 }
@@ -743,14 +407,14 @@ panel_header() {
     local icon="${2:-◆}"
 
     header
-    printf "  %b─ %s %s ───────────────────────────────%b\n\n" "$PURPLE$BOLD" "$icon" "$title" "$NC"
+    printf "  %b─ %s %s ───────────────────────────────%b\n" "$PURPLE$BOLD" "$icon" "$title" "$NC"
 }
 
 download_to_path() {
     local script_name="$1"
     local destination="$2"
 
-    printf "\n  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
+    printf "  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
 
     if curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$destination" 2>/dev/null && [[ -s "$destination" ]]; then
         chmod 700 "$destination"
@@ -768,7 +432,6 @@ download_and_execute() {
     local temporary="/tmp/${script_name##*/}.$$"
 
     if ! curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$temporary" 2>/dev/null || [[ ! -s "$temporary" ]]; then
-        error_msg "No se pudo descargar $script_name o el archivo está vacío."
         rm -f "$temporary"
         return 1
     fi
@@ -791,13 +454,26 @@ download_and_execute() {
     return "$result"
 }
 
+execute_script() {
+    local primary="$1"
+    local secondary="$2"
+    local tertiary="$3"
+
+    if download_and_execute "$primary"; then
+        return 0
+    elif [[ -n "$secondary" ]] && download_and_execute "$secondary"; then
+        return 0
+    elif [[ -n "$tertiary" ]] && download_and_execute "$tertiary"; then
+        return 0
+    else
+        error_msg "No se pudo descargar ningún script ($primary). Verifica el nombre en tu GitHub."
+        return 1
+    fi
+}
+
 is_python_installed() {
     [[ -f /root/proxy.py ]] || [[ -f /usr/local/bin/proxy ]] || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && pgrep -f "proxy.py" >/dev/null)
 }
-
-# =======================================================
-# LÓGICA INTELIGENTE DE EJECUCIÓN DESDE GITHUB / LOCAL
-# =======================================================
 
 caddy_menu() {
     if systemctl is-active --quiet caddy 2>/dev/null; then
@@ -807,17 +483,19 @@ caddy_menu() {
             /usr/bin/cadmin
         else
             panel_header "INSTALANDO/EJECUTANDO CADDY PROXY (GITHUB)" "🌐"
-            download_and_execute "install-caddy.sh" || download_and_execute "caddy.sh"
+            execute_script "install-caddy.sh" "caddy.sh" "Caddy.sh"
+            pause_screen
         fi
     else
         panel_header "INSTALANDO CADDY PROXY DESDE GITHUB" "🌐"
-        download_and_execute "install-caddy.sh" || download_and_execute "caddy.sh"
+        execute_script "install-caddy.sh" "caddy.sh" "Caddy.sh"
+        pause_screen
     fi
 }
 
 v2ray_menu() {
     panel_header "INSTALANDO/EJECUTANDO V2RAY (GITHUB)" "⚡"
-    download_and_execute "install-v2ray.sh" || download_and_execute "v2ray.sh"
+    execute_script "install-v2ray.sh" "v2ray.sh" "V2ray.sh"
     pause_screen
 }
 
@@ -831,35 +509,37 @@ xray_menu() {
             /usr/bin/xray
         else
             panel_header "EJECUTANDO XRAY PANEL" "🔰"
-            download_and_execute "install-xray.sh" || download_and_execute "xray.sh"
+            execute_script "install-xray.sh" "xray.sh" "Xray.sh"
+            pause_screen
         fi
     else
         panel_header "INSTALANDO XRAY PANEL DESDE GITHUB" "🔰"
-        download_and_execute "install-xray.sh" || download_and_execute "xray.sh"
+        execute_script "install-xray.sh" "xray.sh" "Xray.sh"
+        pause_screen
     fi
 }
 
 sshgo_menu() {
     panel_header "SSH-GO PROXY (GITHUB)" "🚀"
-    download_and_execute "install-sshgo.sh" || download_and_execute "sshgo.sh"
+    execute_script "install-sshgo.sh" "sshgo.sh" "Sshgo.sh"
     pause_screen
 }
 
 badvpn_menu() {
     panel_header "BADVPN UDPGW (GITHUB)" "🚀"
-    download_and_execute "badvpn-udpgw.sh"
+    execute_script "badvpn-udpgw.sh" "badvpn.sh" "Badvpn.sh"
     pause_screen
 }
 
 slowdns_menu() {
     panel_header "SLOWDNS PANEL (GITHUB)" "🐌"
-    download_and_execute "slowdns.sh"
+    execute_script "slowdns.sh" "Slowdns.sh"
     pause_screen
 }
 
 ssl_menu() {
     panel_header "CERTIFICADO SSL / STUNNEL (GITHUB)" "🔒"
-    download_and_execute "ssl.sh"
+    execute_script "ssl.sh" "Ssl.sh"
     pause_screen
 }
 
@@ -868,9 +548,11 @@ mas_opciones_menu() {
         panel_header "MÁS OPCIONES & HERRAMIENTAS" "📁"
         printf "  %b[ 1]%b ⚙️  %bNueva Función 1 (Disponible)%b\n" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 2]%b ⚙️  %bNueva Función 2 (Disponible)%b\n" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[ 0]%b ⬅️  %bVolver al Menú Principal%b\n\n" "$RED" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 0]%b ⬅️  %bVolver al Menú Principal%b\n" "$RED" "$NC" "$WHITE" "$NC"
 
-        read -r -p "  ❯ Selecciona una opción [0-2]: " sub_op < /dev/tty 2>/dev/null || read -r -p "  ❯ Selecciona una opción [0-2]: " sub_op
+        echo -ne "  \033[1;33m> Selecciona una opción [0-2]: \033[0m"
+        read sub_op
+        sub_op=$(echo "$sub_op" | tr -d '\r\n\t ')
 
         case "$sub_op" in
             1)
@@ -889,19 +571,19 @@ mas_opciones_menu() {
 
 firewall_menu() {
     panel_header "FIREWALL (GITHUB)" "🛡️"
-    download_and_execute "firewall.sh"
+    execute_script "firewall.sh" "Firewall.sh"
     pause_screen
 }
 
 udp_menu() {
     panel_header "UDP PANEL (GITHUB)" "⚡"
-    download_and_execute "Udp.sh"
+    execute_script "Udp.sh" "udp.sh" "install-udp.sh"
     pause_screen
 }
 
 rust_menu() {
     panel_header "SOCKS PROXY RUST (GITHUB)" "🦀"
-    download_and_execute "rust.sh"
+    execute_script "rust.sh" "Rust.sh"
     pause_screen
 }
 
@@ -913,11 +595,13 @@ python_menu() {
             python3 /root/proxy.py
         else
             panel_header "SOCKS PROXY PYTHON" "🐍"
-            download_and_execute "Python.sh"
+            execute_script "Python.sh" "python.sh" "proxy.sh"
+            pause_screen
         fi
     else
         panel_header "SOCKS PROXY PYTHON" "🐍"
-        download_and_execute "Python.sh"
+        execute_script "Python.sh" "python.sh" "proxy.sh"
+        pause_screen
     fi
 }
 
@@ -925,11 +609,17 @@ ssh_panel_menu() {
     local ssh_panel="/usr/local/bin/sshpanel.sh"
     panel_header "SSH PANEL" "👥"
     printf "  %bDescargando panel SSH...%b\n" "$CYAN" "$NC"
-    download_to_path "sshpanel.sh" "$ssh_panel" && bash "$ssh_panel" || error_msg "No se pudo descargar"
+    if download_to_path "sshpanel.sh" "$ssh_panel" || download_to_path "Sshpanel.sh" "$ssh_panel"; then
+        bash "$ssh_panel"
+    fi
     pause_screen
 }
 
-configure_ssh() { panel_header "CONFIGURAR SSH" "🔐"; download_and_execute "ssh.sh"; pause_screen; }
+configure_ssh() {
+    panel_header "CONFIGURAR SSH" "🔐"
+    execute_script "ssh.sh" "Ssh.sh"
+    pause_screen
+}
 
 monitor_menu() {
     panel_header "MONITOREO DEL SISTEMA" "📊"
@@ -975,14 +665,16 @@ main_menu() {
         printf "  %b[ 5]%b ⚡ %bUDP Panel%b            %b[ 6]%b 🦀 %bSOCKS Proxy Rust%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b   %b[ 8]%b 👥 %bSSH Panel / User%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 9]%b 🚀 %bBadVPN UDPGW%b         %b[10]%b 🐌 %bSlowDNS Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
-        printf "  %b[11]%b 🔒 %bSSL / TLS Manager%b    %b[12]%b 📁 %bMás Opciones...%b\n\n" "$CYAN" "$NC" "$WHITE" "$NC" "$YELLOW" "$NC" "$YELLOW" "$NC"
+        printf "  %b[11]%b 🔒 %bSSL / TLS Manager%b    %b[12]%b 📁 %bMás Opciones...%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$YELLOW" "$NC" "$YELLOW" "$NC"
 
         section_divider "GESTIÓN & MANTENIMIENTO"
         printf "  %b[13]%b 🛡️  %bFirewall%b           %b[14]%b 🔐 %bConfigurar SSH%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[15]%b 📊 %bMonitoreo Sistema%b   %b[16]%b 📋 %bEstado General%b\n" "$BLUE" "$NC" "$WHITE" "$NC" "$BLUE" "$NC" "$WHITE" "$NC"
         printf "  %b[ 0]%b 🚪 %bSalir del Panel%b\n" "$RED" "$NC" "$WHITE" "$NC"
 
-        read -r -p "  ❯ Selecciona una opción [0-16]: " option < /dev/tty 2>/dev/null || read -r -p "  ❯ Selecciona una opción [0-16]: " option
+        echo -ne "  \033[1;33m> Selecciona una opción [0-16]: \033[0m"
+        read option
+        option=$(echo "$option" | tr -d '\r\n\t ')
 
         case "$option" in
             1) caddy_menu ;;
@@ -1018,31 +710,3 @@ require_root
 install_dependencies
 setup_menu_shortcut
 main_menu
-MENU_EOF
-
-# =======================================================
-# 5. REGISTRO Y FIXES DE ALIAS DE COMANDOS GLOBALMENTE
-# =======================================================
-sed -i 's/\r$//' /usr/local/bin/menu /usr/local/bin/cadmin
-chmod +x /usr/local/bin/menu /usr/local/bin/cadmin
-ln -sf /usr/local/bin/menu /usr/bin/menu 2>/dev/null
-ln -sf /usr/local/bin/cadmin /usr/bin/cadmin 2>/dev/null
-
-# Configuración de accesos directos
-grep -q "alias menu=" /root/.bashrc 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /root/.bashrc
-grep -q "alias cadmin=" /root/.bashrc 2>/dev/null || echo "alias cadmin='/usr/local/bin/cadmin'" >> /root/.bashrc
-
-grep -q "alias menu=" /etc/bash.bashrc 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /etc/bash.bashrc
-grep -q "alias cadmin=" /etc/bash.bashrc 2>/dev/null || echo "alias cadmin='/usr/local/bin/cadmin'" >> /etc/bash.bashrc
-
-grep -q "alias menu=" /etc/profile 2>/dev/null || echo "alias menu='/usr/local/bin/menu'" >> /etc/profile
-grep -q "alias cadmin=" /etc/profile 2>/dev/null || echo "alias cadmin='/usr/local/bin/cadmin'" >> /etc/profile
-
-hash -r
-
-# Abrir el menú inmediatamente usando la TTY interactiva
-if [[ -t 0 ]]; then
-    /usr/local/bin/menu
-elif [[ -c /dev/tty ]]; then
-    /usr/local/bin/menu < /dev/tty
-fi
