@@ -51,7 +51,7 @@ echo ""
 
 # 2. PUERTOS HTTP
 while true; do
-    echo -e "${CYAN}➜ Agrega puertos HTTP (ejemplo: 80, 8880):${NC}"
+    echo -e "${CYAN}➜ Agrega puertos HTTP (ejemplo: 80, 8880, 2052, 2082, 2086, 2095):${NC}"
     echo -e -n "  ${WHITE}Puertos HTTP:${NC} "
     read -r INPUT_HTTP
     CLEAN_HTTP=$(sanitize_ports "$INPUT_HTTP")
@@ -66,7 +66,7 @@ echo ""
 
 # 3. PUERTOS HTTPS
 while true; do
-    echo -e "${CYAN}➜ Agrega puertos HTTPS (ejemplo: 443, 8443):${NC}"
+    echo -e "${CYAN}➜ Agrega puertos HTTPS (ejemplo: 443, 8443, 2053, 2083):${NC}"
     echo -e -n "  ${WHITE}Puertos HTTPS:${NC} "
     read -r INPUT_HTTPS
     CLEAN_HTTPS=$(sanitize_ports "$INPUT_HTTPS")
@@ -84,6 +84,7 @@ echo -e "  ${WHITE}• Puertos HTTP        :${NC} ${GREEN}${BOLD}$HTTP_PORTS${NC
 echo -e "  ${WHITE}• Puertos HTTPS       :${NC} ${GREEN}${BOLD}$HTTPS_PORTS${NC}"
 echo -e "  ${WHITE}• Rutas V2Ray (WS)    :${NC} ${CYAN}/vmess*, /vless* -> 127.0.0.1:9090${NC}"
 echo -e "  ${WHITE}• Enrutador Dinamico  :${NC} ${CYAN}/puerto_XXXX -> 127.0.0.1:XXXX${NC}"
+echo -e "  ${WHITE}• SSH WebSocket       :${NC} ${CYAN}127.0.0.1:8888${NC}"
 echo -e "${PURPLE}${BOLD}----------------------------------------------------${NC}\n"
 
 echo -e -n "${YELLOW}Presiona ENTER para iniciar la instalacion...${NC}"
@@ -129,7 +130,7 @@ build_caddyfile() {
 }
 
 $HTTP_LIST {
-    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
     handle @dinamico_http {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} { flush_interval -1 }
@@ -144,7 +145,7 @@ $HTTP_LIST {
 }
 
 $HTTPS_LIST {
-    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
     handle @dinamico_https {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} { flush_interval -1 }
@@ -225,14 +226,14 @@ generate_caddyfile() {
     cat > "$CADDY_CONF" << _CAD_FILE_
 { auto_https disable_redirects }
 $HTTP_LIST {
-    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+    @dinamico_http path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
     handle @dinamico_http { uri strip_prefix /puerto_{re.puerto.target}; reverse_proxy 127.0.0.1:{re.puerto.target} { flush_interval -1 } }
     @v2ray_http path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
     handle @v2ray_http { reverse_proxy 127.0.0.1:9090 { flush_interval -1 } }
     handle { reverse_proxy 127.0.0.1:8888 { flush_interval -1 } }
 }
-$HSL {
-    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[1-9][0-9]{3,4})(/.*)?$
+$HTTPS_LIST {
+    @dinamico_https path_regexp puerto ^/puerto_(?P<target>[0-9]+)(/.*)?$
     handle @dinamico_https { uri strip_prefix /puerto_{re.puerto.target}; reverse_proxy 127.0.0.1:{re.puerto.target} { flush_interval -1 } }
     @v2ray_https path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
     handle @v2ray_https { reverse_proxy 127.0.0.1:9090 { flush_interval -1 } }
@@ -335,7 +336,7 @@ while true; do
             if [[ "$confirm" == "s" || "$confirm" == "S" ]]; then
                 systemctl stop caddy 2>/dev/null
                 apt purge -y caddy 2>/dev/null
-                rm -rf /etc/caddy /usr/local/bin/cadmin "$CONF_FILE" /usr/local/bin/install_caddy.sh
+                rm -rf /etc/caddy /usr/local/bin/cadmin /usr/local/bin/panel "$CONF_FILE" /usr/local/bin/install_caddy.sh
                 echo -e "${GREEN}✔ Desinstalado.${NC}"; exit 0
             fi ;;
         0) exit 0 ;;
