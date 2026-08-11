@@ -26,6 +26,16 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# =========================================================
+#  DETECCIÓN DE SERVICIO INSTALADO / ACTIVO
+# =========================================================
+if [ -f "/usr/local/bin/sshgo" ] || systemctl is-active --quiet vpn-proxy 2>/dev/null; then
+  echo -e "\n${C_GREEN}⚡ Se detectó que el Proxy Go ya está instalado en el sistema.${C_RESET}"
+  echo -e "${C_YELLOW}🚀 Redirigiendo al panel de administración...${C_RESET}\n"
+  sleep 1
+  exec /usr/local/bin/sshgo
+fi
+
 # 1. Instalar Go y dependencias
 echo -e "\n${C_YELLOW}[1/4] Instalando Go y herramientas del sistema...${C_RESET}"
 apt update -y && apt install -y golang-go curl wget net-tools openssh-server systemd > /dev/null 2>&1
