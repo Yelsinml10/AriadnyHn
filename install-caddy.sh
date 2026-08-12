@@ -70,7 +70,14 @@ build_https_list() {
     local dom="$1" ports="$2" res=""
     [[ -z "$ports" ]] && return
     IFS=',' read -ra ADDR <<< "$ports"
-    for i in "${ADDR[@]}"; do p=$(echo "$i" | tr -d ' '); [[ -n "$p" ]] && res="${res:+$res, }${dom}:${p}"; done
+    for i in "${ADDR[@]}"; do
+        p=$(echo "$i" | tr -d ' ')
+        if [[ -n "$dom" ]]; then
+            [[ -n "$p" ]] && res="${res:+$res, }${dom}:${p}"
+        else
+            [[ -n "$p" ]] && res="${res:+$res, }:${p}"
+        fi
+    done
     echo "$res"
 }
 
@@ -92,6 +99,9 @@ generate_caddyfile() {
     cat > "$CADDY_CONF" << _CAD_FILE_
 {
     auto_https disable_redirects
+    servers {
+        trusted_proxies static private_ranges
+    }
 }
 _CAD_FILE_
 
@@ -104,17 +114,23 @@ $HTTP_LIST {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up X-Real-IP {remote_host}
         }
     }
     @v2ray_http path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
     handle @v2ray_http {
         reverse_proxy 127.0.0.1:9090 {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
         }
     }
     handle {
         reverse_proxy 127.0.0.1:8888 {
             flush_interval -1
+            header_up Host {http.request.host}
         }
     }
 }
@@ -130,17 +146,23 @@ $HTTPS_LIST {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up X-Real-IP {remote_host}
         }
     }
     @v2ray_https path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
     handle @v2ray_https {
         reverse_proxy 127.0.0.1:9090 {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
         }
     }
     handle {
         reverse_proxy 127.0.0.1:8888 {
             flush_interval -1
+            header_up Host {http.request.host}
         }
     }
 }
@@ -204,12 +226,10 @@ while true; do
             echo -e -n "\nNuevo dominio: "
             read -r new_dom
             new_dom=$(echo "$new_dom" | tr -d ' ')
-            if [ -n "$new_dom" ]; then
-                DOMAIN="$new_dom"; save_conf
-                if generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"; then
-                    reload_service
-                    echo -e "${GREEN}✔ Dominio actualizado correctamente.${NC}"
-                fi
+            DOMAIN="$new_dom"; save_conf
+            if generate_caddyfile "$DOMAIN" "$HTTP_PORTS" "$HTTPS_PORTS"; then
+                reload_service
+                echo -e "${GREEN}✔ Dominio actualizado correctamente.${NC}"
             fi
             read -p "Presiona ENTER para continuar..." -r ;;
         2)
@@ -359,7 +379,11 @@ build_https_list() {
     IFS=',' read -ra ADDR <<< "$ports"
     for i in "${ADDR[@]}"; do
         p=$(echo "$i" | tr -d ' ')
-        [[ -n "$p" ]] && res="${res:+$res, }${dom}:${p}"
+        if [[ -n "$dom" ]]; then
+            [[ -n "$p" ]] && res="${res:+$res, }${dom}:${p}"
+        else
+            [[ -n "$p" ]] && res="${res:+$res, }:${p}"
+        fi
     done
     echo "$res"
 }
@@ -385,6 +409,9 @@ build_caddyfile() {
     cat > "$CADDY_CONF" << _INNER_CADDY_
 {
     auto_https disable_redirects
+    servers {
+        trusted_proxies static private_ranges
+    }
 }
 _INNER_CADDY_
 
@@ -397,17 +424,23 @@ $HTTP_LIST {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up X-Real-IP {remote_host}
         }
     }
     @v2ray_http path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
     handle @v2ray_http {
         reverse_proxy 127.0.0.1:9090 {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
         }
     }
     handle {
         reverse_proxy 127.0.0.1:8888 {
             flush_interval -1
+            header_up Host {http.request.host}
         }
     }
 }
@@ -423,17 +456,23 @@ $HTTPS_LIST {
         uri strip_prefix /puerto_{re.puerto.target}
         reverse_proxy 127.0.0.1:{re.puerto.target} {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up X-Real-IP {remote_host}
         }
     }
     @v2ray_https path /vmess* /vless* /trojan* /ss* /v2ray* /xray*
     handle @v2ray_https {
         reverse_proxy 127.0.0.1:9090 {
             flush_interval -1
+            header_up Host {http.request.host}
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
         }
     }
     handle {
         reverse_proxy 127.0.0.1:8888 {
             flush_interval -1
+            header_up Host {http.request.host}
         }
     }
 }
@@ -482,16 +521,12 @@ echo -e "${PURPLE}${BOLD}[ CONFIGURACION INICIAL ]${NC}\n"
 
 # DOMINIO
 while true; do
-    echo -e "${CYAN}➜ Ingresa tu dominio:${NC}"
+    echo -e "${CYAN}➜ Ingresa tu dominio (Presiona Enter para omitir / escuchar en cualquier Host):${NC}"
     echo -e -n "  ${WHITE}Dominio:${NC} "
     read -r INPUT_DOM
     INPUT_DOM=$(echo "$INPUT_DOM" | tr -d ' ')
-    if [[ -n "$INPUT_DOM" ]]; then
-        DOMAIN="$INPUT_DOM"
-        break
-    else
-        echo -e "  ${RED}[!] El dominio no puede estar vacío.${NC}\n"
-    fi
+    DOMAIN="$INPUT_DOM"
+    break
 done
 echo ""
 
