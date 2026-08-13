@@ -439,6 +439,16 @@ systemctl daemon-reload
 systemctl enable vpn-proxy > /dev/null 2>&1
 systemctl restart vpn-proxy
 
+# Detectar cuando el servicio esté activado
+echo -e "${C_YELLOW}Verificando activación del servicio...${C_RESET}"
+for i in {1..10}; do
+    if systemctl is-active --quiet vpn-proxy; then
+        echo -e "${C_GREEN}✅ Servicio vpn-proxy detectado y ACTIVADO correctamente.${C_RESET}"
+        break
+    fi
+    sleep 1
+done
+
 # Aliases para el menú interactivo
 grep -q "alias sshgo=" /root/.bashrc || echo "alias sshgo='/usr/local/bin/sshgo'" >> /root/.bashrc
 grep -q "alias proxy=" /root/.bashrc || echo "alias proxy='/usr/local/bin/sshgo'" >> /root/.bashrc
