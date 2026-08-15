@@ -1,13 +1,12 @@
 cat << 'EOF' > /usr/local/bin/xray
 #!/bin/bash
 # =========================================================
-#  XRAY MANAGER - TRANSFORMED & OPTIMIZED EDITION
+#  XRAY MANAGER - FIXED & OPTIMIZED EDITION
 # =========================================================
 
 export TERM=xterm
 export DEBIAN_FRONTEND=noninteractive
 
-# Auto-limpieza de caracteres de fin de línea de Windows (CRLF a LF)
 sed -i 's/\r$//' "$0" 2>/dev/null
 
 BOLD='\033[1m'
@@ -146,6 +145,7 @@ read_val() {
     local var="$1" prompt="$2" def="$3" val
     echo -e -n "${CYAN}➜ ${NC}${WHITE}${prompt}${NC} "
     read -r val
+    val=$(echo "$val" | tr -d '\r\n')
     [[ -z "$val" ]] && val="$def"
     printf -v "$var" '%s' "$val"
 }
@@ -158,7 +158,6 @@ setup_tls_cert() {
     open_port 443
 
     if [[ "$domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        echo -e "${YELLOW}⚙️ Generando certificado autofirmado para IP (${domain})...${NC}"
         openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
         openssl req -new -x509 -days 3650 \
             -key "${CERT_DIR}/key.pem" \
@@ -166,8 +165,6 @@ setup_tls_cert() {
             -subj "/C=US/ST=State/L=City/O=Xray/CN=${domain}" >/dev/null 2>&1
         chmod 600 "${CERT_DIR}/key.pem"
         chmod 644 "${CERT_DIR}/cert.pem"
-        echo -e "${GREEN}✔ Certificado autofirmado generado.${NC}"
-        sleep 1
         return 0
     fi
 
@@ -180,18 +177,12 @@ setup_tls_cert() {
     read -r cert_opt
 
     if [[ "$cert_opt" == "1" ]]; then
-        echo -e "\n${CYAN}⚙️ Solicitando certificado Let's Encrypt...${NC}"
-
         if ! command -v certbot >/dev/null 2>&1; then
-            echo -e "${YELLOW}⚙️ Instalando Certbot...${NC}"
             apt-get update -y -qq >/dev/null 2>&1
             apt-get install -y -qq certbot >/dev/null 2>&1
         fi
 
         systemctl stop xray 2>/dev/null
-        systemctl stop nginx 2>/dev/null
-        systemctl stop apache2 2>/dev/null
-        systemctl stop caddy 2>/dev/null
         fuser -k 80/tcp >/dev/null 2>&1
 
         DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
@@ -201,16 +192,10 @@ setup_tls_cert() {
             cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
             chmod 600 "${CERT_DIR}/key.pem"
             chmod 644 "${CERT_DIR}/cert.pem"
-            echo -e "${GREEN}✔ Certificado Let's Encrypt instalado.${NC}"
-            sleep 1.5
             return 0
-        else
-            echo -e "\n${YELLOW}⚠️ Let's Encrypt no disponible. Usando autofirmado...${NC}"
-            sleep 1.5
         fi
     fi
 
-    echo -e "${YELLOW}⚙️ Generando certificado autofirmado...${NC}"
     openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
     openssl req -new -x509 -days 3650 \
         -key "${CERT_DIR}/key.pem" \
@@ -218,8 +203,6 @@ setup_tls_cert() {
         -subj "/C=US/ST=State/L=City/O=Xray/CN=${domain}" >/dev/null 2>&1
     chmod 600 "${CERT_DIR}/key.pem"
     chmod 644 "${CERT_DIR}/cert.pem"
-    echo -e "${GREEN}✔ Certificado autofirmado generado.${NC}"
-    sleep 1
     return 0
 }
 
@@ -236,28 +219,28 @@ except Exception:
     print("\033[0;31mError al leer la configuración actual.\033[0m")
     sys.exit(1)
 
-dom = cfg.get("_domain", "127.0.0.1")
-pub_key = cfg.get("_pub_key", "")
-sni = cfg.get("_sni", "")
-short_id = cfg.get("_short_id", "")
+dom = str(cfg.get("_domain", "127.0.0.1")).strip()
+pub_key = str(cfg.get("_pub_key", "")).strip()
+sni = str(cfg.get("_sni", "")).strip()
+short_id = str(cfg.get("_short_id", "")).strip()
 
 inb = (cfg.get("inbounds") or [{}])[0]
-proto = inb.get("protocol", "desconocido")
+proto = str(inb.get("protocol", "desconocido")).strip()
 port = inb.get("port", 443)
 st = inb.get("settings") or {}
 str_st = inb.get("streamSettings") or {}
-trans = str_st.get("network", "tcp")
-sec = str_st.get("security", "none")
+trans = str(str_st.get("network", "tcp")).strip()
+sec = str(str_st.get("security", "none")).strip()
 
 extra = ""
 ws_host = dom
 if trans == "ws":
     ws_st = str_st.get("wsSettings") or {}
-    extra = ws_st.get("path", "/trojan")
-    ws_host = (ws_st.get("headers") or {}).get("Host", dom)
+    extra = str(ws_st.get("path", "/trojan")).strip()
+    ws_host = str((ws_st.get("headers") or {}).get("Host", dom)).strip()
 elif trans == "grpc":
     grpc_st = str_st.get("grpcSettings") or {}
-    extra = grpc_st.get("serviceName", "grpc")
+    extra = str(grpc_st.get("serviceName", "grpc")).strip()
 
 print(f"\033[1;37mProtocolo   :\033[0m \033[0;36m{proto.upper()}\033[0m")
 print(f"\033[1;37mHost / IP   :\033[0m \033[1;33m{dom}\033[0m")
@@ -280,7 +263,7 @@ print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n")
 
 if proto == "shadowsocks":
     method = st.get("method", "aes-256-gcm")
-    pass_val = st.get("password", "")
+    pass_val = str(st.get("password", "")).strip()
     b64_ss = base64.b64encode(f"{method}:{pass_val}".encode()).decode()
     link = f"ss://{b64_ss}@{dom}:{port}#Xray-Shadowsocks"
     print(f"\033[1;37m[Usuario 1]\033[0m Clave: \033[1;33m{pass_val}\033[0m")
@@ -288,7 +271,7 @@ if proto == "shadowsocks":
 else:
     clients = st.get("clients", [])
     for idx, c in enumerate(clients, 1):
-        user_id = c.get("id") or c.get("password") or ""
+        user_id = str(c.get("id") or c.get("password") or "").strip()
         print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
         
         link = ""
@@ -298,7 +281,7 @@ else:
             else:
                 params = f"encryption=none&type={trans}&security={sec}"
                 if trans == "ws":
-                    params += f"&path={urllib.parse.quote(extra, safe='')}&host={urllib.parse.quote(ws_host)}"
+                    params += f"&path={urllib.parse.quote(extra, safe='/')}&host={urllib.parse.quote(ws_host)}"
                 elif trans == "grpc":
                     params += f"&serviceName={urllib.parse.quote(extra, safe='')}&mode=gun"
                 if sec == "tls":
@@ -321,15 +304,13 @@ else:
         elif proto == "trojan":
             params = f"type={trans}"
             if sec == "tls":
-                params += f"&security=tls"
-                params += f"&sni={urllib.parse.quote(dom)}"
+                params += f"&security=tls&sni={urllib.parse.quote(dom)}"
             elif sec == "reality":
                 params += f"&security=reality&pbk={pub_key}&sni={sni}&sid={short_id}"
             
             if trans == "ws":
                 host_for_link = ws_host if ws_host else dom
-                # CORRECCIÓN: host ANTES que path para HTTP Custom
-                params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='')}"
+                params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='/')}"
             elif trans == "grpc":
                 params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
             
@@ -411,12 +392,12 @@ configure_protocol() {
         2) trans="tcp"; sec="tls" ;;
         3) 
             trans="ws"; sec="none"
-            read_val extra "Path WS [/trojan]:" "/trojan"
+            read_val extra "Path WS [/trojan-ws]:" "/trojan-ws"
             read_val host_header "Host Header WS [${dom}]:" "$dom"
             ;;
         4) 
             trans="ws"; sec="tls"
-            read_val extra "Path WS [/trojan]:" "/trojan"
+            read_val extra "Path WS [/trojan-ws]:" "/trojan-ws"
             read_val host_header "Host Header WS [${dom}]:" "$dom"
             ;;
         5) 
@@ -452,20 +433,20 @@ configure_protocol() {
 import json, sys
 
 cfg_file    = sys.argv[1]
-proto       = sys.argv[2]
+proto       = str(sys.argv[2]).strip()
 port        = int(sys.argv[3])
-trans       = sys.argv[4]
-sec         = sys.argv[5]
-user        = sys.argv[6]
-extra       = sys.argv[7]
-dom         = sys.argv[8]
-sni         = sys.argv[9] if len(sys.argv) > 9 else ""
-dest        = sys.argv[10] if len(sys.argv) > 10 else ""
-priv_key    = sys.argv[11] if len(sys.argv) > 11 else ""
-pub_key     = sys.argv[12] if len(sys.argv) > 12 else ""
-short_id    = sys.argv[13] if len(sys.argv) > 13 else ""
-host_header = sys.argv[14] if len(sys.argv) > 14 else dom
-cert_dir    = sys.argv[15] if len(sys.argv) > 15 else ""
+trans       = str(sys.argv[4]).strip()
+sec         = str(sys.argv[5]).strip()
+user        = str(sys.argv[6]).strip()
+extra       = str(sys.argv[7]).strip()
+dom         = str(sys.argv[8]).strip()
+sni         = str(sys.argv[9]).strip() if len(sys.argv) > 9 else ""
+dest        = str(sys.argv[10]).strip() if len(sys.argv) > 10 else ""
+priv_key    = str(sys.argv[11]).strip() if len(sys.argv) > 11 else ""
+pub_key     = str(sys.argv[12]).strip() if len(sys.argv) > 12 else ""
+short_id    = str(sys.argv[13]).strip() if len(sys.argv) > 13 else ""
+host_header = str(sys.argv[14]).strip() if len(sys.argv) > 14 else dom
+cert_dir    = str(sys.argv[15]).strip() if len(sys.argv) > 15 else ""
 
 config = {
     "_domain": dom,
@@ -555,6 +536,9 @@ import json, sys
 cfg_file, act, val = sys.argv[1:4]
 val2 = sys.argv[4] if len(sys.argv) > 4 else ""
 
+val = str(val).strip()
+val2 = str(val2).strip()
+
 try:
     with open(cfg_file, "r") as f: cfg = json.load(f)
 except: sys.exit(1)
@@ -632,14 +616,14 @@ while true; do
     case "$op" in
         1) configure_protocol ;;
         2)
-            read_val np "Nuevo Puerto:" "443"
+            read_val np "Nuevo Puerto:" "9090"
             open_port "$np"
             modify_param "port" "$np"
             echo -e "${GREEN}✔ Puerto actualizado a $np.${NC}"
             pause_screen
             ;;
         3)
-            read_val npath "Nuevo Path WS / ServiceName gRPC:" "/trojan"
+            read_val npath "Nuevo Path WS / ServiceName gRPC:" "/trojan-ws"
             read_val nhost "Nuevo Host Header WS (Enter para omitir):" ""
             modify_param "path" "$npath" "$nhost"
             echo -e "${GREEN}✔ Parámetros actualizados exitosamente.${NC}"
@@ -690,6 +674,5 @@ done
 EOF
 
 chmod +x /usr/local/bin/xray
-
-echo -e "\n${CYAN}${BOLD}🚀 Instalación y actualización de Xray completada.${NC}\n"
+echo -e "\n${GREEN}${BOLD}🚀 Script corregido y guardado exitosamente.${NC}\n"
 /usr/local/bin/xray
