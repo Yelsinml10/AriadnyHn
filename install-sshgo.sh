@@ -26,6 +26,17 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# =========================================================
+#  COMPROBACIÓN DE INSTALACIÓN PREVIA
+# =========================================================
+if [ -f "/usr/local/bin/sshgo" ]; then
+  echo -e "\n${C_GREEN}✅ El sistema ya está instalado.${C_RESET}"
+  echo -e "${C_YELLOW}Abriendo el Panel Administrativo...${C_RESET}\n"
+  sleep 1
+  /usr/local/bin/sshgo
+  exit 0
+fi
+
 # 1. Instalar Go y dependencias
 echo -e "\n${C_YELLOW}[1/4] Instalando Go y herramientas del sistema...${C_RESET}"
 apt update -y && apt install -y golang-go curl wget net-tools openssh-server systemd > /dev/null 2>&1
