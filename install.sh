@@ -3,6 +3,8 @@
 # =======================================================
 # ARIADNY MASTER PANEL - MAIN MENU SCRIPT (COLORFUL UI)
 # =======================================================
+# NOTA: El enlace de ejemplo es: 
+# trojan://Abielml10@102.129.137.76:9090?type=ws&host=start.freenethn.org&path=/trojan-ws#Xray-Trojan
 
 # Modo pantalla fija (Alternate Screen Buffer)
 printf "\033[?1049h"
@@ -729,44 +731,28 @@ multiplexacion_menu() {
     done
 }
 
-# ============================================================
-# V2RAY MENU - CORREGIDO (Subshell sin traps)
-# ============================================================
+# V2RAY MENU - CORREGIDO
 v2ray_menu() {
     panel_header "INSTALANDO/EJECUTANDO V2RAY" "⚡"
     if [[ -x /usr/local/bin/v2ray ]]; then
-        (
-            trap - EXIT INT TERM
-            /usr/local/bin/v2ray
-        )
+        /usr/local/bin/v2ray
     elif [[ -x /usr/bin/v2ray ]]; then
-        (
-            trap - EXIT INT TERM
-            /usr/bin/v2ray
-        )
+        /usr/bin/v2ray
     else
         execute_script "install-v2ray.sh" "v2ray.sh" "V2ray.sh"
         pause_screen
     fi
 }
 
-# ============================================================
-# XRAY MENU - CORREGIDO (Subshell sin traps)
-# ============================================================
+# XRAY MENU - CORREGIDO
 xray_menu() {
     if command_exists menuV2; then
         menuV2
     elif systemctl is-active --quiet xray 2>/dev/null; then
         if [[ -x /usr/local/bin/xray ]]; then
-            (
-                trap - EXIT INT TERM
-                /usr/local/bin/xray
-            )
+            /usr/local/bin/xray
         elif [[ -x /usr/bin/xray ]]; then
-            (
-                trap - EXIT INT TERM
-                /usr/bin/xray
-            )
+            /usr/bin/xray
         else
             panel_header "EJECUTANDO XRAY PANEL" "🔰"
             execute_script "install-xray.sh" "xray.sh" "Xray.sh"
