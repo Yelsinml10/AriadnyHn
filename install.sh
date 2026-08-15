@@ -743,7 +743,7 @@ main_menu() {
         header
 
         section_divider "PROTOCOLOS & PROXIES"
-        printf "  %b[ 1]%b 🔀 %bMultiplexación%b         %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 1]%b 🔀 %bMultiplexores%b         %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 3]%b 🚀 %bSSH-Go Proxy%b         %b[ 4]%b 🔰 %bXRay Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 5]%b ⚡ %bUDP Panel%b            %b[ 6]%b 🦀 %bSOCKS Proxy Rust%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b   %b[ 8]%b 👥 %bSSH Panel / User%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
@@ -760,7 +760,7 @@ main_menu() {
         option=$(echo "$option" | tr -d '\r\n\t ')
 
         case "$option" in
-            1) multiplexacion_menu ;;
+            1) multiplexores_menu ;;
             2) v2ray_menu ;;
             3) sshgo_menu ;;
             4) xray_menu ;;
