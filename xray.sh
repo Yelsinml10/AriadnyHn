@@ -7,6 +7,9 @@ cat << 'EOF' > /usr/local/bin/xray
 export TERM=xterm
 export DEBIAN_FRONTEND=noninteractive
 
+# Auto-limpieza de caracteres de fin de línea de Windows (CRLF a LF)
+sed -i 's/\r$//' "$0" 2>/dev/null
+
 BOLD='\033[1m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -238,22 +241,23 @@ pub_key = cfg.get("_pub_key", "")
 sni = cfg.get("_sni", "")
 short_id = cfg.get("_short_id", "")
 
-inb = cfg["inbounds"][0]
+inb = (cfg.get("inbounds") or [{}])[0]
 proto = inb.get("protocol", "desconocido")
 port = inb.get("port", 443)
-st = inb.get("settings", {})
-str_st = inb.get("streamSettings", {})
+st = inb.get("settings") or {}
+str_st = inb.get("streamSettings") or {}
 trans = str_st.get("network", "tcp")
 sec = str_st.get("security", "none")
 
 extra = ""
 ws_host = dom
 if trans == "ws":
-    ws_st = str_st.get("wsSettings", {})
+    ws_st = str_st.get("wsSettings") or {}
     extra = ws_st.get("path", "/ray")
-    ws_host = ws_st.get("headers", {}).get("Host", dom)
+    ws_host = (ws_st.get("headers") or {}).get("Host", dom)
 elif trans == "grpc":
-    extra = str_st.get("grpcSettings", {}).get("serviceName", "grpc")
+    grpc_st = str_st.get("grpcSettings") or {}
+    extra = grpc_st.get("serviceName", "grpc")
 
 print(f"\033[1;37mProtocolo   :\033[0m \033[0;36m{proto.upper()}\033[0m")
 print(f"\033[1;37mHost / IP   :\033[0m \033[1;33m{dom}\033[0m")
@@ -548,27 +552,30 @@ try:
     with open(cfg_file, "r") as f: cfg = json.load(f)
 except: sys.exit(1)
 
-inb = cfg["inbounds"][0]
-st = inb.get("settings", {})
-str_st = inb.get("streamSettings", {})
+inb = (cfg.get("inbounds") or [{}])[0]
+st = inb.get("settings") or {}
+str_st = inb.get("streamSettings") or {}
 
 if act == "port":
     inb["port"] = int(val)
 elif act == "path":
     if str_st.get("network") == "ws":
-        str_st.setdefault("wsSettings", {})["path"] = val
+        ws_st = str_st.setdefault("wsSettings", {})
+        ws_st["path"] = val
         if val2:
-            str_st.setdefault("wsSettings", {}).setdefault("headers", {})["Host"] = val2
+            headers = ws_st.setdefault("headers", {})
+            headers["Host"] = val2
     elif str_st.get("network") == "grpc":
-        str_st.setdefault("grpcSettings", {})["serviceName"] = val
+        grpc_st = str_st.setdefault("grpcSettings", {})
+        grpc_st["serviceName"] = val
 elif act == "id":
     if "password" in st and "clients" not in st:
         st["password"] = val
-    elif "clients" in st and len(st["clients"]) > 0:
+    elif "clients" in st and len(st.get("clients", [])) > 0:
         if "id" in st["clients"][0]: st["clients"][0]["id"] = val
         elif "password" in st["clients"][0]: st["clients"][0]["password"] = val
 elif act == "add_id":
-    if "clients" in st and len(st["clients"]) > 0:
+    if "clients" in st and len(st.get("clients", [])) > 0:
         client_obj = {}
         if "id" in st["clients"][0]: client_obj["id"] = val
         elif "password" in st["clients"][0]: client_obj["password"] = val
