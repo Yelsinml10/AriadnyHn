@@ -319,14 +319,22 @@ else:
             link = f"vmess://{b64}"
 
         elif proto == "trojan":
-            params = f"type={trans}&security={sec}"
+            # ==== EDICIÓN CORREGIDA (SOLO ESTA PARTE) ====
+            params = f"type={trans}"
+            if sec == "tls":
+                params += f"&security=tls"
+                params += f"&sni={urllib.parse.quote(dom)}"
+            elif sec == "reality":
+                params += f"&security=reality&pbk={pub_key}&sni={sni}&sid={short_id}"
+            # Si sec == "none", NO se agrega el parámetro security
+            
             if trans == "ws":
                 params += f"&path={urllib.parse.quote(extra, safe='')}&host={urllib.parse.quote(ws_host)}"
             elif trans == "grpc":
                 params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
-            if sec == "tls":
-                params += f"&sni={urllib.parse.quote(dom)}"
+            
             link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
+            # ==== FIN DE LA EDICIÓN ====
 
         elif proto == "socks":
             link = f"socks5://{dom}:{port}#Xray-SOCKS5"
