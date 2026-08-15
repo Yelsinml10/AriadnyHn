@@ -168,6 +168,39 @@ if ports: print(" ".join(str(x) for x in sorted(ports)))
 ' 2>/dev/null
 }
 
+get_nginx_ports() {
+    python3 -c '
+import subprocess, re, os
+ports = set()
+conf_dirs = ["/etc/nginx/sites-enabled", "/etc/nginx/conf.d", "/etc/nginx"]
+for d in conf_dirs:
+    if os.path.exists(d):
+        for root, _, files in os.walk(d):
+            for file in files:
+                if file.endswith(".conf") or d.endswith("sites-enabled"):
+                    try:
+                        with open(os.path.join(root, file), "r") as f:
+                            for line in f:
+                                line = line.strip()
+                                if line.startswith("#"): continue
+                                m = re.search(r"listen\s+(?:\[::\]:)?(\d+)", line)
+                                if m:
+                                    p = int(m.group(1))
+                                    if p not in [9090, 8888]: ports.add(p)
+                    except Exception: pass
+if not ports:
+    try:
+        out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+        for line in out.splitlines():
+            if "nginx" in line:
+                for m in re.findall(r":(\d+)\s", line):
+                    p = int(m)
+                    if p not in [9090, 8888]: ports.add(p)
+    except Exception: pass
+if ports: print(" ".join(str(x) for x in sorted(ports)))
+' 2>/dev/null
+}
+
 get_v2ray_cfg_path() {
     for path in /usr/local/v2ray/config.json /usr/local/etc/v2ray/config.json /etc/v2ray/config.json /etc/v2ray/config.yml; do
         if [[ -f "$path" ]]; then
@@ -250,6 +283,17 @@ get_ports_summary() {
             ACTIVE_ITEMS+=("🌐 Caddy  : $(truncate_str "$all_caddy")")
         else
             ACTIVE_ITEMS+=("🌐 Caddy  : ACTIVO")
+        fi
+    fi
+
+    # 1b. Nginx
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        local ng_ports=$(get_nginx_ports 2>/dev/null)
+        local all_nginx=$(echo "$ng_ports" | tr ' ' ',' 2>/dev/null)
+        if [[ -n "$all_nginx" ]]; then
+            ACTIVE_ITEMS+=("🔀 Nginx  : $(truncate_str "$all_nginx")")
+        else
+            ACTIVE_ITEMS+=("🔀 Nginx  : ACTIVO")
         fi
     fi
 
@@ -493,6 +537,44 @@ caddy_menu() {
     fi
 }
 
+nginx_menu() {
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        if [[ -x /usr/local/bin/MenuN ]]; then
+            /usr/local/bin/MenuN
+        elif [[ -x /usr/local/bin/menun ]]; then
+            /usr/local/bin/menun
+        else
+            panel_header "EJECUTANDO NGINX PROXY (GITHUB)" "🔀"
+            execute_script "nginx.sh" "Nginx.sh"
+            pause_screen
+        fi
+    else
+        panel_header "INSTALANDO NGINX PROXY DESDE GITHUB" "🔀"
+        execute_script "nginx.sh" "Nginx.sh"
+        pause_screen
+    fi
+}
+
+multiplexacion_menu() {
+    while true; do
+        panel_header "MULTIPLEXACIÓN & PROXIES WEB" "🔀"
+        printf "  %b[ 1]%b 🌐 %bCaddy Server%b\n" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 2]%b 🔀 %bNginx Proxy%b\n" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 0]%b ⬅️  %bVolver al Menú Principal%b\n" "$RED" "$NC" "$WHITE" "$NC"
+
+        echo -ne "  \033[1;33m> Selecciona una opción [0-2]: \033[0m"
+        read sub_m
+        sub_m=$(echo "$sub_m" | tr -d '\r\n\t ')
+
+        case "$sub_m" in
+            1) caddy_menu ;;
+            2) nginx_menu ;;
+            0) break ;;
+            *) warn "Opción inválida."; sleep 1 ;;
+        esac
+    done
+}
+
 v2ray_menu() {
     panel_header "INSTALANDO/EJECUTANDO V2RAY (GITHUB)" "⚡"
     execute_script "install-v2ray.sh" "v2ray.sh" "V2ray.sh"
@@ -633,6 +715,7 @@ monitor_menu() {
 status_menu() {
     panel_header "ESTADO GENERAL" "📋"
     printf "  Caddy:       "; systemctl is-active --quiet caddy 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
+    printf "  Nginx:       "; systemctl is-active --quiet nginx 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
     printf "  V2Ray:       "; systemctl is-active --quiet v2ray 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
     printf "  SSH-Go:      "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
     printf "  BadVPN:      "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
@@ -660,7 +743,7 @@ main_menu() {
         header
 
         section_divider "PROTOCOLOS & PROXIES"
-        printf "  %b[ 1]%b 🌐 %bCaddy Server%b         %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
+        printf "  %b[ 1]%b 🔀 %bMultiplexación%b         %b[ 2]%b ⚡ %bV2Ray / VMess%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 3]%b 🚀 %bSSH-Go Proxy%b         %b[ 4]%b 🔰 %bXRay Panel%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 5]%b ⚡ %bUDP Panel%b            %b[ 6]%b 🦀 %bSOCKS Proxy Rust%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
         printf "  %b[ 7]%b 🐍 %bSOCKS Proxy Python%b   %b[ 8]%b 👥 %bSSH Panel / User%b\n" "$CYAN" "$NC" "$WHITE" "$NC" "$CYAN" "$NC" "$WHITE" "$NC"
@@ -677,7 +760,7 @@ main_menu() {
         option=$(echo "$option" | tr -d '\r\n\t ')
 
         case "$option" in
-            1) caddy_menu ;;
+            1) multiplexacion_menu ;;
             2) v2ray_menu ;;
             3) sshgo_menu ;;
             4) xray_menu ;;
