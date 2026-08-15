@@ -328,7 +328,8 @@ else:
             
             if trans == "ws":
                 host_for_link = ws_host if ws_host else dom
-                params += f"&path={urllib.parse.quote(extra, safe='')}&host={urllib.parse.quote(host_for_link)}"
+                # CORRECCIÓN: host ANTES que path para HTTP Custom
+                params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='')}"
             elif trans == "grpc":
                 params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
             
