@@ -319,17 +319,16 @@ else:
             link = f"vmess://{b64}"
 
         elif proto == "trojan":
-            # Enlace Trojan corregido - sin security=none
             params = f"type={trans}"
             if sec == "tls":
                 params += f"&security=tls"
                 params += f"&sni={urllib.parse.quote(dom)}"
             elif sec == "reality":
                 params += f"&security=reality&pbk={pub_key}&sni={sni}&sid={short_id}"
-            # Si sec == "none", NO se agrega el parámetro security
             
             if trans == "ws":
-                params += f"&path={urllib.parse.quote(extra, safe='')}&host={urllib.parse.quote(ws_host)}"
+                host_for_link = ws_host if ws_host else dom
+                params += f"&path={urllib.parse.quote(extra, safe='')}&host={urllib.parse.quote(host_for_link)}"
             elif trans == "grpc":
                 params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
             
