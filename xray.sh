@@ -294,9 +294,9 @@ else:
             else:
                 params = f"encryption=none&type={trans}&security={sec}"
                 if trans == "ws":
-                    params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
+                    params += f"&path={urllib.parse.quote(extra, safe='')}&host={urllib.parse.quote(ws_host)}"
                 elif trans == "grpc":
-                    params += f"&serviceName={urllib.parse.quote(extra)}&mode=gun"
+                    params += f"&serviceName={urllib.parse.quote(extra, safe='')}&mode=gun"
                 if sec == "tls":
                     params += f"&sni={urllib.parse.quote(dom)}"
                 link = f"vless://{user_id}@{dom}:{port}?{params}#Xray-VLESS"
@@ -317,9 +317,9 @@ else:
         elif proto == "trojan":
             params = f"type={trans}&security={sec}"
             if trans == "ws":
-                params += f"&path={urllib.parse.quote(extra)}&host={urllib.parse.quote(ws_host)}"
+                params += f"&path={urllib.parse.quote(extra, safe='')}&host={urllib.parse.quote(ws_host)}"
             elif trans == "grpc":
-                params += f"&serviceName={urllib.parse.quote(extra)}"
+                params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
             if sec == "tls":
                 params += f"&sni={urllib.parse.quote(dom)}"
             link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
@@ -677,5 +677,5 @@ EOF
 
 chmod +x /usr/local/bin/xray
 
-echo -e "\n${CYAN}${BOLD}🚀 Iniciando instalación automática de Xray...${NC}\n"
+echo -e "\n${CYAN}${BOLD}🚀 Instalación y actualización de Xray completada.${NC}\n"
 /usr/local/bin/xray
