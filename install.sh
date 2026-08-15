@@ -1,959 +1,678 @@
+cat << 'EOF' > /usr/local/bin/xray
 #!/bin/bash
+# =========================================================
+#  XRAY MANAGER - FIXED & OPTIMIZED EDITION
+# =========================================================
 
-# =======================================================
-# ARIADNY MASTER PANEL - MAIN MENU SCRIPT (COLORFUL UI)
-# =======================================================
+export TERM=xterm
+export DEBIAN_FRONTEND=noninteractive
 
-# Modo pantalla fija (Alternate Screen Buffer)
-printf "\033[?1049h"
+sed -i 's/\r$//' "$0" 2>/dev/null
 
-cleanup() {
-    printf "\033[?1049l\033[0m"
-    clear_screen
-}
-trap cleanup EXIT INT TERM
-
-# Colores ANSI
+BOLD='\033[1m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
-GRAY='\033[0;90m'
-BOLD='\033[1m'
 NC='\033[0m'
 
-VERSION="v2.5"
-BASE_URL="https://raw.githubusercontent.com/Yelsinml10/AriadnyHn/main"
+CONFIG_FILE="/usr/local/xray/config.json"
+XRAY_BIN="/usr/local/xray/xray"
+SERVICE_FILE="/etc/systemd/system/xray.service"
+CERT_DIR="/usr/local/xray"
+LOCK_FILE="/tmp/xray_manager.lock"
 
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
+detect_ip() {
+    local ip=""
+    ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
+    echo "127.0.0.1"
 }
 
-clear_screen() {
-    printf "\033[2J\033[3J\033[H"
-}
+SERVER_IP=$(detect_ip)
 
-pause_screen() {
-    printf "\n  %bPresiona %bENTER%b para continuar...%b" "$GRAY" "$WHITE" "$GRAY" "$NC"
-    read -r
-    clear_screen
-}
-
-info() {
-    printf "  %b✔%b %s\n" "$GREEN" "$NC" "$1"
-}
-
-warn() {
-    printf "  %b⚠%b %s\n" "$YELLOW" "$NC" "$1"
-}
-
-error_msg() {
-    printf "  %b✖%b %s\n" "$RED" "$NC" "$1" >&2
-}
-
-require_root() {
-    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-        error_msg "Ejecuta el panel como root: sudo bash $0"
-        exit 1
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+       echo -e "\n${RED}${BOLD}[✗] Requiere permisos de root para ejecutar este script.${NC}\n"
+       exit 1
     fi
 }
 
-install_dependencies() {
-    if ! command_exists curl || ! command_exists python3; then
-        apt-get update -qq
-        apt-get install -y curl python3 -qq 2>/dev/null || yum install -y curl python3 -qq 2>/dev/null
-    fi
-}
-
-setup_menu_shortcut() {
-    local current_script
-    current_script="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
-
-    if [[ -f "$current_script" ]]; then
-        if [[ "$current_script" != "/usr/local/bin/menu" ]]; then
-            cp "$current_script" /usr/local/bin/menu 2>/dev/null
-            chmod +x /usr/local/bin/menu 2>/dev/null
-        fi
-        if [[ "$current_script" != "/usr/bin/menu" ]]; then
-            cp "$current_script" /usr/bin/menu 2>/dev/null
-            chmod +x /usr/bin/menu 2>/dev/null
+open_port() {
+    local port="$1"
+    if [[ -n "$port" ]]; then
+        iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
+        iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
+        ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
+        ip6tables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
+        if command -v ufw >/dev/null 2>&1; then
+            ufw allow "$port"/tcp >/dev/null 2>&1
+            ufw allow "$port"/udp >/dev/null 2>&1
         fi
     fi
 }
 
-get_sys_info() {
-    IP_ADDR=$(curl -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
-    [[ -z "$IP_ADDR" ]] && IP_ADDR="127.0.0.1"
-    
-    RAM_INFO=$(free -h 2>/dev/null | awk 'NR==2 {print $3 "/" $2}')
-    [[ -z "$RAM_INFO" ]] && RAM_INFO="N/A"
-    
-    OS_INFO=$(awk -F= '/^PRETTY_NAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release 2>/dev/null | cut -d' ' -f1,2)
-    [[ -z "$OS_INFO" ]] && OS_INFO="Linux"
+install_core_if_missing() {
+    if [[ ! -x "$XRAY_BIN" || ! -f "$SERVICE_FILE" ]]; then
+        echo -e "${CYAN}${BOLD}⚡ Instalando dependencias básicas y Xray Core...${NC}"
+        
+        killall apt apt-get dpkg 2>/dev/null
+        rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>/dev/null
+
+        apt-get update -y -qq >/dev/null 2>&1
+        apt-get install -y -qq python3 wget unzip curl openssl certbot psmisc >/dev/null 2>&1
+        
+        mkdir -p /usr/local/xray
+
+        local total_mem
+        total_mem=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
+        if [[ -n "$total_mem" && "$total_mem" -lt 1024 ]]; then
+            if [[ $(swapon --show 2>/dev/null | wc -l) -eq 0 ]]; then
+                fallocate -l 1G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=1024 2>/dev/null
+                chmod 600 /swapfile
+                mkswap /swapfile >/dev/null 2>&1
+                swapon /swapfile >/dev/null 2>&1
+            fi
+        fi
+
+        local ARCH=$(uname -m)
+        local XURL="https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-64.zip"
+        if [[ "$ARCH" == *"aarch64"* || "$ARCH" == *"arm64"* ]]; then
+            XURL="https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-arm64-v8a.zip"
+        fi
+
+        echo -e "${CYAN}Descargando Xray Core...${NC}"
+        wget -q --timeout=30 "$XURL" -O /tmp/xray.zip
+        unzip -o /tmp/xray.zip -d /usr/local/xray/ >/dev/null 2>&1
+        chmod +x /usr/local/xray/xray
+        rm -f /tmp/xray.zip
+
+        cat > "$SERVICE_FILE" <<EOFS
+[Unit]
+Description=Xray Core Service
+After=network.target
+
+[Service]
+ExecStart=${XRAY_BIN} run -config ${CONFIG_FILE}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOFS
+        systemctl daemon-reload >/dev/null 2>&1
+        echo -e "${GREEN}✔ Instalación base completada exitosamente.${NC}\n"
+        sleep 1
+    fi
 }
 
-truncate_str() {
-    local str="$1"
-    local max_len=14
-    if [[ ${#str} -gt $max_len ]]; then
-        echo "${str:0:$max_len}..."
+get_status() {
+    if systemctl is-active --quiet xray 2>/dev/null; then
+        echo -e "${GREEN}● ONLINE / FUNCIONANDO${NC}"
+    elif [[ -f "$CONFIG_FILE" ]]; then
+        echo -e "${RED}● OFFLINE / DETENIDO${NC}"
     else
-        echo "$str"
+        echo -e "${YELLOW}● SIN CONFIGURACIÓN${NC}"
     fi
-}
-
-get_udp_port() {
-    python3 -c '
-import json, glob, os, re, subprocess
-ports = set()
-for cfg in ["/etc/udp/config.json", "/etc/udp-custom/config.json", "/etc/hysteria/config.json", "/etc/zivpn/config.json"]:
-    if os.path.isfile(cfg):
-        try:
-            with open(cfg, "r") as f:
-                for m in re.findall(r":(\d+)", f.read()): ports.add(int(m))
-        except Exception: pass
-try:
-    out = subprocess.check_output("ss -ulpn 2>/dev/null", shell=True).decode()
-    for line in out.splitlines():
-        if any(x in line for x in ["udp", "hysteria", "zivpn"]):
-            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
-except Exception: pass
-if ports: print(",".join(map(str, sorted(ports))))
-' 2>/dev/null
-}
-
-get_socks_config_port() {
-    python3 -c '
-import json, os
-cfg = "/root/socks_config.json"
-if os.path.isfile(cfg):
-    try:
-        with open(cfg, "r") as f: data = json.load(f)
-        p = data.get("ports") or data.get("port")
-        if isinstance(p, list): print(",".join(map(str, sorted([int(x) for x in p]))))
-        elif isinstance(p, (int, str)): print(str(p))
-    except Exception: pass
-' 2>/dev/null
-}
-
-get_caddy_ports_http() {
-    python3 -c '
-import os, re
-caddyfile = "/etc/caddy/Caddyfile"
-ports = set()
-if os.path.exists(caddyfile):
-    with open(caddyfile, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("#") or "reverse_proxy" in line or "handle" in line: continue
-            for match in re.finditer(r"(?<![a-zA-Z0-9.-]):([0-9]+)", line):
-                p = int(match.group(1))
-                if p not in [9090, 8888]: ports.add(p)
-if ports: print(" ".join(str(x) for x in sorted(ports)))
-' 2>/dev/null
-}
-
-get_caddy_ports_https() {
-    python3 -c '
-import os, re
-caddyfile = "/etc/caddy/Caddyfile"
-ports = set()
-if os.path.exists(caddyfile):
-    with open(caddyfile, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("#") or "reverse_proxy" in line or "handle" in line: continue
-            for match in re.finditer(r"[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:([0-9]+)", line):
-                p = int(match.group(1))
-                if p not in [9090, 8888]: ports.add(p)
-if ports: print(" ".join(str(x) for x in sorted(ports)))
-' 2>/dev/null
-}
-
-get_nginx_ports() {
-    python3 -c '
-import subprocess, re, os
-ports = set()
-conf_dirs = ["/etc/nginx/sites-enabled", "/etc/nginx/conf.d", "/etc/nginx"]
-for d in conf_dirs:
-    if os.path.exists(d):
-        for root, _, files in os.walk(d):
-            for file in files:
-                if file.endswith(".conf") or d.endswith("sites-enabled"):
-                    try:
-                        with open(os.path.join(root, file), "r") as f:
-                            for line in f:
-                                line = line.strip()
-                                if line.startswith("#"): continue
-                                m = re.search(r"listen\s+(?:\[::\]:)?(\d+)", line)
-                                if m:
-                                    p = int(m.group(1))
-                                    if p not in [9090, 8888]: ports.add(p)
-                    except Exception: pass
-if not ports:
-    try:
-        out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-        for line in out.splitlines():
-            if "nginx" in line:
-                for m in re.findall(r":(\d+)\s", line):
-                    p = int(m)
-                    if p not in [9090, 8888]: ports.add(p)
-    except Exception: pass
-if ports: print(" ".join(str(x) for x in sorted(ports)))
-' 2>/dev/null
-}
-
-get_v2ray_cfg_path() {
-    for path in /usr/local/v2ray/config.json /usr/local/etc/v2ray/config.json /etc/v2ray/config.json /etc/v2ray/config.yml; do
-        if [[ -f "$path" ]]; then
-            echo "$path"
-            return 0
-        fi
-    done
-    echo "/usr/local/v2ray/config.json"
-}
-
-get_sshgo_ports() {
-    python3 -c '
-import json, glob, os, re, subprocess
-ports = set()
-for cfg in ["/opt/vpn-proxy/config.json", "/etc/vpn-proxy/config.json", "/etc/ssh-go/config.json"]:
-    if os.path.isfile(cfg):
-        try:
-            with open(cfg, "r") as f: data = json.load(f)
-            p = data.get("port") or data.get("ports")
-            if isinstance(p, int): ports.add(p)
-            elif isinstance(p, list): ports.update([int(x) for x in p if str(x).isdigit()])
-        except Exception: pass
-try:
-    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-    for line in out.splitlines():
-        if "vpn-proxy" in line or "ssh-go" in line:
-            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
-except Exception: pass
-if ports: print(" ".join(map(str, sorted(ports))))
-' 2>/dev/null
-}
-
-get_slowdns_ports() {
-    python3 -c '
-import subprocess, re
-ports = set()
-try:
-    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-    for line in out.splitlines():
-        if any(x in line for x in ["dns-server", "slowdns", "dnstt", "server-dns"]):
-            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
-except Exception: pass
-if ports: print(",".join(map(str, sorted(ports))))
-' 2>/dev/null
-}
-
-get_ssl_ports() {
-    python3 -c '
-import os, re, subprocess
-ports = set()
-conf = "/etc/stunnel/stunnel.conf"
-if os.path.exists(conf):
-    try:
-        with open(conf, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("accept"):
-                    m = re.search(r"=\s*(?:[0-9.]+:)?([0-9]+)", line)
-                    if m: ports.add(int(m.group(1)))
-    except Exception: pass
-try:
-    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-    for line in out.splitlines():
-        if "stunnel" in line or "stunnel4" in line:
-            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
-except Exception: pass
-if ports: print(",".join(map(str, sorted(ports))))
-' 2>/dev/null
-}
-
-get_ports_summary() {
-    ACTIVE_ITEMS=()
-
-    if systemctl is-active --quiet caddy 2>/dev/null; then
-        local c_http=$(get_caddy_ports_http 2>/dev/null)
-        local c_https=$(get_caddy_ports_https 2>/dev/null)
-        local all_caddy=$(echo "$c_http $c_https" | xargs -n1 2>/dev/null | grep -v '^$' | sort -u -n | paste -sd, -)
-        [[ -n "$all_caddy" ]] && ACTIVE_ITEMS+=("🌐 Caddy  : $(truncate_str "$all_caddy")") || ACTIVE_ITEMS+=("🌐 Caddy  : ACTIVO")
-    fi
-
-    if systemctl is-active --quiet nginx 2>/dev/null; then
-        local ng_ports=$(get_nginx_ports 2>/dev/null)
-        local all_nginx=$(echo "$ng_ports" | tr ' ' ',' 2>/dev/null)
-        [[ -n "$all_nginx" ]] && ACTIVE_ITEMS+=("🔀 Nginx  : $(truncate_str "$all_nginx")") || ACTIVE_ITEMS+=("🔀 Nginx  : ACTIVO")
-    fi
-
-    local v_cfg=$(get_v2ray_cfg_path)
-    if systemctl is-active --quiet v2ray 2>/dev/null; then
-        local v_out=$(python3 -c '
-import json, sys, re, subprocess
-ports = set()
-try:
-    with open(sys.argv[1], "r") as f: data = json.load(f)
-    inbounds = data.get("inbounds", [])
-    if isinstance(data, dict) and "inbounds" not in data and "inbound" in data: inbounds = [data["inbound"]]
-    for inb in inbounds:
-        if "port" in inb and str(inb["port"]).isdigit(): ports.add(int(inb["port"]))
-except Exception: pass
-if not ports:
-    try:
-        out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-        for line in out.splitlines():
-            if "v2ray" in line:
-                for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
-    except Exception: pass
-if ports: print(",".join(str(x) for x in sorted(ports)))
-' "$v_cfg" 2>/dev/null)
-        [[ -n "$v_out" ]] && ACTIVE_ITEMS+=("⚡ V2Ray  : $(truncate_str "$v_out")") || ACTIVE_ITEMS+=("⚡ V2Ray  : ACTIVO")
-    fi
-
-    SSHGO_PORTS_RAW=$(get_sshgo_ports 2>/dev/null)
-    if [[ -n "$SSHGO_PORTS_RAW" ]] && (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null); then
-        ACTIVE_ITEMS+=("🚀 SSH-Go : $(truncate_str "$(echo "$SSHGO_PORTS_RAW" | tr ' ' ',')")")
-    fi
-
-    if systemctl is-active --quiet xray 2>/dev/null || pgrep -x xray >/dev/null; then
-        local x_out=$(python3 -c '
-import json, os, re, subprocess
-ports = set()
-for cfg in ["/usr/local/etc/xray/config.json", "/etc/xray/config.json", "/etc/xray/config.yml"]:
-    if os.path.isfile(cfg):
-        try:
-            with open(cfg, "r") as f: data = json.load(f)
-            inbounds = data.get("inbounds", [])
-            if isinstance(data, dict) and "inbounds" not in data and "inbound" in data: inbounds = [data["inbound"]]
-            for inb in inbounds:
-                if "port" in inb and str(inb["port"]).isdigit(): ports.add(int(inb["port"]))
-        except Exception: pass
-try:
-    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-    for line in out.splitlines():
-        if "xray" in line:
-            for m in re.findall(r":(\d+)\s", line): ports.add(int(m))
-except Exception: pass
-if ports: print(",".join(str(x) for x in sorted(ports)))
-' 2>/dev/null)
-        [[ -n "$x_out" ]] && ACTIVE_ITEMS+=("🔰 XRay   : $(truncate_str "$x_out")") || ACTIVE_ITEMS+=("🔰 XRay   : ACTIVO")
-    fi
-
-    if systemctl is-active --quiet udp-custom 2>/dev/null || systemctl is-active --quiet udp-hysteria 2>/dev/null || systemctl is-active --quiet zivpn 2>/dev/null; then
-        local u_p=$(get_udp_port)
-        [[ -n "$u_p" ]] && ACTIVE_ITEMS+=("⚡ UDP    : $(truncate_str "$u_p")") || ACTIVE_ITEMS+=("⚡ UDP    : ON")
-    fi
-
-    if pgrep -f badvpn-udpgw >/dev/null 2>&1 || systemctl is-active --quiet badvpn 2>/dev/null; then
-        local badvpn_ports=$(python3 -c '
-import subprocess, re
-try:
-    out = subprocess.check_output("ps aux | grep badvpn-udpgw | grep -v grep", shell=True).decode()
-    ports = [int(p) for p in re.findall(r"--listen-addr\s+127\.0\.0\.1:(\d+)", out)]
-    if ports: print(",".join(str(x) for x in sorted(list(set(ports)))))
-except Exception: pass
-' 2>/dev/null)
-        [[ -n "$badvpn_ports" ]] && ACTIVE_ITEMS+=("🚀 BadVPN : $(truncate_str "$badvpn_ports")") || ACTIVE_ITEMS+=("🚀 BadVPN : ON")
-    fi
-
-    if pgrep -f "socks-rust" >/dev/null || pgrep -f "rust-proxy" >/dev/null || pgrep -x "rust" >/dev/null || systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null; then
-        local r_p=$(get_socks_config_port)
-        [[ -n "$r_p" ]] && ACTIVE_ITEMS+=("🦀 Rust   : $(truncate_str "$r_p")") || ACTIVE_ITEMS+=("🦀 Rust   : ON")
-    fi
-
-    if pgrep -f "proxy.py" >/dev/null || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && ! pgrep -f "socks-rust" >/dev/null && ! pgrep -f "rust-proxy" >/dev/null && ! pgrep -x "rust" >/dev/null); then
-        local p_p=$(get_socks_config_port)
-        [[ -n "$p_p" ]] && ACTIVE_ITEMS+=("🐍 Python : $(truncate_str "$p_p")") || ACTIVE_ITEMS+=("🐍 Python : ON")
-    fi
-
-    if systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null || pgrep -f "slowdns" >/dev/null || pgrep -f "dnstt" >/dev/null; then
-        local dns_p=$(get_slowdns_ports)
-        [[ -n "$dns_p" ]] && ACTIVE_ITEMS+=("🐌 SlowDNS: $(truncate_str "$dns_p")") || ACTIVE_ITEMS+=("🐌 SlowDNS: ON")
-    fi
-
-    if systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null; then
-        local ssl_p=$(get_ssl_ports)
-        [[ -n "$ssl_p" ]] && ACTIVE_ITEMS+=("🔒 SSL/TLS: $(truncate_str "$ssl_p")") || ACTIVE_ITEMS+=("🔒 SSL/TLS: ON")
-    fi
-
-    SSH_PORT_DISPLAY="22"
-    if [[ -f /etc/ssh/sshd_config ]]; then
-        local ssh_p=$(grep -i "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tr '\n' ',' | sed 's/,$//')
-        [[ -n "$ssh_p" ]] && SSH_PORT_DISPLAY="$ssh_p"
-    fi
-    ACTIVE_ITEMS+=("🔐 SSH    : $SSH_PORT_DISPLAY")
-}
-
-render_ui() {
-    local mode="${1:-full}"
-    clear_screen
-    get_sys_info
-    get_ports_summary
-
-    local json_items="[]"
-    if [[ ${#ACTIVE_ITEMS[@]} -gt 0 ]]; then
-        json_items=$(python3 -c 'import sys, json; print(json.dumps(sys.argv[1:]))' "${ACTIVE_ITEMS[@]}" 2>/dev/null)
-    fi
-
-    python3 -c '
-import sys, os, shutil, re, unicodedata, json
-
-version = sys.argv[1]
-ip = sys.argv[2]
-os_info = sys.argv[3]
-ram = sys.argv[4]
-active_items = json.loads(sys.argv[5]) if len(sys.argv) > 5 else []
-mode = sys.argv[6] if len(sys.argv) > 6 else "full"
-
-try:
-    cols = shutil.get_terminal_size().columns
-except Exception:
-    cols = 80
-
-cols = max(50, min(cols, 100))
-margin = " "
-w = cols - 4
-
-# Colores Normales y Brillantes
-RED = "\033[0;31m"
-GREEN = "\033[0;32m"
-YELLOW = "\033[1;33m"
-BLUE = "\033[0;34m"
-PURPLE = "\033[0;35m"
-CYAN = "\033[0;36m"
-WHITE = "\033[1;37m"
-BOLD = "\033[1m"
-NC = "\033[0m"
-
-B_RED = "\033[1;31m"
-B_GREEN = "\033[1;32m"
-B_YELLOW = "\033[1;33m"
-B_BLUE = "\033[1;34m"
-B_PURPLE = "\033[1;35m"
-B_CYAN = "\033[1;36m"
-B_WHITE = "\033[1;37m"
-
-def vis_len(text):
-    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
-    l = 0
-    for ch in clean:
-        ord_c = ord(ch)
-        if ord_c in (0xFE0F, 0xFE0E):
-            continue
-        if (0x1F000 <= ord_c <= 0x1FAFF) or \
-           (0x2600 <= ord_c <= 0x27BF) or \
-           (0x2300 <= ord_c <= 0x23FF) or \
-           (0x2B50 <= ord_c <= 0x2B55) or \
-           unicodedata.east_asian_width(ch) in ("F", "W"):
-            l += 2
-        else:
-            l += 1
-    return l
-
-def empty_row(color):
-    print(margin + color + "│" + NC + (" " * (w - 2)) + color + "│" + NC)
-
-# 1. Cabecera Superior (Siempre presente)
-print(margin + B_BLUE + "╔" + ("═" * (w - 2)) + "╗" + NC)
-
-title = B_WHITE + "🚀 ARIADNY MASTER PANEL " + version + NC
-vt = vis_len(title)
-pt = max(0, (w - 2 - vt) // 2)
-ptr = max(0, w - 2 - vt - pt)
-print(margin + B_BLUE + "║" + NC + (" " * pt) + title + (" " * ptr) + B_BLUE + "║" + NC)
-
-info_str = B_CYAN + "IP: " + ip + NC + "   " + B_CYAN + "OS: " + os_info + NC + "   " + B_GREEN + "RAM: " + ram + NC
-vi = vis_len(info_str)
-pi = max(0, (w - 2 - vi) // 2)
-pir = max(0, w - 2 - vi - pi)
-print(margin + B_BLUE + "║" + NC + (" " * pi) + info_str + (" " * pir) + B_BLUE + "║" + NC)
-
-creator_str = B_YELLOW + "Creador: " + NC + B_WHITE + "Yelsin Machado" + NC
-vc = vis_len(creator_str)
-pc = max(0, (w - 2 - vc) // 2)
-pcr = max(0, w - 2 - vc - pc)
-print(margin + B_BLUE + "║" + NC + (" " * pc) + creator_str + (" " * pcr) + B_BLUE + "║" + NC)
-
-print(margin + B_BLUE + "╚" + ("═" * (w - 2)) + "╝" + NC)
-
-# 2. Cuadro de Puertos Activos
-if active_items:
-    t_act = "PUERTOS Y SERVICIOS ACTIVOS"
-    vt_act = vis_len(t_act)
-    rem_act = max(0, w - 6 - vt_act)
-    top_p = "┌── " + t_act + " " + ("─" * rem_act) + "┐"
-    bot_p = "└" + ("─" * (w - 2)) + "┘"
-    print(margin + B_PURPLE + top_p + NC)
-    
-    half_w = (w - 4) // 2
-    for i in range(0, len(active_items), 2):
-        it1 = active_items[i]
-        it2 = active_items[i+1] if i+1 < len(active_items) else ""
-        v1 = vis_len(it1)
-        p1 = max(0, half_w - v1)
-        s1 = it1 + (" " * p1)
-        v2 = vis_len(it2)
-        p2 = max(0, (w - 2 - half_w) - v2)
-        s2 = it2 + (" " * p2)
-        print(margin + B_PURPLE + "│" + NC + s1 + s2 + B_PURPLE + "│" + NC)
-    print(margin + B_PURPLE + bot_p + NC)
-
-# 3. Menú según el modo de pantalla
-if mode == "full":
-    t_m1 = "PROTOCOLOS & PROXIES"
-    vt_m1 = vis_len(t_m1)
-    rem_m1 = max(0, w - 6 - vt_m1)
-    top_m1 = "┌── " + t_m1 + " " + ("─" * rem_m1) + "┐"
-    print(margin + B_BLUE + top_m1 + NC)
-
-    opts1 = [
-        (B_CYAN + "[01]" + NC + " 🔀 " + WHITE + "Multiplexores" + NC, B_YELLOW + "[02]" + NC + " ⚡ " + WHITE + "V2Ray / VMess" + NC),
-        (B_GREEN + "[03]" + NC + " 🚀 " + WHITE + "SSH-Go Proxy" + NC, B_PURPLE + "[04]" + NC + " 🔰 " + WHITE + "XRay Panel" + NC),
-        (B_RED + "[05]" + NC + " ⚡ " + WHITE + "UDP Panel" + NC, B_YELLOW + "[06]" + NC + " 🦀 " + WHITE + "SOCKS Proxy Rust" + NC),
-        (B_GREEN + "[07]" + NC + " 🐍 " + WHITE + "SOCKS Proxy Python" + NC, B_CYAN + "[08]" + NC + " 👥 " + WHITE + "SSH Panel / User" + NC),
-        (B_PURPLE + "[09]" + NC + " 🚀 " + WHITE + "BadVPN UDPGW" + NC, B_YELLOW + "[10]" + NC + " 🐌 " + WHITE + "SlowDNS Panel" + NC),
-        (B_BLUE + "[11]" + NC + " 🔒 " + WHITE + "SSL / TLS Manager" + NC, B_YELLOW + "[12]" + NC + " 📁 " + B_YELLOW + "Más Opciones..." + NC),
-    ]
-
-    half_w = (w - 4) // 2
-    for c1, c2 in opts1:
-        v1 = vis_len(c1)
-        p1 = max(0, half_w - v1)
-        s1 = c1 + (" " * p1)
-        v2 = vis_len(c2)
-        p2 = max(0, (w - 2 - half_w) - v2)
-        s2 = c2 + (" " * p2)
-        print(margin + B_BLUE + "│" + NC + s1 + s2 + B_BLUE + "│" + NC)
-
-    empty_row(B_BLUE)
-
-    t_m2 = "GESTIÓN & MANTENIMIENTO"
-    vt_m2 = vis_len(t_m2)
-    rem_m2 = max(0, w - 6 - vt_m2)
-    mid_m2 = "├── " + t_m2 + " " + ("─" * rem_m2) + "┤"
-    print(margin + B_BLUE + mid_m2 + NC)
-
-    opts2 = [
-        (B_RED + "[13]" + NC + " 🛡 " + WHITE + "Firewall" + NC, B_GREEN + "[14]" + NC + " 🔐 " + WHITE + "Configurar SSH" + NC),
-        (B_CYAN + "[15]" + NC + " 📊 " + WHITE + "Monitoreo Sistema" + NC, B_PURPLE + "[16]" + NC + " 📋 " + WHITE + "Estado General" + NC),
-        (B_RED + "[00]" + NC + " 🚪 " + B_RED + "Salir del Panel" + NC, ""),
-    ]
-
-    for c1, c2 in opts2:
-        v1 = vis_len(c1)
-        p1 = max(0, half_w - v1)
-        s1 = c1 + (" " * p1)
-        v2 = vis_len(c2)
-        p2 = max(0, (w - 2 - half_w) - v2)
-        s2 = c2 + (" " * p2)
-        print(margin + B_BLUE + "│" + NC + s1 + s2 + B_BLUE + "│" + NC)
-
-    bot_m = "└" + ("─" * (w - 2)) + "┘"
-    print(margin + B_BLUE + bot_m + NC)
-
-elif mode == "sub_multiplexacion":
-    t_sub = "MULTIPLEXACIÓN & PROXIES WEB"
-    vt_sub = vis_len(t_sub)
-    rem_sub = max(0, w - 6 - vt_sub)
-    top_sub = "┌── " + t_sub + " " + ("─" * rem_sub) + "┐"
-    print(margin + B_BLUE + top_sub + NC)
-
-    sub_opts = [
-        B_CYAN + "[01]" + NC + " 🌐 " + WHITE + "Caddy Server" + NC,
-        B_CYAN + "[02]" + NC + " 🔀 " + WHITE + "Nginx Proxy" + NC,
-        B_RED + "[00]" + NC + " ⬅️  " + B_RED + "Volver al Menú Principal" + NC
-    ]
-
-    for item in sub_opts:
-        v = vis_len(item)
-        p = max(0, w - 2 - v)
-        print(margin + B_BLUE + "│" + NC + item + (" " * p) + B_BLUE + "│" + NC)
-
-    print(margin + B_BLUE + "└" + ("─" * (w - 2)) + "┘" + NC)
-
-elif mode == "sub_mas_opciones":
-    t_sub = "MÁS OPCIONES & HERRAMIENTAS"
-    vt_sub = vis_len(t_sub)
-    rem_sub = max(0, w - 6 - vt_sub)
-    top_sub = "┌── " + t_sub + " " + ("─" * rem_sub) + "┐"
-    print(margin + B_BLUE + top_sub + NC)
-
-    sub_opts = [
-        B_CYAN + "[01]" + NC + " ⚙️  " + WHITE + "Nueva Función 1 (Disponible)" + NC,
-        B_CYAN + "[02]" + NC + " ⚙️  " + WHITE + "Nueva Función 2 (Disponible)" + NC,
-        B_RED + "[00]" + NC + " ⬅️  " + B_RED + "Volver al Menú Principal" + NC
-    ]
-
-    for item in sub_opts:
-        v = vis_len(item)
-        p = max(0, w - 2 - v)
-        print(margin + B_BLUE + "│" + NC + item + (" " * p) + B_BLUE + "│" + NC)
-
-    print(margin + B_BLUE + "└" + ("─" * (w - 2)) + "┘" + NC)
-' "$VERSION" "$IP_ADDR" "$OS_INFO" "$RAM_INFO" "$json_items" "$mode" 2>/dev/null
 }
 
 header() {
-    render_ui "full"
+    clear
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}${BOLD}                XRAY MANAGER PANEL (v1.8.24)             ${NC}"
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
+    echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC}  ${YELLOW}${SERVER_IP}${NC}"
+    echo -e " ${PURPLE}${BOLD}▸ Estado Xray:${NC}  $(get_status)"
+    echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────${NC}"
 }
 
-panel_header() {
-    local title="$1"
-    local icon="${2:-◆}"
-    render_ui "header"
-    printf "\n  %b%s %s%b\n\n" "$YELLOW$BOLD" "$icon" "$title" "$NC"
+pause_screen() {
+    echo
+    echo -e -n "${YELLOW}Presiona [ENTER] para regresar al menú...${NC}"
+    read -r _
 }
 
-download_to_path() {
-    local script_name="$1"
-    local destination="$2"
+read_val() {
+    local var="$1" prompt="$2" def="$3" val
+    echo -e -n "${CYAN}➜ ${NC}${WHITE}${prompt}${NC} "
+    read -r val
+    val=$(echo "$val" | tr -d '\r\n')
+    [[ -z "$val" ]] && val="$def"
+    printf -v "$var" '%s' "$val"
+}
 
-    printf "  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
+setup_tls_cert() {
+    local domain="$1"
+    mkdir -p /usr/local/xray
 
-    if curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$destination" 2>/dev/null && [[ -s "$destination" ]]; then
-        chmod 700 "$destination"
-        info "Archivo instalado en $destination"
+    open_port 80
+    open_port 443
+
+    if [[ "$domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
+        openssl req -new -x509 -days 3650 \
+            -key "${CERT_DIR}/key.pem" \
+            -out "${CERT_DIR}/cert.pem" \
+            -subj "/C=US/ST=State/L=City/O=Xray/CN=${domain}" >/dev/null 2>&1
+        chmod 600 "${CERT_DIR}/key.pem"
+        chmod 644 "${CERT_DIR}/cert.pem"
         return 0
     fi
 
-    error_msg "No se pudo descargar $script_name o el archivo está vacío."
-    rm -f "$destination"
-    return 1
-}
+    header
+    echo -e "${PURPLE}${BOLD}[ 🔒 CONFIGURACIÓN SSL / TLS PARA DOMINIO ]${NC}\n"
+    echo -e " Dominio detectado: ${YELLOW}${domain}${NC}\n"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${GREEN}Let's Encrypt (Oficial / Válido)${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${YELLOW}Autofirmado (Rápido / Pruebas)${NC}\n"
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Selecciona una opción [1-2]: ${NC}"
+    read -r cert_opt
 
-download_and_execute() {
-    local script_name="$1"
-    local temporary="/tmp/${script_name##*/}.$$"
-
-    if ! curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$temporary" 2>/dev/null || [[ ! -s "$temporary" ]]; then
-        rm -f "$temporary"
-        return 1
-    fi
-
-    chmod 700 "$temporary"
-
-    printf "  %b🚀 Ejecutando %s...%b\n\n" "$GREEN" "$script_name" "$NC"
-
-    bash "$temporary"
-    local result=$?
-
-    rm -f "$temporary"
-
-    if ((result == 0)); then
-        info "$script_name finalizó correctamente."
-    else
-        error_msg "$script_name terminó con errores."
-    fi
-
-    return "$result"
-}
-
-execute_script() {
-    local primary="$1"
-    local secondary="$2"
-    local tertiary="$3"
-
-    if download_and_execute "$primary"; then
-        return 0
-    elif [[ -n "$secondary" ]] && download_and_execute "$secondary"; then
-        return 0
-    elif [[ -n "$tertiary" ]] && download_and_execute "$tertiary"; then
-        return 0
-    else
-        error_msg "No se pudo descargar ningún script ($primary). Verifica el nombre en tu GitHub."
-        return 1
-    fi
-}
-
-is_python_installed() {
-    [[ -f /root/proxy.py ]] || [[ -f /usr/local/bin/proxy ]] || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && pgrep -f "proxy.py" >/dev/null)
-}
-
-caddy_menu() {
-    if systemctl is-active --quiet caddy 2>/dev/null; then
-        if [[ -x /usr/local/bin/cadmin ]]; then
-            /usr/local/bin/cadmin
-        elif [[ -x /usr/bin/cadmin ]]; then
-            /usr/bin/cadmin
-        else
-            panel_header "INSTALANDO/EJECUTANDO CADDY PROXY" "🌐"
-            execute_script "install-caddy.sh" "caddy.sh" "Caddy.sh"
-            pause_screen
+    if [[ "$cert_opt" == "1" ]]; then
+        if ! command -v certbot >/dev/null 2>&1; then
+            apt-get update -y -qq >/dev/null 2>&1
+            apt-get install -y -qq certbot >/dev/null 2>&1
         fi
-    else
-        panel_header "INSTALANDO CADDY PROXY DESDE GITHUB" "🌐"
-        execute_script "install-caddy.sh" "caddy.sh" "Caddy.sh"
-        pause_screen
-    fi
-}
 
-nginx_menu() {
-    if systemctl is-active --quiet nginx 2>/dev/null; then
-        if [[ -x /usr/local/bin/MenuN ]]; then
-            /usr/local/bin/MenuN
-        elif [[ -x /usr/local/bin/menun ]]; then
-            /usr/local/bin/menun
-        else
-            panel_header "EJECUTANDO NGINX PROXY" "🔀"
-            execute_script "nginx.sh" "Nginx.sh"
-            pause_screen
+        systemctl stop xray 2>/dev/null
+        fuser -k 80/tcp >/dev/null 2>&1
+
+        DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
+
+        if [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
+            cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
+            cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${CERT_DIR}/key.pem"
+            chmod 600 "${CERT_DIR}/key.pem"
+            chmod 644 "${CERT_DIR}/cert.pem"
+            return 0
         fi
-    else
-        panel_header "INSTALANDO NGINX PROXY DESDE GITHUB" "🔀"
-        execute_script "nginx.sh" "Nginx.sh"
-        pause_screen
     fi
+
+    openssl genrsa -out "${CERT_DIR}/key.pem" 2048 >/dev/null 2>&1
+    openssl req -new -x509 -days 3650 \
+        -key "${CERT_DIR}/key.pem" \
+        -out "${CERT_DIR}/cert.pem" \
+        -subj "/C=US/ST=State/L=City/O=Xray/CN=${domain}" >/dev/null 2>&1
+    chmod 600 "${CERT_DIR}/key.pem"
+    chmod 644 "${CERT_DIR}/cert.pem"
+    return 0
 }
 
-multiplexacion_menu() {
-    while true; do
-        render_ui "sub_multiplexacion"
+show_info() {
+    header
+    echo -e "${PURPLE}${BOLD}[ 📋 DATOS DE CONEXIÓN ACTUAL ]${NC}\n"
+    python3 - "$CONFIG_FILE" <<'PY'
+import json, sys, base64, urllib.parse
 
-        printf "\n"
-        echo -ne "  \033[1;33m> Selecciona una opción [0-2]: \033[0m"
-        read sub_m
-        sub_m=$(echo "$sub_m" | tr -d '\r\n\t ')
+try:
+    with open(sys.argv[1], "r") as f:
+        cfg = json.load(f)
+except Exception:
+    print("\033[0;31mError al leer la configuración actual.\033[0m")
+    sys.exit(1)
 
-        case "$sub_m" in
-            1|01) caddy_menu ;;
-            2|02) nginx_menu ;;
-            0|00) break ;;
-            *) warn "Opción inválida."; sleep 1 ;;
-        esac
-    done
+dom = str(cfg.get("_domain", "127.0.0.1")).strip()
+pub_key = str(cfg.get("_pub_key", "")).strip()
+sni = str(cfg.get("_sni", "")).strip()
+short_id = str(cfg.get("_short_id", "")).strip()
+
+inb = (cfg.get("inbounds") or [{}])[0]
+proto = str(inb.get("protocol", "desconocido")).strip()
+port = inb.get("port", 443)
+st = inb.get("settings") or {}
+str_st = inb.get("streamSettings") or {}
+trans = str(str_st.get("network", "tcp")).strip()
+sec = str(str_st.get("security", "none")).strip()
+
+extra = ""
+ws_host = dom
+if trans == "ws":
+    ws_st = str_st.get("wsSettings") or {}
+    extra = str(ws_st.get("path", "/trojan")).strip()
+    ws_host = str((ws_st.get("headers") or {}).get("Host", dom)).strip()
+elif trans == "grpc":
+    grpc_st = str_st.get("grpcSettings") or {}
+    extra = str(grpc_st.get("serviceName", "grpc")).strip()
+
+print(f"\033[1;37mProtocolo   :\033[0m \033[0;36m{proto.upper()}\033[0m")
+print(f"\033[1;37mHost / IP   :\033[0m \033[1;33m{dom}\033[0m")
+print(f"\033[1;37mPuerto      :\033[0m \033[0;32m{port}\033[0m")
+print(f"\033[1;37mTransporte  :\033[0m \033[0;36m{trans}\033[0m")
+print(f"\033[1;37mSeguridad   :\033[0m \033[0;36m{sec}\033[0m")
+
+if trans == "ws":
+    print(f"\033[1;37mPath WS     :\033[0m \033[0;36m{extra}\033[0m")
+    print(f"\033[1;37mHost WS     :\033[0m \033[1;33m{ws_host}\033[0m")
+elif trans == "grpc":
+    print(f"\033[1;37mServiceName :\033[0m \033[0;36m{extra}\033[0m")
+
+if sec == "reality":
+    print(f"\033[1;37mPublic Key  :\033[0m \033[1;33m{pub_key}\033[0m")
+    print(f"\033[1;37mSNI         :\033[0m \033[0;36m{sni}\033[0m")
+    print(f"\033[1;37mShort ID    :\033[0m \033[0;36m{short_id}\033[0m")
+
+print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n")
+
+if proto == "shadowsocks":
+    method = st.get("method", "aes-256-gcm")
+    pass_val = str(st.get("password", "")).strip()
+    b64_ss = base64.b64encode(f"{method}:{pass_val}".encode()).decode()
+    link = f"ss://{b64_ss}@{dom}:{port}#Xray-Shadowsocks"
+    print(f"\033[1;37m[Usuario 1]\033[0m Clave: \033[1;33m{pass_val}\033[0m")
+    print(f"\033[0;32mEnlace:\033[0m {link}\n")
+else:
+    clients = st.get("clients", [])
+    for idx, c in enumerate(clients, 1):
+        user_id = str(c.get("id") or c.get("password") or "").strip()
+        print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
+        
+        link = ""
+        if proto == "vless":
+            if sec == "reality":
+                link = f"vless://{user_id}@{dom}:{port}?type=tcp&security=reality&encryption=none&pbk={pub_key}&fp=chrome&sni={sni}&sid={short_id}&flow=xtls-rprx-vision#Xray-VLESS-REALITY"
+            else:
+                params = f"encryption=none&type={trans}&security={sec}"
+                if trans == "ws":
+                    params += f"&path={urllib.parse.quote(extra, safe='/')}&host={urllib.parse.quote(ws_host)}"
+                elif trans == "grpc":
+                    params += f"&serviceName={urllib.parse.quote(extra, safe='')}&mode=gun"
+                if sec == "tls":
+                    params += f"&sni={urllib.parse.quote(dom)}"
+                link = f"vless://{user_id}@{dom}:{port}?{params}#Xray-VLESS"
+
+        elif proto == "vmess":
+            v_json = {
+                "v": "2", "ps": f"Xray-VMess-{idx}", "add": dom, "port": str(port),
+                "id": user_id, "aid": "0", "net": trans, "type": "none",
+                "host": ws_host if trans == "ws" else "",
+                "path": extra if trans == "ws" else "",
+                "tls": "tls" if sec == "tls" else "",
+                "sni": dom if sec == "tls" else "",
+                "serviceName": extra if trans == "grpc" else ""
+            }
+            b64 = base64.b64encode(json.dumps(v_json).encode()).decode()
+            link = f"vmess://{b64}"
+
+        elif proto == "trojan":
+            params = f"type={trans}"
+            if sec == "tls":
+                params += f"&security=tls&sni={urllib.parse.quote(dom)}"
+            elif sec == "reality":
+                params += f"&security=reality&pbk={pub_key}&sni={sni}&sid={short_id}"
+            
+            if trans == "ws":
+                host_for_link = ws_host if ws_host else dom
+                params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='/')}"
+            elif trans == "grpc":
+                params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
+            
+            link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
+
+        elif proto == "socks":
+            link = f"socks5://{dom}:{port}#Xray-SOCKS5"
+
+        if link:
+            print(f"\033[0;32mEnlace:\033[0m {link}\n")
+
+PY
+    pause_screen
 }
 
-# ============================================================
-# V2RAY MENU - CORREGIDO (Subshell sin traps)
-# ============================================================
-v2ray_menu() {
-    panel_header "INSTALANDO/EJECUTANDO V2RAY" "⚡"
-    if [[ -x /usr/local/bin/v2ray ]]; then
-        (
-            trap - EXIT INT TERM
-            /usr/local/bin/v2ray
-        )
-    elif [[ -x /usr/bin/v2ray ]]; then
-        (
-            trap - EXIT INT TERM
-            /usr/bin/v2ray
-        )
-    else
-        execute_script "install-v2ray.sh" "v2ray.sh" "V2ray.sh"
-        pause_screen
+configure_protocol() {
+    header
+    echo -e "${PURPLE}${BOLD}🌐 SELECCIONA UN PROTOCOLO:${NC}\n"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}VLESS${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}VMess${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}Trojan${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}Shadowsocks${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${CYAN}SOCKS5${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}Volver al Menú${NC}\n"
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción [0-5]: ${NC}"
+    read -r popt
+
+    local proto=""
+    case "$popt" in
+        1) proto="vless" ;;
+        2) proto="vmess" ;;
+        3) proto="trojan" ;;
+        4) proto="shadowsocks" ;;
+        5) proto="socks" ;;
+        0|*) return ;;
+    esac
+
+    header
+    echo -e "${PURPLE}${BOLD}📝 DATOS DE CONEXIÓN:${NC}\n"
+    local dom="$SERVER_IP" port="443" extra="" user="" host_header="$SERVER_IP"
+    read_val dom "Dominio o IP [${SERVER_IP}]:" "$SERVER_IP"
+    host_header="$dom"
+    read_val port "Puerto [443]:" "443"
+
+    open_port "$port"
+
+    local auto_user
+    if command -v python3 &>/dev/null; then
+        auto_user=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
     fi
-}
-
-# ============================================================
-# XRAY MENU - CORREGIDO (Subshell sin traps)
-# ============================================================
-xray_menu() {
-    if command_exists menuV2; then
-        menuV2
-    elif systemctl is-active --quiet xray 2>/dev/null; then
-        if [[ -x /usr/local/bin/xray ]]; then
-            (
-                trap - EXIT INT TERM
-                /usr/local/bin/xray
-            )
-        elif [[ -x /usr/bin/xray ]]; then
-            (
-                trap - EXIT INT TERM
-                /usr/bin/xray
-            )
-        else
-            panel_header "EJECUTANDO XRAY PANEL" "🔰"
-            execute_script "install-xray.sh" "xray.sh" "Xray.sh"
-            pause_screen
-        fi
-    else
-        panel_header "INSTALANDO XRAY PANEL DESDE GITHUB" "🔰"
-        execute_script "install-xray.sh" "xray.sh" "Xray.sh"
-        pause_screen
+    if [[ -z "$auto_user" ]]; then
+        auto_user=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s | sha256sum | head -c 32)
     fi
-}
-
-sshgo_menu() {
-    panel_header "SSH-GO PROXY" "🚀"
-    execute_script "install-sshgo.sh" "sshgo.sh" "Sshgo.sh"
-    pause_screen
-}
-
-badvpn_menu() {
-    panel_header "BADVPN UDPGW" "🚀"
-    execute_script "badvpn-udpgw.sh" "badvpn.sh" "Badvpn.sh"
-    pause_screen
-}
-
-slowdns_menu() {
-    panel_header "SLOWDNS PANEL" "🐌"
-    execute_script "slowdns.sh" "Slowdns.sh"
-    pause_screen
-}
-
-ssl_menu() {
-    panel_header "CERTIFICADO SSL / STUNNEL" "🔒"
-    execute_script "ssl.sh" "Ssl.sh"
-    pause_screen
-}
-
-mas_opciones_menu() {
-    while true; do
-        render_ui "sub_mas_opciones"
-
-        printf "\n"
-        echo -ne "  \033[1;33m> Selecciona una opción [0-2]: \033[0m"
-        read sub_op
-        sub_op=$(echo "$sub_op" | tr -d '\r\n\t ')
-
-        case "$sub_op" in
-            1|01)
-                info "Aquí puedes vincular tu nueva función 1."
-                pause_screen
-                ;;
-            2|02)
-                info "Aquí puedes vincular tu nueva función 2."
-                pause_screen
-                ;;
-            0|00) break ;;
-            *) warn "Opción inválida."; sleep 1 ;;
-        esac
-    done
-}
-
-firewall_menu() {
-    panel_header "FIREWALL SYSTEM" "🛡️"
-    execute_script "firewall.sh" "Firewall.sh"
-    pause_screen
-}
-
-udp_menu() {
-    panel_header "UDP PANEL" "⚡"
-    execute_script "Udp.sh" "udp.sh" "install-udp.sh"
-    pause_screen
-}
-
-rust_menu() {
-    panel_header "SOCKS PROXY RUST" "🦀"
-    execute_script "rust.sh" "Rust.sh"
-    pause_screen
-}
-
-python_menu() {
-    if is_python_installed; then
-        if [[ -x /usr/local/bin/proxy ]]; then
-            /usr/local/bin/proxy
-        elif [[ -f /root/proxy.py ]]; then
-            python3 /root/proxy.py
-        else
-            panel_header "SOCKS PROXY PYTHON" "🐍"
-            execute_script "Python.sh" "python.sh" "proxy.sh"
-            pause_screen
-        fi
-    else
-        panel_header "SOCKS PROXY PYTHON" "🐍"
-        execute_script "Python.sh" "python.sh" "proxy.sh"
-        pause_screen
-    fi
-}
-
-ssh_panel_menu() {
-    local ssh_panel="/usr/local/bin/sshpanel.sh"
-    panel_header "SSH PANEL MANAGER" "👥"
-    printf "  %bDescargando panel SSH...%b\n" "$CYAN" "$NC"
-    if download_to_path "sshpanel.sh" "$ssh_panel" || download_to_path "Sshpanel.sh" "$ssh_panel"; then
-        bash "$ssh_panel"
-    fi
-    pause_screen
-}
-
-configure_ssh() {
-    panel_header "CONFIGURACIÓN DE SSH" "🔐"
-    execute_script "ssh.sh" "Ssh.sh"
-    pause_screen
-}
-
-monitor_menu() {
-    panel_header "MONITOREO DEL SISTEMA" "📊"
-    printf "  %bSistema    :%b %s\n" "$WHITE" "$NC" "$(awk -F= '/^PRETTY_NAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release)"
-    printf "  %bMemoria    :%b %s\n" "$WHITE" "$NC" "$(free -h | awk 'NR==2 {print $3 " / " $2}')"
-    printf "  %bDisco      :%b %s\n" "$WHITE" "$NC" "$(df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')"
-    printf "  %bUptime     :%b %s\n" "$WHITE" "$NC" "$(uptime -p 2>/dev/null || echo N/A)"
-    pause_screen
-}
-
-status_menu() {
-    panel_header "ESTADO GENERAL DE SERVICIOS" "📋"
-    printf "  Caddy:       "; systemctl is-active --quiet caddy 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  Nginx:       "; systemctl is-active --quiet nginx 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  V2Ray:       "; systemctl is-active --quiet v2ray 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  SSH-Go:      "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  BadVPN:      "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
     
-    local dns_p=$(get_slowdns_ports)
-    printf "  SlowDNS:     "
-    if (systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null || pgrep -f "slowdns" >/dev/null); then
-        [[ -n "$dns_p" ]] && info "ACTIVO (Puerto: $dns_p)" || info "ACTIVO"
-    else
-        warn "INACTIVO"
+    local prompt_user="Contraseña / ID (UUID) [Auto]:"
+    if [[ "$proto" == "trojan" || "$proto" == "shadowsocks" ]]; then
+        prompt_user="Contraseña [Auto]:"
+    fi
+    read_val user "$prompt_user" "$auto_user"
+
+    header
+    echo -e "${PURPLE}${BOLD}🛠️  TRANSPORTE Y SEGURIDAD:${NC}\n"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} TCP Directo"
+    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} TCP + TLS"
+    echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} WebSocket (WS)"
+    echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} WebSocket + TLS"
+    echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} gRPC"
+    echo -e "  ${WHITE}${BOLD}[ 6 ]${NC} gRPC + TLS"
+    if [[ "$proto" == "vless" ]]; then
+        echo -e "  ${WHITE}${BOLD}[ 7 ]${NC} ${GREEN}VLESS + REALITY (Vision)${NC}"
+    fi
+    echo
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción: ${NC}"
+    read -r topt
+
+    local trans="tcp" sec="none" sni="" dest="" priv_key="" pub_key="" short_id=""
+    case "$topt" in
+        1) trans="tcp"; sec="none" ;;
+        2) trans="tcp"; sec="tls" ;;
+        3) 
+            trans="ws"; sec="none"
+            read_val extra "Path WS [/trojan-ws]:" "/trojan-ws"
+            read_val host_header "Host Header WS [${dom}]:" "$dom"
+            ;;
+        4) 
+            trans="ws"; sec="tls"
+            read_val extra "Path WS [/trojan-ws]:" "/trojan-ws"
+            read_val host_header "Host Header WS [${dom}]:" "$dom"
+            ;;
+        5) 
+            trans="grpc"; sec="none"
+            read_val extra "Service Name gRPC [grpc]:" "grpc"
+            ;;
+        6) 
+            trans="grpc"; sec="tls"
+            read_val extra "Service Name gRPC [grpc]:" "grpc"
+            ;;
+        7) 
+            if [[ "$proto" == "vless" ]]; then
+                trans="tcp"; sec="reality"
+                read_val sni "Target SNI (ej: www.apple.com):" "www.apple.com"
+                read_val dest "Target Dest (ej: www.apple.com:443):" "www.apple.com:443"
+                
+                local keypair=$($XRAY_BIN x25519 2>/dev/null)
+                priv_key=$(echo "$keypair" | awk -F': ' '/Private key/ {print $2}' | tr -d ' ')
+                pub_key=$(echo "$keypair" | awk -F': ' '/Public key/ {print $2}' | tr -d ' ')
+                short_id=$(openssl rand -hex 4 2>/dev/null || echo "1a2b3c4d")
+            else
+                trans="tcp"; sec="none"
+            fi
+            ;;
+        *) trans="tcp"; sec="none" ;;
+    esac
+
+    if [[ "$sec" == "tls" ]]; then
+        setup_tls_cert "$dom"
     fi
 
-    local ssl_p=$(get_ssl_ports)
-    printf "  SSL/Stunnel: "
-    if (systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null); then
-        [[ -n "$ssl_p" ]] && info "ACTIVO (Puerto: $ssl_p)" || info "ACTIVO"
+    python3 - "$CONFIG_FILE" "$proto" "$port" "$trans" "$sec" "$user" "$extra" "$dom" "$sni" "$dest" "$priv_key" "$pub_key" "$short_id" "$host_header" "$CERT_DIR" <<'PY'
+import json, sys
+
+cfg_file    = sys.argv[1]
+proto       = str(sys.argv[2]).strip()
+port        = int(sys.argv[3])
+trans       = str(sys.argv[4]).strip()
+sec         = str(sys.argv[5]).strip()
+user        = str(sys.argv[6]).strip()
+extra       = str(sys.argv[7]).strip()
+dom         = str(sys.argv[8]).strip()
+sni         = str(sys.argv[9]).strip() if len(sys.argv) > 9 else ""
+dest        = str(sys.argv[10]).strip() if len(sys.argv) > 10 else ""
+priv_key    = str(sys.argv[11]).strip() if len(sys.argv) > 11 else ""
+pub_key     = str(sys.argv[12]).strip() if len(sys.argv) > 12 else ""
+short_id    = str(sys.argv[13]).strip() if len(sys.argv) > 13 else ""
+host_header = str(sys.argv[14]).strip() if len(sys.argv) > 14 else dom
+cert_dir    = str(sys.argv[15]).strip() if len(sys.argv) > 15 else ""
+
+config = {
+    "_domain": dom,
+    "_pub_key": pub_key,
+    "_sni": sni,
+    "_short_id": short_id,
+    "log": {"loglevel": "warning"},
+    "inbounds": [{
+        "listen": "0.0.0.0",
+        "port": port,
+        "protocol": proto,
+        "settings": {},
+        "streamSettings": {
+            "network": trans,
+            "security": sec
+        },
+        "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]}
+    }],
+    "outbounds": [{"protocol": "freedom"}]
+}
+
+inb = config["inbounds"][0]
+st = inb["settings"]
+str_st = inb["streamSettings"]
+
+if proto in ["vless", "vmess"]:
+    client_obj = {"id": user}
+    if sec == "reality":
+        client_obj["flow"] = "xtls-rprx-vision"
+    st["clients"] = [client_obj]
+    if proto == "vless":
+        st["decryption"] = "none"
+elif proto == "trojan":
+    st["clients"] = [{"password": user}]
+elif proto == "shadowsocks":
+    st["method"] = "aes-256-gcm"
+    st["password"] = user
+elif proto == "socks":
+    st["auth"] = "noauth"
+
+if trans == "ws":
+    str_st["wsSettings"] = {"path": extra, "headers": {"Host": host_header}}
+elif trans == "grpc":
+    str_st["grpcSettings"] = {"serviceName": extra, "multiMode": False}
+
+if sec == "tls" and cert_dir:
+    str_st["tlsSettings"] = {
+        "serverName": dom,
+        "certificates": [{
+            "certificateFile": f"{cert_dir}/cert.pem",
+            "keyFile": f"{cert_dir}/key.pem"
+        }]
+    }
+
+if sec == "reality":
+    str_st["realitySettings"] = {
+        "show": False,
+        "dest": dest,
+        "xver": 0,
+        "serverNames": [sni],
+        "privateKey": priv_key,
+        "shortIds": [short_id]
+    }
+
+with open(cfg_file, "w") as f:
+    json.dump(config, f, indent=2)
+PY
+
+    systemctl daemon-reload >/dev/null 2>&1
+    systemctl enable xray >/dev/null 2>&1
+    systemctl restart xray >/dev/null 2>&1
+
+    sleep 1
+    if systemctl is-active --quiet xray; then
+        echo -e "\n${GREEN}✔ Configuración aplicada y Xray reiniciado exitosamente.${NC}"
     else
-        warn "INACTIVO"
+        echo -e "\n${RED}❌ Error: Xray no pudo iniciar. Revisa los logs.${NC}"
+        journalctl -u xray -n 10 --no-pager
     fi
-    pause_screen
+    show_info
 }
 
-main_menu() {
-    while true; do
-        render_ui "full"
+modify_param() {
+    local action="$1" val="$2" val2="$3"
+    python3 - "$CONFIG_FILE" "$action" "$val" "$val2" <<'PY'
+import json, sys
+cfg_file, act, val = sys.argv[1:4]
+val2 = sys.argv[4] if len(sys.argv) > 4 else ""
 
-        printf "\n"
-        echo -ne "  \033[1;33m> Selecciona una opción [0-16]: \033[0m"
-        read option
-        option=$(echo "$option" | tr -d '\r\n\t ')
+val = str(val).strip()
+val2 = str(val2).strip()
 
-        case "$option" in
-            1|01) multiplexacion_menu ;;
-            2|02) v2ray_menu ;;
-            3|03) sshgo_menu ;;
-            4|04) xray_menu ;;
-            5|05) udp_menu ;;
-            6|06) rust_menu ;;
-            7|07) python_menu ;;
-            8|08) ssh_panel_menu ;;
-            9|09) badvpn_menu ;;
-            10) slowdns_menu ;;
-            11) ssl_menu ;;
-            12) mas_opciones_menu ;;
-            13) firewall_menu ;;
-            14) configure_ssh ;;
-            15) monitor_menu ;;
-            16) status_menu ;;
-            0|00)
-                clear_screen
-                printf "\n  %b¡Gracias por usar Ariadny Master Panel!%b\n\n" "$GREEN" "$NC"
-                exit 0
-                ;;
-            *)
-                warn "Selecciona una opción válida."
-                sleep 1
-                ;;
-        esac
-    done
+try:
+    with open(cfg_file, "r") as f: cfg = json.load(f)
+except: sys.exit(1)
+
+inb = (cfg.get("inbounds") or [{}])[0]
+st = inb.get("settings") or {}
+str_st = inb.get("streamSettings") or {}
+
+if act == "port":
+    inb["port"] = int(val)
+elif act == "path":
+    if str_st.get("network") == "ws":
+        ws_st = str_st.setdefault("wsSettings", {})
+        ws_st["path"] = val
+        if val2:
+            headers = ws_st.setdefault("headers", {})
+            headers["Host"] = val2
+    elif str_st.get("network") == "grpc":
+        grpc_st = str_st.setdefault("grpcSettings", {})
+        grpc_st["serviceName"] = val
+elif act == "id":
+    if "password" in st and "clients" not in st:
+        st["password"] = val
+    elif "clients" in st and len(st.get("clients", [])) > 0:
+        if "id" in st["clients"][0]: st["clients"][0]["id"] = val
+        elif "password" in st["clients"][0]: st["clients"][0]["password"] = val
+elif act == "add_id":
+    if "clients" in st and len(st.get("clients", [])) > 0:
+        client_obj = {}
+        if "id" in st["clients"][0]: client_obj["id"] = val
+        elif "password" in st["clients"][0]: client_obj["password"] = val
+        if str_st.get("security") == "reality":
+            client_obj["flow"] = "xtls-rprx-vision"
+        st["clients"].append(client_obj)
+
+with open(cfg_file, "w") as f: json.dump(cfg, f, indent=2)
+PY
+    systemctl restart xray >/dev/null 2>&1
 }
 
-require_root
-install_dependencies
-setup_menu_shortcut
-main_menu
+if [[ "$1" == "run" ]] || [[ "$1" == "-config" ]] || [[ "$1" == "run-config" ]]; then
+    exec /usr/local/xray/xray "$@"
+fi
+
+if [[ -f "$LOCK_FILE" ]]; then
+    rm -f "$LOCK_FILE"
+fi
+touch "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
+
+check_root
+install_core_if_missing
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    configure_protocol
+fi
+
+while true; do
+    header
+    echo -e " ${YELLOW}${BOLD}⚙️  PANEL PRINCIPAL XRAY${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}🔄 Cambiar Protocolo / Transmisión${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}🔌 Cambiar Puerto${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}🛤️  Cambiar Path WS / Host Header / ServiceName gRPC${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}🔑 Cambiar ID / Contraseña Principal${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}➕ Agregar Nuevo Usuario / ID${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 6 ]${NC} ${CYAN}📋 Ver Datos de Conexión / Links${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 7 ]${NC} ${YELLOW}🔍 Ver Logs en Vivo (Monitoreo HTTP Custom)${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 8 ]${NC} ${CYAN}🔄 Reiniciar Servicio Xray${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 9 ]${NC} ${RED}🗑️  Desinstalar Xray por Completo${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}🚪 Salir del Menú${NC}"
+    echo -e "${CYAN}${BOLD}────────────────────────────────────────────────────────────${NC}"
+    echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción [0-9]: ${NC}"
+    read -r op
+
+    case "$op" in
+        1) configure_protocol ;;
+        2)
+            read_val np "Nuevo Puerto:" "9090"
+            open_port "$np"
+            modify_param "port" "$np"
+            echo -e "${GREEN}✔ Puerto actualizado a $np.${NC}"
+            pause_screen
+            ;;
+        3)
+            read_val npath "Nuevo Path WS / ServiceName gRPC:" "/trojan-ws"
+            read_val nhost "Nuevo Host Header WS (Enter para omitir):" ""
+            modify_param "path" "$npath" "$nhost"
+            echo -e "${GREEN}✔ Parámetros actualizados exitosamente.${NC}"
+            pause_screen
+            ;;
+        4)
+            nid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)
+            read_val nid "Nueva ID/Contraseña:" "$nid"
+            modify_param "id" "$nid"
+            echo -e "${GREEN}✔ ID/Contraseña actualizada a $nid${NC}"
+            pause_screen
+            ;;
+        5)
+            aid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)
+            read_val aid "ID/Contraseña a agregar:" "$aid"
+            modify_param "add_id" "$aid"
+            echo -e "${GREEN}✔ ID/Contraseña $aid agregada correctamente.${NC}"
+            pause_screen
+            ;;
+        6) show_info ;;
+        7)
+            echo -e "\n${YELLOW}Presiona CTRL + C para detener logs...${NC}\n"
+            sleep 1.5
+            journalctl -u xray -f
+            ;;
+        8)
+            systemctl restart xray >/dev/null 2>&1
+            echo -e "${GREEN}✔ Xray reiniciado exitosamente.${NC}"
+            sleep 1.5
+            ;;
+        9)
+            echo -e "\n${YELLOW}⚡ Desinstalando Xray por completo...${NC}"
+            systemctl stop xray 2>/dev/null
+            systemctl disable xray 2>/dev/null
+            rm -rf /usr/local/xray /etc/systemd/system/xray.service /usr/local/bin/xray
+            systemctl daemon-reload
+            rm -f "$LOCK_FILE"
+            echo -e "${GREEN}✔ Desinstalación completa realizada.${NC}"
+            exit 0
+            ;;
+        0) 
+            rm -f "$LOCK_FILE"
+            exit 0 
+            ;;
+        *) sleep 1 ;;
+    esac
+done
+EOF
+
+chmod +x /usr/local/bin/xray
+echo -e "\n${GREEN}${BOLD}🚀 Script corregido y guardado exitosamente.${NC}\n"
+/usr/local/bin/xray
