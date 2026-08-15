@@ -3,15 +3,9 @@
 # =======================================================
 # ARIADNY MASTER PANEL - MAIN MENU SCRIPT (COLORFUL UI)
 # =======================================================
-# NOTA: El enlace de ejemplo es: 
-# trojan://Abielml10@102.129.137.76:9090?type=ws&host=start.freenethn.org&path=/trojan-ws#Xray-Trojan
-
-# Modo pantalla fija (Alternate Screen Buffer)
-printf "\033[?1049h"
 
 cleanup() {
-    printf "\033[?1049l\033[0m"
-    clear_screen
+    printf "\033[0m"
 }
 trap cleanup EXIT INT TERM
 
@@ -34,14 +28,14 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Limpieza de pantalla estándar sin romper el historial
 clear_screen() {
-    printf "\033[2J\033[3J\033[H"
+    clear
 }
 
 pause_screen() {
     printf "\n  %bPresiona %bENTER%b para continuar...%b" "$GRAY" "$WHITE" "$GRAY" "$NC"
     read -r
-    clear_screen
 }
 
 info() {
@@ -394,7 +388,9 @@ except Exception: pass
 
 render_ui() {
     local mode="${1:-full}"
+    
     clear_screen
+    
     get_sys_info
     get_ports_summary
 
@@ -601,6 +597,10 @@ elif mode == "sub_mas_opciones":
 ' "$VERSION" "$IP_ADDR" "$OS_INFO" "$RAM_INFO" "$json_items" "$mode" 2>/dev/null
 }
 
+prepare_for_external_script() {
+    clear_screen
+}
+
 header() {
     render_ui "full"
 }
@@ -678,6 +678,7 @@ is_python_installed() {
 }
 
 caddy_menu() {
+    prepare_for_external_script
     if systemctl is-active --quiet caddy 2>/dev/null; then
         if [[ -x /usr/local/bin/cadmin ]]; then
             /usr/local/bin/cadmin
@@ -696,6 +697,7 @@ caddy_menu() {
 }
 
 nginx_menu() {
+    prepare_for_external_script
     if systemctl is-active --quiet nginx 2>/dev/null; then
         if [[ -x /usr/local/bin/MenuN ]]; then
             /usr/local/bin/MenuN
@@ -733,6 +735,7 @@ multiplexacion_menu() {
 
 # V2RAY MENU - CORREGIDO
 v2ray_menu() {
+    prepare_for_external_script
     panel_header "INSTALANDO/EJECUTANDO V2RAY" "⚡"
     if [[ -x /usr/local/bin/v2ray ]]; then
         /usr/local/bin/v2ray
@@ -746,6 +749,7 @@ v2ray_menu() {
 
 # XRAY MENU - CORREGIDO
 xray_menu() {
+    prepare_for_external_script
     if command_exists menuV2; then
         menuV2
     elif systemctl is-active --quiet xray 2>/dev/null; then
@@ -766,24 +770,28 @@ xray_menu() {
 }
 
 sshgo_menu() {
+    prepare_for_external_script
     panel_header "SSH-GO PROXY" "🚀"
     execute_script "install-sshgo.sh" "sshgo.sh" "Sshgo.sh"
     pause_screen
 }
 
 badvpn_menu() {
+    prepare_for_external_script
     panel_header "BADVPN UDPGW" "🚀"
     execute_script "badvpn-udpgw.sh" "badvpn.sh" "Badvpn.sh"
     pause_screen
 }
 
 slowdns_menu() {
+    prepare_for_external_script
     panel_header "SLOWDNS PANEL" "🐌"
     execute_script "slowdns.sh" "Slowdns.sh"
     pause_screen
 }
 
 ssl_menu() {
+    prepare_for_external_script
     panel_header "CERTIFICADO SSL / STUNNEL" "🔒"
     execute_script "ssl.sh" "Ssl.sh"
     pause_screen
@@ -800,10 +808,12 @@ mas_opciones_menu() {
 
         case "$sub_op" in
             1|01)
+                prepare_for_external_script
                 info "Aquí puedes vincular tu nueva función 1."
                 pause_screen
                 ;;
             2|02)
+                prepare_for_external_script
                 info "Aquí puedes vincular tu nueva función 2."
                 pause_screen
                 ;;
@@ -814,24 +824,28 @@ mas_opciones_menu() {
 }
 
 firewall_menu() {
+    prepare_for_external_script
     panel_header "FIREWALL SYSTEM" "🛡️"
     execute_script "firewall.sh" "Firewall.sh"
     pause_screen
 }
 
 udp_menu() {
+    prepare_for_external_script
     panel_header "UDP PANEL" "⚡"
     execute_script "Udp.sh" "udp.sh" "install-udp.sh"
     pause_screen
 }
 
 rust_menu() {
+    prepare_for_external_script
     panel_header "SOCKS PROXY RUST" "🦀"
     execute_script "rust.sh" "Rust.sh"
     pause_screen
 }
 
 python_menu() {
+    prepare_for_external_script
     if is_python_installed; then
         if [[ -x /usr/local/bin/proxy ]]; then
             /usr/local/bin/proxy
@@ -850,6 +864,7 @@ python_menu() {
 }
 
 ssh_panel_menu() {
+    prepare_for_external_script
     local ssh_panel="/usr/local/bin/sshpanel.sh"
     panel_header "SSH PANEL MANAGER" "👥"
     printf "  %bDescargando panel SSH...%b\n" "$CYAN" "$NC"
@@ -860,12 +875,14 @@ ssh_panel_menu() {
 }
 
 configure_ssh() {
+    prepare_for_external_script
     panel_header "CONFIGURACIÓN DE SSH" "🔐"
     execute_script "ssh.sh" "Ssh.sh"
     pause_screen
 }
 
 monitor_menu() {
+    prepare_for_external_script
     panel_header "MONITOREO DEL SISTEMA" "📊"
     printf "  %bSistema    :%b %s\n" "$WHITE" "$NC" "$(awk -F= '/^PRETTY_NAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release)"
     printf "  %bMemoria    :%b %s\n" "$WHITE" "$NC" "$(free -h | awk 'NR==2 {print $3 " / " $2}')"
@@ -875,6 +892,7 @@ monitor_menu() {
 }
 
 status_menu() {
+    prepare_for_external_script
     panel_header "ESTADO GENERAL DE SERVICIOS" "📋"
     printf "  Caddy:       "; systemctl is-active --quiet caddy 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
     printf "  Nginx:       "; systemctl is-active --quiet nginx 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
