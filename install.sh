@@ -729,20 +729,44 @@ multiplexacion_menu() {
     done
 }
 
+# ============================================================
+# V2RAY MENU - CORREGIDO (Subshell sin traps)
+# ============================================================
 v2ray_menu() {
     panel_header "INSTALANDO/EJECUTANDO V2RAY" "⚡"
-    execute_script "install-v2ray.sh" "v2ray.sh" "V2ray.sh"
-    pause_screen
+    if [[ -x /usr/local/bin/v2ray ]]; then
+        (
+            trap - EXIT INT TERM
+            /usr/local/bin/v2ray
+        )
+    elif [[ -x /usr/bin/v2ray ]]; then
+        (
+            trap - EXIT INT TERM
+            /usr/bin/v2ray
+        )
+    else
+        execute_script "install-v2ray.sh" "v2ray.sh" "V2ray.sh"
+        pause_screen
+    fi
 }
 
+# ============================================================
+# XRAY MENU - CORREGIDO (Subshell sin traps)
+# ============================================================
 xray_menu() {
     if command_exists menuV2; then
         menuV2
     elif systemctl is-active --quiet xray 2>/dev/null; then
         if [[ -x /usr/local/bin/xray ]]; then
-            /usr/local/bin/xray
+            (
+                trap - EXIT INT TERM
+                /usr/local/bin/xray
+            )
         elif [[ -x /usr/bin/xray ]]; then
-            /usr/bin/xray
+            (
+                trap - EXIT INT TERM
+                /usr/bin/xray
+            )
         else
             panel_header "EJECUTANDO XRAY PANEL" "🔰"
             execute_script "install-xray.sh" "xray.sh" "Xray.sh"
