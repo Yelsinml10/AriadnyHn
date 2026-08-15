@@ -253,7 +253,7 @@ extra = ""
 ws_host = dom
 if trans == "ws":
     ws_st = str_st.get("wsSettings") or {}
-    extra = ws_st.get("path", "/ray")
+    extra = ws_st.get("path", "/trojan")
     ws_host = (ws_st.get("headers") or {}).get("Host", dom)
 elif trans == "grpc":
     grpc_st = str_st.get("grpcSettings") or {}
@@ -319,7 +319,7 @@ else:
             link = f"vmess://{b64}"
 
         elif proto == "trojan":
-            # ==== EDICIÓN CORREGIDA (SOLO ESTA PARTE) ====
+            # Enlace Trojan corregido - sin security=none
             params = f"type={trans}"
             if sec == "tls":
                 params += f"&security=tls"
@@ -334,7 +334,6 @@ else:
                 params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
             
             link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
-            # ==== FIN DE LA EDICIÓN ====
 
         elif proto == "socks":
             link = f"socks5://{dom}:{port}#Xray-SOCKS5"
@@ -412,12 +411,12 @@ configure_protocol() {
         2) trans="tcp"; sec="tls" ;;
         3) 
             trans="ws"; sec="none"
-            read_val extra "Path WS [/ray]:" "/ray"
+            read_val extra "Path WS [/trojan]:" "/trojan"
             read_val host_header "Host Header WS [${dom}]:" "$dom"
             ;;
         4) 
             trans="ws"; sec="tls"
-            read_val extra "Path WS [/ray]:" "/ray"
+            read_val extra "Path WS [/trojan]:" "/trojan"
             read_val host_header "Host Header WS [${dom}]:" "$dom"
             ;;
         5) 
@@ -640,7 +639,7 @@ while true; do
             pause_screen
             ;;
         3)
-            read_val npath "Nuevo Path WS / ServiceName gRPC:" "/ray"
+            read_val npath "Nuevo Path WS / ServiceName gRPC:" "/trojan"
             read_val nhost "Nuevo Host Header WS (Enter para omitir):" ""
             modify_param "path" "$npath" "$nhost"
             echo -e "${GREEN}✔ Parámetros actualizados exitosamente.${NC}"
