@@ -7,6 +7,7 @@ cat << 'EOF' > /usr/local/bin/xray
 export TERM=xterm
 export DEBIAN_FRONTEND=noninteractive
 
+# Auto-limpieza de caracteres de fin de línea de Windows (CRLF a LF)
 sed -i 's/\r$//' "$0" 2>/dev/null
 
 BOLD='\033[1m'
@@ -24,15 +25,25 @@ SERVICE_FILE="/etc/systemd/system/xray.service"
 CERT_DIR="/usr/local/xray"
 LOCK_FILE="/tmp/xray_manager.lock"
 
+# Crear accesos directos
+install_shortcuts() {
+    chmod +x /usr/local/bin/xray 2>/dev/null
+    ln -sf /usr/local/bin/xray /usr/local/bin/v2ray 2>/dev/null
+    ln -sf /usr/local/bin/xray /usr/local/bin/menu 2>/dev/null
+    ln -sf /usr/local/bin/xray /usr/bin/xray 2>/dev/null
+    ln -sf /usr/local/bin/xray /usr/bin/v2ray 2>/dev/null
+    ln -sf /usr/local/bin/xray /usr/bin/menu 2>/dev/null
+}
+
 detect_ip() {
     local ip=""
-    ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null)
+    ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null | tr -d '\r\n')
     [[ -n "$ip" ]] && echo "$ip" && return
     
-    ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null)
+    ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null | tr -d '\r\n')
     [[ -n "$ip" ]] && echo "$ip" && return
     
-    ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)
+    ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1 | tr -d '\r\n')
     [[ -n "$ip" ]] && echo "$ip" && return
     
     echo "127.0.0.1"
@@ -236,7 +247,7 @@ extra = ""
 ws_host = dom
 if trans == "ws":
     ws_st = str_st.get("wsSettings") or {}
-    extra = str(ws_st.get("path", "/trojan")).strip()
+    extra = str(ws_st.get("path", "/trojan-ws")).strip()
     ws_host = str((ws_st.get("headers") or {}).get("Host", dom)).strip()
 elif trans == "grpc":
     grpc_st = str_st.get("grpcSettings") or {}
@@ -262,7 +273,7 @@ if sec == "reality":
 print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n")
 
 if proto == "shadowsocks":
-    method = st.get("method", "aes-256-gcm")
+    method = str(st.get("method", "aes-256-gcm")).strip()
     pass_val = str(st.get("password", "")).strip()
     b64_ss = base64.b64encode(f"{method}:{pass_val}".encode()).decode()
     link = f"ss://{b64_ss}@{dom}:{port}#Xray-Shadowsocks"
@@ -275,24 +286,31 @@ else:
         print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
         
         link = ""
+        host_for_link = ws_host if ws_host else dom
+
         if proto == "vless":
             if sec == "reality":
                 link = f"vless://{user_id}@{dom}:{port}?type=tcp&security=reality&encryption=none&pbk={pub_key}&fp=chrome&sni={sni}&sid={short_id}&flow=xtls-rprx-vision#Xray-VLESS-REALITY"
             else:
-                params = f"encryption=none&type={trans}&security={sec}"
+                params = f"encryption=none&type={trans}"
                 if trans == "ws":
-                    params += f"&path={urllib.parse.quote(extra, safe='/')}&host={urllib.parse.quote(ws_host)}"
+                    # CORRECCIÓN: host ANTES que path
+                    params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='/')}"
                 elif trans == "grpc":
                     params += f"&serviceName={urllib.parse.quote(extra, safe='')}&mode=gun"
+                
                 if sec == "tls":
-                    params += f"&sni={urllib.parse.quote(dom)}"
+                    params += f"&security=tls&sni={urllib.parse.quote(dom)}"
+                else:
+                    params += f"&security=none"
+                
                 link = f"vless://{user_id}@{dom}:{port}?{params}#Xray-VLESS"
 
         elif proto == "vmess":
             v_json = {
                 "v": "2", "ps": f"Xray-VMess-{idx}", "add": dom, "port": str(port),
                 "id": user_id, "aid": "0", "net": trans, "type": "none",
-                "host": ws_host if trans == "ws" else "",
+                "host": host_for_link if trans == "ws" else "",
                 "path": extra if trans == "ws" else "",
                 "tls": "tls" if sec == "tls" else "",
                 "sni": dom if sec == "tls" else "",
@@ -303,17 +321,17 @@ else:
 
         elif proto == "trojan":
             params = f"type={trans}"
+            if trans == "ws":
+                # CORRECCIÓN CRÍTICA: host ANTES que path para compatibilidad con HTTP Custom
+                params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='/')}"
+            elif trans == "grpc":
+                params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
+
             if sec == "tls":
                 params += f"&security=tls&sni={urllib.parse.quote(dom)}"
             elif sec == "reality":
                 params += f"&security=reality&pbk={pub_key}&sni={sni}&sid={short_id}"
-            
-            if trans == "ws":
-                host_for_link = ws_host if ws_host else dom
-                params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='/')}"
-            elif trans == "grpc":
-                params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
-            
+
             link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
 
         elif proto == "socks":
@@ -350,16 +368,16 @@ configure_protocol() {
 
     header
     echo -e "${PURPLE}${BOLD}📝 DATOS DE CONEXIÓN:${NC}\n"
-    local dom="$SERVER_IP" port="443" extra="" user="" host_header="$SERVER_IP"
+    local dom="$SERVER_IP" port="9090" extra="" user="" host_header="$SERVER_IP"
     read_val dom "Dominio o IP [${SERVER_IP}]:" "$SERVER_IP"
     host_header="$dom"
-    read_val port "Puerto [443]:" "443"
+    read_val port "Puerto [9090]:" "9090"
 
     open_port "$port"
 
     local auto_user
     if command -v python3 &>/dev/null; then
-        auto_user=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+        auto_user=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null | tr -d '\r\n')
     fi
     if [[ -z "$auto_user" ]]; then
         auto_user=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s | sha256sum | head -c 32)
@@ -415,8 +433,8 @@ configure_protocol() {
                 read_val dest "Target Dest (ej: www.apple.com:443):" "www.apple.com:443"
                 
                 local keypair=$($XRAY_BIN x25519 2>/dev/null)
-                priv_key=$(echo "$keypair" | awk -F': ' '/Private key/ {print $2}' | tr -d ' ')
-                pub_key=$(echo "$keypair" | awk -F': ' '/Public key/ {print $2}' | tr -d ' ')
+                priv_key=$(echo "$keypair" | awk -F': ' '/Private key/ {print $2}' | tr -d ' \r\n')
+                pub_key=$(echo "$keypair" | awk -F': ' '/Public key/ {print $2}' | tr -d ' \r\n')
                 short_id=$(openssl rand -hex 4 2>/dev/null || echo "1a2b3c4d")
             else
                 trans="tcp"; sec="none"
@@ -590,6 +608,7 @@ touch "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
 
 check_root
+install_shortcuts
 install_core_if_missing
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -658,7 +677,7 @@ while true; do
             echo -e "\n${YELLOW}⚡ Desinstalando Xray por completo...${NC}"
             systemctl stop xray 2>/dev/null
             systemctl disable xray 2>/dev/null
-            rm -rf /usr/local/xray /etc/systemd/system/xray.service /usr/local/bin/xray
+            rm -rf /usr/local/xray /etc/systemd/system/xray.service /usr/local/bin/xray /usr/local/bin/v2ray /usr/local/bin/menu
             systemctl daemon-reload
             rm -f "$LOCK_FILE"
             echo -e "${GREEN}✔ Desinstalación completa realizada.${NC}"
@@ -674,5 +693,5 @@ done
 EOF
 
 chmod +x /usr/local/bin/xray
-echo -e "\n${GREEN}${BOLD}🚀 Script corregido y guardado exitosamente.${NC}\n"
+echo -e "\n${GREEN}${BOLD}🚀 Script corregido e instalado exitosamente.${NC}\n"
 /usr/local/bin/xray
