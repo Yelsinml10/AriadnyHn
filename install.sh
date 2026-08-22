@@ -64,20 +64,69 @@ install_dependencies() {
     fi
 }
 
+# Configuración permanente del comando menu (Auto-reparable)
 setup_menu_shortcut() {
     local current_script
     current_script="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
 
-    if [[ -f "$current_script" ]]; then
-        if [[ "$current_script" != "/usr/local/bin/menu" ]]; then
-            cp "$current_script" /usr/local/bin/menu 2>/dev/null
-            chmod +x /usr/local/bin/menu 2>/dev/null
-        fi
-        if [[ "$current_script" != "/usr/bin/menu" ]]; then
-            cp "$current_script" /usr/bin/menu 2>/dev/null
-            chmod +x /usr/bin/menu 2>/dev/null
-        fi
+    # Si se ejecuta desde un archivo físico existente
+    if [[ -f "$current_script" && "$current_script" != *"/dev/fd/"* && "$current_script" != *"bash"* ]]; then
+        cp -f "$current_script" /usr/local/bin/menu 2>/dev/null
+        cp -f "$current_script" /usr/bin/menu 2>/dev/null
+    else
+        # Si se ejecutó por pipe/curl directo, descargar el archivo base
+        curl -fsSL "$BASE_URL/menu.sh" -o /usr/local/bin/menu 2>/dev/null || \
+        curl -fsSL "$BASE_URL/Menu.sh" -o /usr/local/bin/menu 2>/dev/null
+        cp -f /usr/local/bin/menu /usr/bin/menu 2>/dev/null
     fi
+
+    chmod 755 /usr/local/bin/menu 2>/dev/null
+    chmod 755 /usr/bin/menu 2>/dev/null
+
+    # Asegurar persistencia en .bashrc y bash.bashrc
+    if ! grep -q "alias menu=" ~/.bashrc 2>/dev/null; then
+        echo "alias menu='/usr/local/bin/menu'" >> ~/.bashrc
+    fi
+    if ! grep -q "alias menu=" /etc/bash.bashrc 2>/dev/null; then
+        echo "alias menu='/usr/local/bin/menu'" >> /etc/bash.bashrc
+    fi
+}
+
+# Banner informativo en el inicio de terminal SSH (MOTD)
+setup_login_banner() {
+    cat << 'EOF' > /etc/profile.d/00-ariadny-banner.sh
+#!/bin/bash
+if [[ $- == *i* ]]; then
+    # Colores ANSI
+    C_BLUE='\033[1;34m'
+    C_CYAN='\033[1;36m'
+    C_GREEN='\033[1;32m'
+    C_YELLOW='\033[1;33m'
+    C_WHITE='\033[1;37m'
+    C_MAGENTA='\033[1;35m'
+    C_NC='\033[0m'
+
+    IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [[ -z "$IP_ADDR" ]] && IP_ADDR="127.0.0.1"
+    RAM_INFO=$(free -h 2>/dev/null | awk 'NR==2 {print $3 " / " $2}')
+    OS_INFO=$(awk -F= '/^PRETTY_NAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release 2>/dev/null)
+    [[ -z "$OS_INFO" ]] && OS_INFO="Linux"
+    UPTIME_INFO=$(uptime -p 2>/dev/null | sed 's/up //')
+    [[ -z "$UPTIME_INFO" ]] && UPTIME_INFO="N/A"
+
+    echo -e "${C_BLUE}╔══════════════════════════════════════════════════════════════╗${C_NC}"
+    echo -e "${C_BLUE}║${C_NC}               ${C_WHITE}🚀 ARIADNY MASTER PANEL v2.5${C_NC}                  ${C_BLUE}║${C_NC}"
+    echo -e "${C_BLUE}╠══════════════════════════════════════════════════════════════╣${C_NC}"
+    printf "${C_BLUE}║${C_NC}  ${C_CYAN}🌐 IP VPS${C_NC}   : %-44s ${C_BLUE}║${C_NC}\n" "$IP_ADDR"
+    printf "${C_BLUE}║${C_NC}  ${C_GREEN}🖥  SO${C_NC}       : %-44s ${C_BLUE}║${C_NC}\n" "$OS_INFO"
+    printf "${C_BLUE}║${C_NC}  ${C_YELLOW}⚡ RAM${C_NC}      : %-44s ${C_BLUE}║${C_NC}\n" "$RAM_INFO"
+    printf "${C_BLUE}║${C_NC}  ${C_MAGENTA}⏱  Uptime${C_NC}   : %-44s ${C_BLUE}║${C_NC}\n" "$UPTIME_INFO"
+    echo -e "${C_BLUE}╠══════════════════════════════════════════════════════════════╣${C_NC}"
+    echo -e "${C_BLUE}║${C_NC}  ${C_WHITE}👉 Para abrir el panel escribe:${C_NC} ${C_YELLOW}menu${C_NC}                         ${C_BLUE}║${C_NC}"
+    echo -e "${C_BLUE}╚══════════════════════════════════════════════════════════════╝${C_NC}"
+fi
+EOF
+    chmod +x /etc/profile.d/00-ariadny-banner.sh 2>/dev/null
 }
 
 get_sys_info() {
@@ -418,7 +467,6 @@ cols = max(50, min(cols, 100))
 margin = " "
 w = cols - 4
 
-# Colores Normales y Brillantes
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
 YELLOW = "\033[1;33m"
@@ -457,7 +505,7 @@ def vis_len(text):
 def empty_row(color):
     print(margin + color + "│" + NC + (" " * (w - 2)) + color + "│" + NC)
 
-# 1. Cabecera Superior (Siempre presente)
+# 1. Cabecera Superior
 print(margin + B_BLUE + "╔" + ("═" * (w - 2)) + "╗" + NC)
 
 title = B_WHITE + "🚀 ARIADNY MASTER PANEL " + version + NC
@@ -733,7 +781,6 @@ multiplexacion_menu() {
     done
 }
 
-# V2RAY MENU - CORREGIDO
 v2ray_menu() {
     prepare_for_external_script
     panel_header "INSTALANDO/EJECUTANDO V2RAY" "⚡"
@@ -747,7 +794,6 @@ v2ray_menu() {
     fi
 }
 
-# XRAY MENU - CORREGIDO
 xray_menu() {
     prepare_for_external_script
     if command_exists menuV2; then
@@ -920,6 +966,9 @@ status_menu() {
 
 main_menu() {
     while true; do
+        # Auto-reparar comando por si un sub-script lo sobreescribió
+        setup_menu_shortcut
+        
         render_ui "full"
 
         printf "\n"
@@ -960,4 +1009,5 @@ main_menu() {
 require_root
 install_dependencies
 setup_menu_shortcut
+setup_login_banner
 main_menu
