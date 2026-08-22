@@ -92,38 +92,114 @@ setup_menu_shortcut() {
     fi
 }
 
-# Banner informativo en el inicio de terminal SSH (MOTD)
+# Banner adaptativo al 100% del ancho de la terminal SSH
 setup_login_banner() {
     cat << 'EOF' > /etc/profile.d/00-ariadny-banner.sh
 #!/bin/bash
-if [[ $- == *i* ]]; then
-    # Colores ANSI
-    C_BLUE='\033[1;34m'
-    C_CYAN='\033[1;36m'
-    C_GREEN='\033[1;32m'
-    C_YELLOW='\033[1;33m'
-    C_WHITE='\033[1;37m'
-    C_MAGENTA='\033[1;35m'
-    C_NC='\033[0m'
+if [[ $- == *i* ]] && command -v python3 >/dev/null 2>&1; then
+python3 -c '
+import sys, os, shutil, re, unicodedata, subprocess
 
-    IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
-    [[ -z "$IP_ADDR" ]] && IP_ADDR="127.0.0.1"
-    RAM_INFO=$(free -h 2>/dev/null | awk 'NR==2 {print $3 " / " $2}')
-    OS_INFO=$(awk -F= '/^PRETTY_NAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release 2>/dev/null)
-    [[ -z "$OS_INFO" ]] && OS_INFO="Linux"
-    UPTIME_INFO=$(uptime -p 2>/dev/null | sed 's/up //')
-    [[ -z "$UPTIME_INFO" ]] && UPTIME_INFO="N/A"
+try:
+    cols = shutil.get_terminal_size().columns
+except Exception:
+    cols = 80
 
-    echo -e "${C_BLUE}╔══════════════════════════════════════════════════════════════╗${C_NC}"
-    echo -e "${C_BLUE}║${C_NC}               ${C_WHITE}🚀 ARIADNY MASTER PANEL v2.5${C_NC}                  ${C_BLUE}║${C_NC}"
-    echo -e "${C_BLUE}╠══════════════════════════════════════════════════════════════╣${C_NC}"
-    printf "${C_BLUE}║${C_NC}  ${C_CYAN}🌐 IP VPS${C_NC}   : %-44s ${C_BLUE}║${C_NC}\n" "$IP_ADDR"
-    printf "${C_BLUE}║${C_NC}  ${C_GREEN}🖥  SO${C_NC}       : %-44s ${C_BLUE}║${C_NC}\n" "$OS_INFO"
-    printf "${C_BLUE}║${C_NC}  ${C_YELLOW}⚡ RAM${C_NC}      : %-44s ${C_BLUE}║${C_NC}\n" "$RAM_INFO"
-    printf "${C_BLUE}║${C_NC}  ${C_MAGENTA}⏱  Uptime${C_NC}   : %-44s ${C_BLUE}║${C_NC}\n" "$UPTIME_INFO"
-    echo -e "${C_BLUE}╠══════════════════════════════════════════════════════════════╣${C_NC}"
-    echo -e "${C_BLUE}║${C_NC}  ${C_WHITE}👉 Para abrir el panel escribe:${C_NC} ${C_YELLOW}menu${C_NC}                         ${C_BLUE}║${C_NC}"
-    echo -e "${C_BLUE}╚══════════════════════════════════════════════════════════════╝${C_NC}"
+w = max(36, cols)
+
+# Colores ANSI Brillantes
+B_BLUE = "\033[1;34m"
+B_CYAN = "\033[1;36m"
+B_GREEN = "\033[1;32m"
+B_YELLOW = "\033[1;33m"
+B_WHITE = "\033[1;37m"
+B_PURPLE = "\033[1;35m"
+NC = "\033[0m"
+
+def vis_len(text):
+    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+    l = 0
+    for ch in clean:
+        ord_c = ord(ch)
+        if ord_c in (0xFE0F, 0xFE0E):
+            continue
+        if (0x1F000 <= ord_c <= 0x1FAFF) or \
+           (0x2600 <= ord_c <= 0x27BF) or \
+           (0x2300 <= ord_c <= 0x23FF) or \
+           (0x2B50 <= ord_c <= 0x2B55) or \
+           unicodedata.east_asian_width(ch) in ("F", "W"):
+            l += 2
+        else:
+            l += 1
+    return l
+
+# Datos dinámicos del sistema
+try:
+    ip = subprocess.check_output("hostname -I 2>/dev/null", shell=True).decode().split()[0]
+except Exception:
+    ip = "127.0.0.1"
+
+try:
+    out = subprocess.check_output("free -h 2>/dev/null", shell=True).decode().splitlines()
+    ram = out[1].split()[2] + " / " + out[1].split()[1]
+except Exception:
+    ram = "N/A"
+
+try:
+    os_info = "Linux"
+    with open("/etc/os-release") as f:
+        for line in f:
+            if line.startswith("PRETTY_NAME="):
+                os_info = line.split("=")[1].strip().strip("\"")
+                break
+except Exception:
+    os_info = "Linux"
+
+try:
+    uptime_raw = subprocess.check_output("uptime -p 2>/dev/null", shell=True).decode().strip()
+    uptime_info = uptime_raw.replace("up ", "") if uptime_raw else "N/A"
+except Exception:
+    uptime_info = "N/A"
+
+# 1. Cabecera
+print(B_BLUE + "╔" + ("═" * (w - 2)) + "╗" + NC)
+
+title = B_WHITE + "🚀 ARIADNY MASTER PANEL v2.5" + NC
+vt = vis_len(title)
+pt = max(0, (w - 2 - vt) // 2)
+ptr = max(0, w - 2 - vt - pt)
+print(B_BLUE + "║" + NC + (" " * pt) + title + (" " * ptr) + B_BLUE + "║" + NC)
+
+print(B_BLUE + "╠" + ("═" * (w - 2)) + "╣" + NC)
+
+# 2. Filas de Información
+fields = [
+    ("🌐 IP VPS", ip, B_CYAN),
+    ("🖥  SO", os_info, B_GREEN),
+    ("⚡ RAM", ram, B_YELLOW),
+    ("⏱  Uptime", uptime_info, B_PURPLE),
+]
+
+for label, val, val_col in fields:
+    left_str = "  " + label + " : "
+    vl = vis_len(left_str)
+    rem_len = max(1, w - 2 - vl)
+    val_display = val[:rem_len-1] + "…" if vis_len(val) > rem_len else val
+    val_str = val_col + val_display + NC
+    full_vis = vl + vis_len(val_display)
+    pad = max(0, w - 2 - full_vis)
+    print(B_BLUE + "║" + NC + left_str + val_str + (" " * pad) + B_BLUE + "║" + NC)
+
+print(B_BLUE + "╠" + ("═" * (w - 2)) + "╣" + NC)
+
+# 3. Pie con comando menu
+footer = "  " + B_WHITE + "👉 Para abrir el panel escribe: " + B_YELLOW + "menu" + NC
+vf = vis_len(footer)
+pad_f = max(0, w - 2 - vf)
+print(B_BLUE + "║" + NC + footer + (" " * pad_f) + B_BLUE + "║" + NC)
+
+print(B_BLUE + "╚" + ("═" * (w - 2)) + "╝" + NC)
+' 2>/dev/null
 fi
 EOF
     chmod +x /etc/profile.d/00-ariadny-banner.sh 2>/dev/null
@@ -463,9 +539,7 @@ try:
 except Exception:
     cols = 80
 
-cols = max(50, min(cols, 100))
-margin = " "
-w = cols - 4
+w = max(36, cols)
 
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
@@ -503,30 +577,30 @@ def vis_len(text):
     return l
 
 def empty_row(color):
-    print(margin + color + "│" + NC + (" " * (w - 2)) + color + "│" + NC)
+    print(color + "│" + NC + (" " * (w - 2)) + color + "│" + NC)
 
 # 1. Cabecera Superior
-print(margin + B_BLUE + "╔" + ("═" * (w - 2)) + "╗" + NC)
+print(B_BLUE + "╔" + ("═" * (w - 2)) + "╗" + NC)
 
 title = B_WHITE + "🚀 ARIADNY MASTER PANEL " + version + NC
 vt = vis_len(title)
 pt = max(0, (w - 2 - vt) // 2)
 ptr = max(0, w - 2 - vt - pt)
-print(margin + B_BLUE + "║" + NC + (" " * pt) + title + (" " * ptr) + B_BLUE + "║" + NC)
+print(B_BLUE + "║" + NC + (" " * pt) + title + (" " * ptr) + B_BLUE + "║" + NC)
 
 info_str = B_CYAN + "IP: " + ip + NC + "   " + B_CYAN + "OS: " + os_info + NC + "   " + B_GREEN + "RAM: " + ram + NC
 vi = vis_len(info_str)
 pi = max(0, (w - 2 - vi) // 2)
 pir = max(0, w - 2 - vi - pi)
-print(margin + B_BLUE + "║" + NC + (" " * pi) + info_str + (" " * pir) + B_BLUE + "║" + NC)
+print(B_BLUE + "║" + NC + (" " * pi) + info_str + (" " * pir) + B_BLUE + "║" + NC)
 
 creator_str = B_YELLOW + "Creador: " + NC + B_WHITE + "Yelsin Machado" + NC
 vc = vis_len(creator_str)
 pc = max(0, (w - 2 - vc) // 2)
 pcr = max(0, w - 2 - vc - pc)
-print(margin + B_BLUE + "║" + NC + (" " * pc) + creator_str + (" " * pcr) + B_BLUE + "║" + NC)
+print(B_BLUE + "║" + NC + (" " * pc) + creator_str + (" " * pcr) + B_BLUE + "║" + NC)
 
-print(margin + B_BLUE + "╚" + ("═" * (w - 2)) + "╝" + NC)
+print(B_BLUE + "╚" + ("═" * (w - 2)) + "╝" + NC)
 
 # 2. Cuadro de Puertos Activos
 if active_items:
@@ -535,7 +609,7 @@ if active_items:
     rem_act = max(0, w - 6 - vt_act)
     top_p = "┌── " + t_act + " " + ("─" * rem_act) + "┐"
     bot_p = "└" + ("─" * (w - 2)) + "┘"
-    print(margin + B_PURPLE + top_p + NC)
+    print(B_PURPLE + top_p + NC)
     
     half_w = (w - 4) // 2
     for i in range(0, len(active_items), 2):
@@ -547,8 +621,8 @@ if active_items:
         v2 = vis_len(it2)
         p2 = max(0, (w - 2 - half_w) - v2)
         s2 = it2 + (" " * p2)
-        print(margin + B_PURPLE + "│" + NC + s1 + s2 + B_PURPLE + "│" + NC)
-    print(margin + B_PURPLE + bot_p + NC)
+        print(B_PURPLE + "│" + NC + s1 + s2 + B_PURPLE + "│" + NC)
+    print(B_PURPLE + bot_p + NC)
 
 # 3. Menú según el modo de pantalla
 if mode == "full":
@@ -556,7 +630,7 @@ if mode == "full":
     vt_m1 = vis_len(t_m1)
     rem_m1 = max(0, w - 6 - vt_m1)
     top_m1 = "┌── " + t_m1 + " " + ("─" * rem_m1) + "┐"
-    print(margin + B_BLUE + top_m1 + NC)
+    print(B_BLUE + top_m1 + NC)
 
     opts1 = [
         (B_CYAN + "[01]" + NC + " 🔀 " + WHITE + "Multiplexores" + NC, B_YELLOW + "[02]" + NC + " ⚡ " + WHITE + "V2Ray / VMess" + NC),
@@ -575,7 +649,7 @@ if mode == "full":
         v2 = vis_len(c2)
         p2 = max(0, (w - 2 - half_w) - v2)
         s2 = c2 + (" " * p2)
-        print(margin + B_BLUE + "│" + NC + s1 + s2 + B_BLUE + "│" + NC)
+        print(B_BLUE + "│" + NC + s1 + s2 + B_BLUE + "│" + NC)
 
     empty_row(B_BLUE)
 
@@ -583,7 +657,7 @@ if mode == "full":
     vt_m2 = vis_len(t_m2)
     rem_m2 = max(0, w - 6 - vt_m2)
     mid_m2 = "├── " + t_m2 + " " + ("─" * rem_m2) + "┤"
-    print(margin + B_BLUE + mid_m2 + NC)
+    print(B_BLUE + mid_m2 + NC)
 
     opts2 = [
         (B_RED + "[13]" + NC + " 🛡 " + WHITE + "Firewall" + NC, B_GREEN + "[14]" + NC + " 🔐 " + WHITE + "Configurar SSH" + NC),
@@ -598,17 +672,17 @@ if mode == "full":
         v2 = vis_len(c2)
         p2 = max(0, (w - 2 - half_w) - v2)
         s2 = c2 + (" " * p2)
-        print(margin + B_BLUE + "│" + NC + s1 + s2 + B_BLUE + "│" + NC)
+        print(B_BLUE + "│" + NC + s1 + s2 + B_BLUE + "│" + NC)
 
     bot_m = "└" + ("─" * (w - 2)) + "┘"
-    print(margin + B_BLUE + bot_m + NC)
+    print(B_BLUE + bot_m + NC)
 
 elif mode == "sub_multiplexacion":
     t_sub = "MULTIPLEXACIÓN & PROXIES WEB"
     vt_sub = vis_len(t_sub)
     rem_sub = max(0, w - 6 - vt_sub)
     top_sub = "┌── " + t_sub + " " + ("─" * rem_sub) + "┐"
-    print(margin + B_BLUE + top_sub + NC)
+    print(B_BLUE + top_sub + NC)
 
     sub_opts = [
         B_CYAN + "[01]" + NC + " 🌐 " + WHITE + "Caddy Server" + NC,
@@ -619,16 +693,16 @@ elif mode == "sub_multiplexacion":
     for item in sub_opts:
         v = vis_len(item)
         p = max(0, w - 2 - v)
-        print(margin + B_BLUE + "│" + NC + item + (" " * p) + B_BLUE + "│" + NC)
+        print(B_BLUE + "│" + NC + item + (" " * p) + B_BLUE + "│" + NC)
 
-    print(margin + B_BLUE + "└" + ("─" * (w - 2)) + "┘" + NC)
+    print(B_BLUE + "└" + ("─" * (w - 2)) + "┘" + NC)
 
 elif mode == "sub_mas_opciones":
     t_sub = "MÁS OPCIONES & HERRAMIENTAS"
     vt_sub = vis_len(t_sub)
     rem_sub = max(0, w - 6 - vt_sub)
     top_sub = "┌── " + t_sub + " " + ("─" * rem_sub) + "┐"
-    print(margin + B_BLUE + top_sub + NC)
+    print(B_BLUE + top_sub + NC)
 
     sub_opts = [
         B_CYAN + "[01]" + NC + " ⚙️  " + WHITE + "Nueva Función 1 (Disponible)" + NC,
@@ -639,9 +713,9 @@ elif mode == "sub_mas_opciones":
     for item in sub_opts:
         v = vis_len(item)
         p = max(0, w - 2 - v)
-        print(margin + B_BLUE + "│" + NC + item + (" " * p) + B_BLUE + "│" + NC)
+        print(B_BLUE + "│" + NC + item + (" " * p) + B_BLUE + "│" + NC)
 
-    print(margin + B_BLUE + "└" + ("─" * (w - 2)) + "┘" + NC)
+    print(B_BLUE + "└" + ("─" * (w - 2)) + "┘" + NC)
 ' "$VERSION" "$IP_ADDR" "$OS_INFO" "$RAM_INFO" "$json_items" "$mode" 2>/dev/null
 }
 
