@@ -66,7 +66,7 @@ check_root() {
 install_dependencies() {
     echo -e "${CYAN}[*] Actualizando e instalando dependencias base...${NC}"
     apt-get update -y > /dev/null 2>&1
-    apt-get install -y wget curl nano iptables ufw unzip openssl net-tools iproute2 jq socat cron python3 python3-pip git psmisc file awk build-essential perl > /dev/null 2>&1
+    apt-get install -y wget curl nano iptables ufw unzip openssl net-tools iproute2 jq socat cron python3 python3-pip git psmisc file gawk build-essential perl libcrypt-passwdmd5-perl > /dev/null 2>&1
 }
 
 get_public_ip() {
@@ -104,22 +104,23 @@ create_auth_script() {
     mkdir -p /etc/hysteria
     cat <<'EOF_AUTH' > /etc/hysteria/auth.sh
 #!/bin/bash
-AUTH_PAYLOAD="$2"
-[ -z "$AUTH_PAYLOAD" ] && exit 1
+P="$2"
+[ -z "$P" ] && P="$1"
+[ -z "$P" ] && exit 1
 
-if [[ "$AUTH_PAYLOAD" == *":"* ]]; then
-    USER="${AUTH_PAYLOAD%%:*}"
-    PASS="${AUTH_PAYLOAD#*:}"
+if [[ "$P" == *":"* ]]; then
+    U="${P%%:*}"
+    PASS="${P#*:}"
 else
-    USER="$AUTH_PAYLOAD"
-    PASS="$AUTH_PAYLOAD"
+    U="$P"
+    PASS="$P"
 fi
 
-if ! id "$USER" &>/dev/null; then
+if ! id "$U" &>/dev/null; then
     exit 1
 fi
 
-EXP_DATE=$(chage -l "$USER" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+EXP_DATE=$(LC_ALL=C chage -l "$U" 2>/dev/null | grep -i "Account expires" | cut -d: -f2 | xargs)
 if [ "$EXP_DATE" != "never" ] && [ -n "$EXP_DATE" ]; then
     EXP_SEC=$(date -d "$EXP_DATE" +%s 2>/dev/null)
     NOW_SEC=$(date +%s)
@@ -128,29 +129,31 @@ if [ "$EXP_DATE" != "never" ] && [ -n "$EXP_DATE" ]; then
     fi
 fi
 
-VALID_HASH=$(awk -F: -v user="$USER" '$1 == user {print $2}' /etc/shadow)
-[ -z "$VALID_HASH" ] && exit 1
+H=$(awk -F: -v u="$U" '$1==u {print $2}' /etc/shadow)
+[ -z "$H" ] && exit 1
+[[ "$H" == "*" || "$H" == "!"* ]] && exit 1
 
-perl -e '
-my ($pass, $hash) = @ARGV;
-exit 1 if (!$hash || $hash eq "*" || $hash eq "!");
-exit (crypt($pass, $hash) eq $hash ? 0 : 1);
-' "$PASS" "$VALID_HASH"
+perl -e 'exit(crypt($ARGV[0], $ARGV[1]) eq $ARGV[1] ? 0 : 1)' "$PASS" "$H" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo "$U"
+    exit 0
+fi
+
+exit 1
 EOF_AUTH
     chmod +x /etc/hysteria/auth.sh
 }
 
 # ==========================================
-# MÓDULO: UDP-HYSTERIA (INSTALADOR FUNCIONAL)
+# MÓDULO: UDP-HYSTERIA (V1 Y V2)
 # ==========================================
 install_hysteria_bin() {
     local VER=$1
     echo -e "${CYAN}[*] Instalando Binario de Hysteria (Versión $VER)...${NC}"
     
     systemctl stop udp-hysteria 2>/dev/null
-    fuser -k 36712/udp 2>/dev/null
     pkill -9 hysteria 2>/dev/null
-    rm -f /usr/local/bin/hysteria
+    rm -f /usr/local/bin/hysteria /usr/bin/hysteria
     
     ARCH=$(uname -m)
     case "$ARCH" in
@@ -165,45 +168,26 @@ install_hysteria_bin() {
     
     if [ "$VER" == "1" ]; then
         rm -f /etc/hysteria/config.yaml
-        URLS=(
-            "https://github.com/apernet/hysteria/releases/download/v1.3.5/hysteria-linux-${HY_ARCH}"
-            "https://github.com/apernet/hysteria/releases/download/v1.3.4/hysteria-linux-${HY_ARCH}"
-            "https://github.com/apernet/hysteria/releases/download/v1.3.3/hysteria-linux-${HY_ARCH}"
-        )
+        URL="https://github.com/apernet/hysteria/releases/download/v1.3.5/hysteria-linux-${HY_ARCH}"
+        curl -sSL -o /usr/local/bin/hysteria "$URL" 2>/dev/null || wget -qO /usr/local/bin/hysteria "$URL" 2>/dev/null
     else
         rm -f /etc/hysteria/config.json
-        LATEST=$(curl -sS https://api.github.com/repos/apernet/hysteria/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "v2.6.0")
-        URLS=(
-            "https://github.com/apernet/hysteria/releases/download/${LATEST}/hysteria-linux-${HY_ARCH}"
-            "https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-${HY_ARCH}"
-        )
+        curl -fsSL https://get.hy2.sh/ | bash > /dev/null 2>&1
+        if [ -f "/usr/bin/hysteria" ]; then
+            cp -f /usr/bin/hysteria /usr/local/bin/hysteria 2>/dev/null
+        fi
     fi
     
-    SUCCESS=0
-    for url in "${URLS[@]}"; do
-        echo -e "${YELLOW}  ➔ Descargando binario...${NC}"
-        curl -sSL -o /usr/local/bin/hysteria "$url" 2>/dev/null
-        
-        if [ ! -s "/usr/local/bin/hysteria" ]; then
-            wget -qO /usr/local/bin/hysteria --no-check-certificate "$url" 2>/dev/null
-        fi
-        
-        if [ -s "/usr/local/bin/hysteria" ]; then
-            chmod +x /usr/local/bin/hysteria
-            SUCCESS=1
-            echo -e "${GREEN}✔ Binario de Hysteria V${VER} instalado correctamente (${HY_ARCH}).${NC}"
-            INSTALLED_VER=$(/usr/local/bin/hysteria version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "v1.x")
-            echo -e "${CYAN}  ➔ Versión instalada: ${GREEN}$INSTALLED_VER${NC}"
-            break
-        fi
-        rm -f /usr/local/bin/hysteria
-    done
-    
-    if [ "$SUCCESS" -eq 0 ]; then
-        echo -e "${RED}[!] Error al descargar el binario de Hysteria. Verifique conexión.${NC}"
+    if [ -s "/usr/local/bin/hysteria" ]; then
+        chmod +x /usr/local/bin/hysteria
+        echo -e "${GREEN}✔ Binario de Hysteria instalado correctamente (${HY_ARCH}).${NC}"
+        INSTALLED_VER=$(/usr/local/bin/hysteria version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "v${VER}.x")
+        echo -e "${CYAN}  ➔ Versión detectada: ${GREEN}$INSTALLED_VER${NC}"
+        return 0
+    else
+        echo -e "${RED}[!] Error al descargar el binario de Hysteria.${NC}"
         return 1
     fi
-    return 0
 }
 
 config_udp_hysteria() {
@@ -235,9 +219,9 @@ config_udp_hysteria() {
     read -p "$(echo -e "${CYAN}❯ ${WHITE}Ingresa tu Dominio / SNI [predeterminado localhost]: ${NC}")" H_SNI
     H_SNI=${H_SNI:-localhost}
 
-    H_OBFS=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+    H_OBFS=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)
 
-    echo -e "\n${YELLOW}Instalando y configurando...${NC}"
+    echo -e "\n${YELLOW}Instalando dependencias y binarios...${NC}"
     install_dependencies
     install_hysteria_bin "$H_VER" || { read -p "Presione ENTER para volver"; return; }
     
@@ -275,16 +259,12 @@ tls:
 
 auth:
   type: command
-  command: "/etc/hysteria/auth.sh"
+  command: /etc/hysteria/auth.sh
 
 obfs:
   type: salamander
   salamander:
     password: "$H_OBFS"
-
-bandwidth:
-  up: 100 mbps
-  down: 100 mbps
 EOF
         CMD="/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml"
     fi
@@ -340,6 +320,7 @@ EOF
     echo -e "${CYAN}${BOLD}│               ENLACE DE CONEXIÓN CLIENTE (URI)         │${NC}"
     echo -e "${CYAN}${BOLD}└────────────────────────────────────────────────────────┘${NC}"
     echo -e "${YELLOW}${BOLD}$HY_LINK${NC}\n"
+    echo -e "${CYAN}Nota: Reemplaza ${WHITE}USUARIO:PASSWORD${CYAN} con los datos de un usuario SSH real del sistema.${NC}\n"
     read -p "Presione ENTER para continuar al menú..."
 }
 
@@ -369,12 +350,6 @@ menu_udp_hysteria() {
     fi
     
     source /etc/hysteria/panel.conf 2>/dev/null
-    SNI=${SNI:-localhost}
-    
-    REAL_VER="Desconocida"
-    if [ -x "/usr/local/bin/hysteria" ]; then
-        REAL_VER=$(/usr/local/bin/hysteria version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "v1.x")
-    fi
     
     clear
     echo -e "${CYAN}${BOLD}┌────────────────────────────────────────────────────────┐${NC}"
@@ -411,8 +386,9 @@ menu_udp_hysteria() {
            systemctl disable udp-hysteria 2>/dev/null
            fuser -k $PORT/udp 2>/dev/null
            pkill -9 hysteria 2>/dev/null
+           iptables -t nat -D PREROUTING -p udp -m udp --dport $RANGE -j REDIRECT --to-ports $PORT 2>/dev/null
            rm -rf /etc/hysteria /etc/systemd/system/udp-hysteria.service
-           rm -f /usr/local/bin/hysteria
+           rm -f /usr/local/bin/hysteria /usr/bin/hysteria
            systemctl daemon-reload
            echo -e "${GREEN}✔ Desinstalado completamente.${NC}"
            sleep 2
@@ -436,12 +412,15 @@ install_udp_bin() {
         URLS=("https://raw.githubusercontent.com/prjkt-nv404/UDP-Custom-Installer-arm64/main/udpc-arm64")
     else
         echo -e "${YELLOW}  ➔ Arquitectura AMD64 detectada (${ARCH})${NC}"
-        URLS=("https://raw.githubusercontent.com/http-custom/udp-custom/main/bin/udp-custom-linux-amd64")
+        URLS=(
+            "https://raw.githubusercontent.com/http-custom/udp-custom/main/bin/udp-custom-linux-amd64"
+            "https://github.com/prasath-official/UDP-Custom-Installer/raw/main/udp-custom-linux-amd64"
+        )
     fi
 
     SUCCESS=0
     for url in "${URLS[@]}"; do
-        echo -e "${CYAN}  ➔ Descargando desde: $url${NC}"
+        echo -e "${CYAN}  ➔ Descargando binario...${NC}"
         rm -f /usr/local/bin/udp-custom
         curl -sSL -o /usr/local/bin/udp-custom "$url" 2>/dev/null || wget -qO /usr/local/bin/udp-custom --no-check-certificate "$url" 2>/dev/null
         
@@ -500,7 +479,7 @@ config_udp() {
     "mode": "passwords"
   },
   "tls": {
-    "cert": "/etc/udp-custom/certs/server.key",
+    "cert": "/etc/udp-custom/certs/server.crt",
     "key": "/etc/udp-custom/certs/server.key"
   },
   "stream_buffer": 33554432,
@@ -541,8 +520,6 @@ Type=simple
 User=root
 WorkingDirectory=/etc/udp-custom
 ExecStart=/usr/local/bin/udp-custom server -config /etc/udp-custom/config.json
-ExecStartPost=/bin/bash -c 'iptables -t nat -I PREROUTING -p udp -m udp --dport $U_RANGE_IPT -j REDIRECT --to-ports $U_PORT || true'
-ExecStopPost=/bin/bash -c 'iptables -t nat -D PREROUTING -p udp -m udp --dport $U_RANGE_IPT -j REDIRECT --to-ports $U_PORT || true'
 Restart=always
 RestartSec=3
 LimitNOFILE=1048576
@@ -561,6 +538,9 @@ EOF
 
     iptables -I INPUT -p udp --dport $U_PORT -j ACCEPT 2>/dev/null
     ufw allow $U_PORT/udp 2>/dev/null
+
+    iptables -t nat -D PREROUTING -p udp -m udp --dport $U_RANGE_IPT -j REDIRECT --to-ports $U_PORT 2>/dev/null
+    iptables -t nat -I PREROUTING -p udp -m udp --dport $U_RANGE_IPT -j REDIRECT --to-ports $U_PORT 2>/dev/null
 
     systemctl daemon-reload
     systemctl enable udp-custom > /dev/null 2>&1
@@ -612,6 +592,7 @@ menu_udp_custom() {
            systemctl disable udp-custom 2>/dev/null
            fuser -k $PORT/udp 2>/dev/null
            pkill -9 udp-custom 2>/dev/null
+           iptables -t nat -D PREROUTING -p udp -m udp --dport $RANGE -j REDIRECT --to-ports $PORT 2>/dev/null
            rm -rf /etc/udp-custom /etc/systemd/system/udp-custom.service
            rm -f /usr/local/bin/udp-custom
            systemctl daemon-reload
