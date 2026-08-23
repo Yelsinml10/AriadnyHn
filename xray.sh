@@ -1,7 +1,7 @@
 cat << 'EOF' > /usr/local/bin/menu
 #!/bin/bash
 # =========================================================
-#  XRAY MANAGER - OFFICIAL CORE & REALITY EDITION
+#  XRAY MANAGER - OFFICIAL CORE + REALITY & XHTTP EDITION
 # =========================================================
 
 export TERM=xterm
@@ -24,7 +24,7 @@ XRAY_BIN="/usr/local/bin/xray"
 CERT_DIR="/usr/local/etc/xray"
 LOCK_FILE="/tmp/xray_manager.lock"
 
-# Crear accesos directos seguros (sin sobrescribir el binario de xray)
+# Crear accesos directos seguros
 install_shortcuts() {
     chmod +x /usr/local/bin/menu 2>/dev/null
     ln -sf /usr/local/bin/menu /usr/bin/menu 2>/dev/null
@@ -76,7 +76,6 @@ install_core_if_missing() {
         apt-get update -y >/dev/null 2>&1
         apt-get install -y curl qrencode python3 openssl certbot >/dev/null 2>&1 || yum install -y curl qrencode python3 openssl >/dev/null 2>&1
         
-        # Detener posibles conflictos
         systemctl stop sing-box 2>/dev/null
         systemctl disable sing-box 2>/dev/null
 
@@ -99,7 +98,7 @@ get_status() {
 header() {
     clear
     echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}${BOLD}                 XRAY MANAGER PANEL (OFICIAL)             ${NC}"
+    echo -e "${CYAN}${BOLD}           XRAY MANAGER PANEL (REALITY & XHTTP)           ${NC}"
     echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
     echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC}  ${YELLOW}${SERVER_IP}${NC}"
     echo -e " ${PURPLE}${BOLD}▸ Estado Xray:${NC}  $(get_status)"
@@ -207,6 +206,10 @@ if trans == "ws":
     ws_st = str_st.get("wsSettings") or {}
     extra = str(ws_st.get("path", "/trojan-ws")).strip()
     ws_host = str((ws_st.get("headers") or {}).get("Host", dom)).strip()
+elif trans == "xhttp":
+    xh_st = str_st.get("xhttpSettings") or {}
+    extra = str(xh_st.get("path", "/xhttp-tigo")).strip()
+    ws_host = str((xh_st.get("headers") or {}).get("Host", dom)).strip()
 elif trans == "grpc":
     grpc_st = str_st.get("grpcSettings") or {}
     extra = str(grpc_st.get("serviceName", "grpc")).strip()
@@ -214,12 +217,15 @@ elif trans == "grpc":
 print(f"\033[1;37mProtocolo   :\033[0m \033[0;36m{proto.upper()}\033[0m", file=sys.stderr)
 print(f"\033[1;37mIP / Host   :\033[0m \033[1;33m{serv_ip}\033[0m", file=sys.stderr)
 print(f"\033[1;37mPuerto      :\033[0m \033[0;32m{port}\033[0m", file=sys.stderr)
-print(f"\033[1;37mTransporte  :\033[0m \033[0;36m{trans}\033[0m", file=sys.stderr)
-print(f"\033[1;37mSeguridad   :\033[0m \033[0;36m{sec}\033[0m", file=sys.stderr)
+print(f"\033[1;37mTransporte  :\033[0m \033[0;36m{trans.upper()}\033[0m", file=sys.stderr)
+print(f"\033[1;37mSeguridad   :\033[0m \033[0;36m{sec.upper()}\033[0m", file=sys.stderr)
 
 if trans == "ws":
     print(f"\033[1;37mPath WS     :\033[0m \033[0;36m{extra}\033[0m", file=sys.stderr)
     print(f"\033[1;37mHost WS     :\033[0m \033[1;33m{ws_host}\033[0m", file=sys.stderr)
+elif trans == "xhttp":
+    print(f"\033[1;37mPath XHTTP  :\033[0m \033[0;36m{extra}\033[0m", file=sys.stderr)
+    print(f"\033[1;37mModo XHTTP  :\033[0m \033[0;32mauto\033[0m", file=sys.stderr)
 
 if sec == "reality":
     print(f"\033[1;37mSNI Destino :\033[0m \033[0;36m{sni}\033[0m", file=sys.stderr)
@@ -246,11 +252,19 @@ else:
         link = ""
         if proto == "vless":
             if sec == "reality":
-                link = f"vless://{user_id}@{serv_ip}:{port}?security=reality&encryption=none&pbk={pub_key}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={short_id}#Tigo-VLESS-REALITY"
+                if trans == "xhttp":
+                    link = f"vless://{user_id}@{serv_ip}:{port}?security=reality&encryption=none&pbk={pub_key}&headerType=none&fp=chrome&type=xhttp&path={urllib.parse.quote(extra, safe='/')}&mode=auto&sni={sni}&sid={short_id}#Tigo-VLESS-XHTTP-REALITY"
+                else:
+                    link = f"vless://{user_id}@{serv_ip}:{port}?security=reality&encryption=none&pbk={pub_key}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={short_id}#Tigo-VLESS-REALITY"
             else:
                 params = f"encryption=none&type={trans}"
                 if trans == "ws":
                     params += f"&host={urllib.parse.quote(ws_host)}&path={urllib.parse.quote(extra, safe='/')}"
+                elif trans == "xhttp":
+                    params += f"&path={urllib.parse.quote(extra, safe='/')}&mode=auto"
+                    if ws_host and ws_host != serv_ip:
+                        params += f"&host={urllib.parse.quote(ws_host)}"
+                
                 if sec == "tls":
                     params += f"&security=tls&sni={urllib.parse.quote(dom)}"
                 else:
@@ -261,8 +275,8 @@ else:
             v_json = {
                 "v": "2", "ps": f"Xray-VMess-{idx}", "add": serv_ip, "port": str(port),
                 "id": user_id, "aid": "0", "net": trans, "type": "none",
-                "host": ws_host if trans == "ws" else "",
-                "path": extra if trans == "ws" else "",
+                "host": ws_host if trans in ["ws", "xhttp"] else "",
+                "path": extra if trans in ["ws", "xhttp"] else "",
                 "tls": "tls" if sec == "tls" else "",
                 "sni": dom if sec == "tls" else ""
             }
@@ -271,7 +285,7 @@ else:
 
         elif proto == "trojan":
             params = f"type={trans}"
-            if trans == "ws":
+            if trans in ["ws", "xhttp"]:
                 params += f"&host={urllib.parse.quote(ws_host)}&path={urllib.parse.quote(extra, safe='/')}"
             if sec == "tls":
                 params += f"&security=tls&sni={urllib.parse.quote(dom)}"
@@ -340,7 +354,9 @@ configure_protocol() {
     echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} WebSocket (WS)"
     echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} WebSocket + TLS"
     if [[ "$proto" == "vless" ]]; then
-        echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}${BOLD}VLESS + REALITY (Tigo / b.tigo.com)${NC}"
+        echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}${BOLD}VLESS + REALITY (Vision - TCP)${NC}"
+        echo -e "  ${WHITE}${BOLD}[ 6 ]${NC} ${GREEN}${BOLD}VLESS + XHTTP + REALITY (SplitHTTP - Anti-DPI)${NC}"
+        echo -e "  ${WHITE}${BOLD}[ 7 ]${NC} ${CYAN}VLESS + XHTTP Directo (Puerto 80 / CDN)${NC}"
     fi
     echo
     echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción: ${NC}"
@@ -366,13 +382,34 @@ configure_protocol() {
                 read_val sni "SNI de Operadora [b.tigo.com]:" "b.tigo.com"
                 dest="${sni}:443"
                 
-                # Extracción robusta exacta de llaves x25519
                 local keypair=$($XRAY_BIN x25519 2>/dev/null)
                 priv_key=$(echo "$keypair" | grep -Ei "Private" | head -n 1 | awk '{print $NF}' | tr -d '\r\n ')
                 pub_key=$(echo "$keypair" | grep -Ei "Public|Password" | head -n 1 | awk '{print $NF}' | tr -d '\r\n ')
                 short_id="e875"
             else
                 trans="tcp"; sec="none"
+            fi
+            ;;
+        6)
+            if [[ "$proto" == "vless" ]]; then
+                trans="xhttp"; sec="reality"
+                read_val extra "Path XHTTP [/xhttp-tigo]:" "/xhttp-tigo"
+                read_val sni "SNI de Operadora [b.tigo.com]:" "b.tigo.com"
+                dest="${sni}:443"
+                
+                local keypair=$($XRAY_BIN x25519 2>/dev/null)
+                priv_key=$(echo "$keypair" | grep -Ei "Private" | head -n 1 | awk '{print $NF}' | tr -d '\r\n ')
+                pub_key=$(echo "$keypair" | grep -Ei "Public|Password" | head -n 1 | awk '{print $NF}' | tr -d '\r\n ')
+                short_id="e875"
+            else
+                trans="xhttp"; sec="none"
+            fi
+            ;;
+        7)
+            if [[ "$proto" == "vless" ]]; then
+                trans="xhttp"; sec="none"
+                read_val extra "Path XHTTP [/xhttp-tigo]:" "/xhttp-tigo"
+                read_val host_header "Host Header XHTTP [${dom}]:" "$dom"
             fi
             ;;
         *) trans="tcp"; sec="none" ;;
@@ -425,7 +462,7 @@ str_st = inb["streamSettings"]
 
 if proto in ["vless", "vmess"]:
     client_obj = {"id": user}
-    if sec == "reality":
+    if sec == "reality" and trans == "tcp":
         client_obj["flow"] = "xtls-rprx-vision"
     st["clients"] = [client_obj]
     if proto == "vless":
@@ -440,6 +477,10 @@ elif proto == "socks":
 
 if trans == "ws":
     str_st["wsSettings"] = {"path": extra, "headers": {"Host": host_header}}
+elif trans == "xhttp":
+    str_st["xhttpSettings"] = {"path": extra, "mode": "auto"}
+    if host_header and host_header != dom:
+        str_st["xhttpSettings"]["headers"] = {"Host": host_header}
 
 if sec == "tls" and cert_dir:
     str_st["tlsSettings"] = {
@@ -496,11 +537,18 @@ str_st = inb.get("streamSettings") or {}
 if act == "port":
     inb["port"] = int(val)
 elif act == "path":
-    if str_st.get("network") == "ws":
+    net = str_st.get("network")
+    if net == "ws":
         ws_st = str_st.setdefault("wsSettings", {})
         ws_st["path"] = val
         if val2:
             headers = ws_st.setdefault("headers", {})
+            headers["Host"] = val2
+    elif net == "xhttp":
+        xh_st = str_st.setdefault("xhttpSettings", {})
+        xh_st["path"] = val
+        if val2:
+            headers = xh_st.setdefault("headers", {})
             headers["Host"] = val2
 elif act == "id":
     if "password" in st and "clients" not in st:
@@ -513,7 +561,7 @@ elif act == "add_id":
         client_obj = {}
         if "id" in st["clients"][0]: client_obj["id"] = val
         elif "password" in st["clients"][0]: client_obj["password"] = val
-        if str_st.get("security") == "reality":
+        if str_st.get("security") == "reality" and str_st.get("network") == "tcp":
             client_obj["flow"] = "xtls-rprx-vision"
         st["clients"].append(client_obj)
 
@@ -539,9 +587,9 @@ fi
 while true; do
     header
     echo -e " ${YELLOW}${BOLD}⚙️  PANEL PRINCIPAL XRAY${NC}"
-    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}🔄 Cambiar Protocolo / Transmisión${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}🔄 Cambiar Protocolo / Transmisión (Reality / XHTTP)${NC}"
     echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}🔌 Cambiar Puerto${NC}"
-    echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}🛤️  Cambiar Path WS / Host Header${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}🛤️  Cambiar Path WS / XHTTP / Host Header${NC}"
     echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}🔑 Cambiar ID / Contraseña Principal${NC}"
     echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}➕ Agregar Nuevo Usuario / ID${NC}"
     echo -e "  ${WHITE}${BOLD}[ 6 ]${NC} ${CYAN}📋 Ver Datos de Conexión / Links / QR${NC}"
@@ -563,8 +611,8 @@ while true; do
             pause_screen
             ;;
         3)
-            read_val npath "Nuevo Path WS:" "/trojan-ws"
-            read_val nhost "Nuevo Host Header WS:" ""
+            read_val npath "Nuevo Path WS / XHTTP:" "/xhttp-tigo"
+            read_val nhost "Nuevo Host Header (Enter para omitir):" ""
             modify_param "path" "$npath" "$nhost"
             echo -e "${GREEN}✔ Parámetros actualizados exitosamente.${NC}"
             pause_screen
