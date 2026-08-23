@@ -1,4 +1,4 @@
-cat << 'EOF' > /usr/local/bin/xray-panel
+cat << 'EOF' > /usr/local/bin/xray
 #!/bin/bash
 # =========================================================
 #  XRAY MANAGER - OFFICIAL CORE + REALITY & XHTTP EDITION
@@ -684,6 +684,6 @@ while true; do
 done
 EOF
 
-chmod +x /usr/local/bin/xray-panel
-alias xray='/usr/local/bin/xray-panel'
-bash /usr/local/bin/xray-panel
+chmod +x /usr/local/bin/xray
+alias xray='/usr/local/bin/xray'
+bash /usr/local/bin/xray
