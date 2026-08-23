@@ -1,13 +1,13 @@
-cat << 'EOF' > /usr/local/bin/xray
+cat << 'EOF' > /usr/local/bin/menu
 #!/bin/bash
 # =========================================================
-#  XRAY MANAGER - FIXED & OPTIMIZED EDITION
+#  XRAY MANAGER - OFFICIAL CORE & REALITY EDITION
 # =========================================================
 
 export TERM=xterm
 export DEBIAN_FRONTEND=noninteractive
 
-# Auto-limpieza de caracteres de fin de línea de Windows (CRLF a LF)
+# Limpieza de retornos de carro
 sed -i 's/\r$//' "$0" 2>/dev/null
 
 BOLD='\033[1m'
@@ -19,41 +19,38 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-CONFIG_FILE="/usr/local/xray/config.json"
-XRAY_BIN="/usr/local/xray/xray"
-SERVICE_FILE="/etc/systemd/system/xray.service"
-CERT_DIR="/usr/local/xray"
+CONFIG_FILE="/usr/local/etc/xray/config.json"
+XRAY_BIN="/usr/local/bin/xray"
+CERT_DIR="/usr/local/etc/xray"
 LOCK_FILE="/tmp/xray_manager.lock"
 
-# Crear accesos directos
+# Crear accesos directos seguros (sin sobrescribir el binario de xray)
 install_shortcuts() {
-    chmod +x /usr/local/bin/xray 2>/dev/null
-    ln -sf /usr/local/bin/xray /usr/local/bin/v2ray 2>/dev/null
-    ln -sf /usr/local/bin/xray /usr/local/bin/menu 2>/dev/null
-    ln -sf /usr/local/bin/xray /usr/bin/xray 2>/dev/null
-    ln -sf /usr/local/bin/xray /usr/bin/v2ray 2>/dev/null
-    ln -sf /usr/local/bin/xray /usr/bin/menu 2>/dev/null
+    chmod +x /usr/local/bin/menu 2>/dev/null
+    ln -sf /usr/local/bin/menu /usr/bin/menu 2>/dev/null
+    ln -sf /usr/local/bin/menu /usr/bin/v2ray 2>/dev/null
+    ln -sf /usr/local/bin/menu /usr/local/bin/v2ray 2>/dev/null
 }
 
 detect_ip() {
     local ip=""
+    ip=$(curl -4 -fsS --max-time 3 https://api.ipify.org 2>/dev/null | tr -d '\r\n')
+    [[ -n "$ip" ]] && echo "$ip" && return
+    
     ip=$(curl -4 -fsS --max-time 3 https://ifconfig.me 2>/dev/null | tr -d '\r\n')
     [[ -n "$ip" ]] && echo "$ip" && return
     
-    ip=$(curl -4 -fsS --max-time 3 https://icanhazip.com 2>/dev/null | tr -d '\r\n')
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}' | tr -d '\r\n')
     [[ -n "$ip" ]] && echo "$ip" && return
     
-    ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1 | tr -d '\r\n')
-    [[ -n "$ip" ]] && echo "$ip" && return
-    
-    echo "127.0.0.1"
+    echo "102.129.137.76"
 }
 
 SERVER_IP=$(detect_ip)
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-       echo -e "\n${RED}${BOLD}[✗] Requiere permisos de root para ejecutar este script.${NC}\n"
+       echo -e "\n${RED}${BOLD}[✗] Requiere permisos de root (sudo menu).${NC}\n"
        exit 1
     fi
 }
@@ -63,8 +60,6 @@ open_port() {
     if [[ -n "$port" ]]; then
         iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
         iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
-        ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
-        ip6tables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
         if command -v ufw >/dev/null 2>&1; then
             ufw allow "$port"/tcp >/dev/null 2>&1
             ufw allow "$port"/udp >/dev/null 2>&1
@@ -73,56 +68,21 @@ open_port() {
 }
 
 install_core_if_missing() {
-    if [[ ! -x "$XRAY_BIN" || ! -f "$SERVICE_FILE" ]]; then
-        echo -e "${CYAN}${BOLD}⚡ Instalando dependencias básicas y Xray Core...${NC}"
+    open_port 22
+    open_port 443
+
+    if [ ! -f "$XRAY_BIN" ] || [ ! -f "$CONFIG_FILE" ]; then
+        echo -e "${CYAN}${BOLD}⚡ Instalando dependencias y Xray Core Oficial...${NC}"
+        apt-get update -y >/dev/null 2>&1
+        apt-get install -y curl qrencode python3 openssl certbot >/dev/null 2>&1 || yum install -y curl qrencode python3 openssl >/dev/null 2>&1
         
-        killall apt apt-get dpkg 2>/dev/null
-        rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>/dev/null
+        # Detener posibles conflictos
+        systemctl stop sing-box 2>/dev/null
+        systemctl disable sing-box 2>/dev/null
 
-        apt-get update -y -qq >/dev/null 2>&1
-        apt-get install -y -qq python3 wget unzip curl openssl certbot psmisc >/dev/null 2>&1
-        
-        mkdir -p /usr/local/xray
-
-        local total_mem
-        total_mem=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
-        if [[ -n "$total_mem" && "$total_mem" -lt 1024 ]]; then
-            if [[ $(swapon --show 2>/dev/null | wc -l) -eq 0 ]]; then
-                fallocate -l 1G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=1024 2>/dev/null
-                chmod 600 /swapfile
-                mkswap /swapfile >/dev/null 2>&1
-                swapon /swapfile >/dev/null 2>&1
-            fi
-        fi
-
-        local ARCH=$(uname -m)
-        local XURL="https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-64.zip"
-        if [[ "$ARCH" == *"aarch64"* || "$ARCH" == *"arm64"* ]]; then
-            XURL="https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-arm64-v8a.zip"
-        fi
-
-        echo -e "${CYAN}Descargando Xray Core...${NC}"
-        wget -q --timeout=30 "$XURL" -O /tmp/xray.zip
-        unzip -o /tmp/xray.zip -d /usr/local/xray/ >/dev/null 2>&1
-        chmod +x /usr/local/xray/xray
-        rm -f /tmp/xray.zip
-
-        cat > "$SERVICE_FILE" <<EOFS
-[Unit]
-Description=Xray Core Service
-After=network.target
-
-[Service]
-ExecStart=${XRAY_BIN} run -config ${CONFIG_FILE}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOFS
-        systemctl daemon-reload >/dev/null 2>&1
-        echo -e "${GREEN}✔ Instalación base completada exitosamente.${NC}\n"
-        sleep 1
+        # Instalador Oficial XTLS
+        bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u root >/dev/null 2>&1
+        mkdir -p /usr/local/etc/xray
     fi
 }
 
@@ -139,7 +99,7 @@ get_status() {
 header() {
     clear
     echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}${BOLD}                XRAY MANAGER PANEL (v1.8.24)             ${NC}"
+    echo -e "${CYAN}${BOLD}                 XRAY MANAGER PANEL (OFICIAL)             ${NC}"
     echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════${NC}"
     echo -e " ${PURPLE}${BOLD}▸ IP Servidor:${NC}  ${YELLOW}${SERVER_IP}${NC}"
     echo -e " ${PURPLE}${BOLD}▸ Estado Xray:${NC}  $(get_status)"
@@ -163,7 +123,7 @@ read_val() {
 
 setup_tls_cert() {
     local domain="$1"
-    mkdir -p /usr/local/xray
+    mkdir -p /usr/local/etc/xray
 
     open_port 80
     open_port 443
@@ -188,15 +148,8 @@ setup_tls_cert() {
     read -r cert_opt
 
     if [[ "$cert_opt" == "1" ]]; then
-        if ! command -v certbot >/dev/null 2>&1; then
-            apt-get update -y -qq >/dev/null 2>&1
-            apt-get install -y -qq certbot >/dev/null 2>&1
-        fi
-
         systemctl stop xray 2>/dev/null
-        fuser -k 80/tcp >/dev/null 2>&1
-
-        DEBIAN_FRONTEND=noninteractive certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
+        certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email >/dev/null 2>&1
 
         if [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
             cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${CERT_DIR}/cert.pem"
@@ -220,17 +173,22 @@ setup_tls_cert() {
 show_info() {
     header
     echo -e "${PURPLE}${BOLD}[ 📋 DATOS DE CONEXIÓN ACTUAL ]${NC}\n"
-    python3 - "$CONFIG_FILE" <<'PY'
+    
+    local GENERATED_LINK
+    GENERATED_LINK=$(python3 - "$CONFIG_FILE" "$SERVER_IP" <<'PY'
 import json, sys, base64, urllib.parse
 
+cfg_file = sys.argv[1]
+serv_ip  = sys.argv[2]
+
 try:
-    with open(sys.argv[1], "r") as f:
+    with open(cfg_file, "r") as f:
         cfg = json.load(f)
 except Exception:
-    print("\033[0;31mError al leer la configuración actual.\033[0m")
+    print("ERROR_READ")
     sys.exit(1)
 
-dom = str(cfg.get("_domain", "127.0.0.1")).strip()
+dom = str(cfg.get("_domain", serv_ip)).strip()
 pub_key = str(cfg.get("_pub_key", "")).strip()
 sni = str(cfg.get("_sni", "")).strip()
 short_id = str(cfg.get("_short_id", "")).strip()
@@ -253,68 +211,60 @@ elif trans == "grpc":
     grpc_st = str_st.get("grpcSettings") or {}
     extra = str(grpc_st.get("serviceName", "grpc")).strip()
 
-print(f"\033[1;37mProtocolo   :\033[0m \033[0;36m{proto.upper()}\033[0m")
-print(f"\033[1;37mHost / IP   :\033[0m \033[1;33m{dom}\033[0m")
-print(f"\033[1;37mPuerto      :\033[0m \033[0;32m{port}\033[0m")
-print(f"\033[1;37mTransporte  :\033[0m \033[0;36m{trans}\033[0m")
-print(f"\033[1;37mSeguridad   :\033[0m \033[0;36m{sec}\033[0m")
+print(f"\033[1;37mProtocolo   :\033[0m \033[0;36m{proto.upper()}\033[0m", file=sys.stderr)
+print(f"\033[1;37mIP / Host   :\033[0m \033[1;33m{serv_ip}\033[0m", file=sys.stderr)
+print(f"\033[1;37mPuerto      :\033[0m \033[0;32m{port}\033[0m", file=sys.stderr)
+print(f"\033[1;37mTransporte  :\033[0m \033[0;36m{trans}\033[0m", file=sys.stderr)
+print(f"\033[1;37mSeguridad   :\033[0m \033[0;36m{sec}\033[0m", file=sys.stderr)
 
 if trans == "ws":
-    print(f"\033[1;37mPath WS     :\033[0m \033[0;36m{extra}\033[0m")
-    print(f"\033[1;37mHost WS     :\033[0m \033[1;33m{ws_host}\033[0m")
-elif trans == "grpc":
-    print(f"\033[1;37mServiceName :\033[0m \033[0;36m{extra}\033[0m")
+    print(f"\033[1;37mPath WS     :\033[0m \033[0;36m{extra}\033[0m", file=sys.stderr)
+    print(f"\033[1;37mHost WS     :\033[0m \033[1;33m{ws_host}\033[0m", file=sys.stderr)
 
 if sec == "reality":
-    print(f"\033[1;37mPublic Key  :\033[0m \033[1;33m{pub_key}\033[0m")
-    print(f"\033[1;37mSNI         :\033[0m \033[0;36m{sni}\033[0m")
-    print(f"\033[1;37mShort ID    :\033[0m \033[0;36m{short_id}\033[0m")
+    print(f"\033[1;37mSNI Destino :\033[0m \033[0;36m{sni}\033[0m", file=sys.stderr)
+    print(f"\033[1;37mPublic Key  :\033[0m \033[1;32m{pub_key}\033[0m", file=sys.stderr)
+    print(f"\033[1;37mShort ID    :\033[0m \033[1;33m{short_id}\033[0m", file=sys.stderr)
 
-print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n")
+print("\n\033[1;35m--- USUARIOS Y ENLACES DE CONEXIÓN ---\033[0m\n", file=sys.stderr)
 
+first_link = ""
 if proto == "shadowsocks":
     method = str(st.get("method", "aes-256-gcm")).strip()
     pass_val = str(st.get("password", "")).strip()
     b64_ss = base64.b64encode(f"{method}:{pass_val}".encode()).decode()
-    link = f"ss://{b64_ss}@{dom}:{port}#Xray-Shadowsocks"
-    print(f"\033[1;37m[Usuario 1]\033[0m Clave: \033[1;33m{pass_val}\033[0m")
-    print(f"\033[0;32mEnlace:\033[0m {link}\n")
+    link = f"ss://{b64_ss}@{serv_ip}:{port}#Xray-Shadowsocks"
+    first_link = link
+    print(f"\033[1;37m[Usuario 1]\033[0m Clave: \033[1;33m{pass_val}\033[0m", file=sys.stderr)
+    print(f"\033[0;32mEnlace:\033[0m {link}\n", file=sys.stderr)
 else:
     clients = st.get("clients", [])
     for idx, c in enumerate(clients, 1):
         user_id = str(c.get("id") or c.get("password") or "").strip()
-        print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m")
+        print(f"\033[1;37m[Usuario {idx}]\033[0m ID/Clave: \033[1;33m{user_id}\033[0m", file=sys.stderr)
         
         link = ""
-        host_for_link = ws_host if ws_host else dom
-
         if proto == "vless":
             if sec == "reality":
-                link = f"vless://{user_id}@{dom}:{port}?type=tcp&security=reality&encryption=none&pbk={pub_key}&fp=chrome&sni={sni}&sid={short_id}&flow=xtls-rprx-vision#Xray-VLESS-REALITY"
+                link = f"vless://{user_id}@{serv_ip}:{port}?security=reality&encryption=none&pbk={pub_key}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={short_id}#Tigo-VLESS-REALITY"
             else:
                 params = f"encryption=none&type={trans}"
                 if trans == "ws":
-                    # CORRECCIÓN: host ANTES que path
-                    params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='/')}"
-                elif trans == "grpc":
-                    params += f"&serviceName={urllib.parse.quote(extra, safe='')}&mode=gun"
-                
+                    params += f"&host={urllib.parse.quote(ws_host)}&path={urllib.parse.quote(extra, safe='/')}"
                 if sec == "tls":
                     params += f"&security=tls&sni={urllib.parse.quote(dom)}"
                 else:
                     params += f"&security=none"
-                
-                link = f"vless://{user_id}@{dom}:{port}?{params}#Xray-VLESS"
+                link = f"vless://{user_id}@{serv_ip}:{port}?{params}#Xray-VLESS"
 
         elif proto == "vmess":
             v_json = {
-                "v": "2", "ps": f"Xray-VMess-{idx}", "add": dom, "port": str(port),
+                "v": "2", "ps": f"Xray-VMess-{idx}", "add": serv_ip, "port": str(port),
                 "id": user_id, "aid": "0", "net": trans, "type": "none",
-                "host": host_for_link if trans == "ws" else "",
+                "host": ws_host if trans == "ws" else "",
                 "path": extra if trans == "ws" else "",
                 "tls": "tls" if sec == "tls" else "",
-                "sni": dom if sec == "tls" else "",
-                "serviceName": extra if trans == "grpc" else ""
+                "sni": dom if sec == "tls" else ""
             }
             b64 = base64.b64encode(json.dumps(v_json).encode()).decode()
             link = f"vmess://{b64}"
@@ -322,25 +272,30 @@ else:
         elif proto == "trojan":
             params = f"type={trans}"
             if trans == "ws":
-                # CORRECCIÓN CRÍTICA: host ANTES que path para compatibilidad con HTTP Custom
-                params += f"&host={urllib.parse.quote(host_for_link)}&path={urllib.parse.quote(extra, safe='/')}"
-            elif trans == "grpc":
-                params += f"&serviceName={urllib.parse.quote(extra, safe='')}"
-
+                params += f"&host={urllib.parse.quote(ws_host)}&path={urllib.parse.quote(extra, safe='/')}"
             if sec == "tls":
                 params += f"&security=tls&sni={urllib.parse.quote(dom)}"
             elif sec == "reality":
                 params += f"&security=reality&pbk={pub_key}&sni={sni}&sid={short_id}"
-
-            link = f"trojan://{user_id}@{dom}:{port}?{params}#Xray-Trojan"
+            link = f"trojan://{user_id}@{serv_ip}:{port}?{params}#Xray-Trojan"
 
         elif proto == "socks":
-            link = f"socks5://{dom}:{port}#Xray-SOCKS5"
+            link = f"socks5://{serv_ip}:{port}#Xray-SOCKS5"
 
         if link:
-            print(f"\033[0;32mEnlace:\033[0m {link}\n")
+            if not first_link:
+                first_link = link
+            print(f"\033[0;32mEnlace:\033[0m {link}\n", file=sys.stderr)
 
+print(first_link)
 PY
+    )
+
+    if [[ -n "$GENERATED_LINK" && "$GENERATED_LINK" != "ERROR_READ" ]] && command -v qrencode >/dev/null 2>&1; then
+        echo -e "${YELLOW}${BOLD}📲 CÓDIGO QR PARA ESCANEAR:${NC}"
+        qrencode -t ANSIUTF8 "$GENERATED_LINK"
+    fi
+
     pause_screen
 }
 
@@ -368,26 +323,15 @@ configure_protocol() {
 
     header
     echo -e "${PURPLE}${BOLD}📝 DATOS DE CONEXIÓN:${NC}\n"
-    local dom="$SERVER_IP" port="9090" extra="" user="" host_header="$SERVER_IP"
-    read_val dom "Dominio o IP [${SERVER_IP}]:" "$SERVER_IP"
+    local dom="$SERVER_IP" port="443" extra="" user="" host_header="$SERVER_IP"
+    read_val dom "Dominio o IP de conexión [${SERVER_IP}]:" "$SERVER_IP"
     host_header="$dom"
-    read_val port "Puerto [9090]:" "9090"
+    read_val port "Puerto de escucha [443]:" "443"
 
     open_port "$port"
 
-    local auto_user
-    if command -v python3 &>/dev/null; then
-        auto_user=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null | tr -d '\r\n')
-    fi
-    if [[ -z "$auto_user" ]]; then
-        auto_user=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s | sha256sum | head -c 32)
-    fi
-    
-    local prompt_user="Contraseña / ID (UUID) [Auto]:"
-    if [[ "$proto" == "trojan" || "$proto" == "shadowsocks" ]]; then
-        prompt_user="Contraseña [Auto]:"
-    fi
-    read_val user "$prompt_user" "$auto_user"
+    local auto_user="6fcf17c8-acac-4d8b-a0ac-9d70a0bc200c"
+    read_val user "UUID / Contraseña [${auto_user}]:" "$auto_user"
 
     header
     echo -e "${PURPLE}${BOLD}🛠️  TRANSPORTE Y SEGURIDAD:${NC}\n"
@@ -395,10 +339,8 @@ configure_protocol() {
     echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} TCP + TLS"
     echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} WebSocket (WS)"
     echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} WebSocket + TLS"
-    echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} gRPC"
-    echo -e "  ${WHITE}${BOLD}[ 6 ]${NC} gRPC + TLS"
     if [[ "$proto" == "vless" ]]; then
-        echo -e "  ${WHITE}${BOLD}[ 7 ]${NC} ${GREEN}VLESS + REALITY (Vision)${NC}"
+        echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}${BOLD}VLESS + REALITY (Tigo / b.tigo.com)${NC}"
     fi
     echo
     echo -e -n "${YELLOW}➜ ${NC}${BOLD}Opción: ${NC}"
@@ -419,23 +361,16 @@ configure_protocol() {
             read_val host_header "Host Header WS [${dom}]:" "$dom"
             ;;
         5) 
-            trans="grpc"; sec="none"
-            read_val extra "Service Name gRPC [grpc]:" "grpc"
-            ;;
-        6) 
-            trans="grpc"; sec="tls"
-            read_val extra "Service Name gRPC [grpc]:" "grpc"
-            ;;
-        7) 
             if [[ "$proto" == "vless" ]]; then
                 trans="tcp"; sec="reality"
-                read_val sni "Target SNI (ej: www.apple.com):" "www.apple.com"
-                read_val dest "Target Dest (ej: www.apple.com:443):" "www.apple.com:443"
+                read_val sni "SNI de Operadora [b.tigo.com]:" "b.tigo.com"
+                dest="${sni}:443"
                 
+                # Extracción robusta exacta de llaves x25519
                 local keypair=$($XRAY_BIN x25519 2>/dev/null)
-                priv_key=$(echo "$keypair" | awk -F': ' '/Private key/ {print $2}' | tr -d ' \r\n')
-                pub_key=$(echo "$keypair" | awk -F': ' '/Public key/ {print $2}' | tr -d ' \r\n')
-                short_id=$(openssl rand -hex 4 2>/dev/null || echo "1a2b3c4d")
+                priv_key=$(echo "$keypair" | grep -Ei "Private" | head -n 1 | awk '{print $NF}' | tr -d '\r\n ')
+                pub_key=$(echo "$keypair" | grep -Ei "Public|Password" | head -n 1 | awk '{print $NF}' | tr -d '\r\n ')
+                short_id="e875"
             else
                 trans="tcp"; sec="none"
             fi
@@ -473,15 +408,13 @@ config = {
     "_short_id": short_id,
     "log": {"loglevel": "warning"},
     "inbounds": [{
-        "listen": "0.0.0.0",
         "port": port,
         "protocol": proto,
         "settings": {},
         "streamSettings": {
             "network": trans,
             "security": sec
-        },
-        "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]}
+        }
     }],
     "outbounds": [{"protocol": "freedom"}]
 }
@@ -507,8 +440,6 @@ elif proto == "socks":
 
 if trans == "ws":
     str_st["wsSettings"] = {"path": extra, "headers": {"Host": host_header}}
-elif trans == "grpc":
-    str_st["grpcSettings"] = {"serviceName": extra, "multiMode": False}
 
 if sec == "tls" and cert_dir:
     str_st["tlsSettings"] = {
@@ -554,9 +485,6 @@ import json, sys
 cfg_file, act, val = sys.argv[1:4]
 val2 = sys.argv[4] if len(sys.argv) > 4 else ""
 
-val = str(val).strip()
-val2 = str(val2).strip()
-
 try:
     with open(cfg_file, "r") as f: cfg = json.load(f)
 except: sys.exit(1)
@@ -574,9 +502,6 @@ elif act == "path":
         if val2:
             headers = ws_st.setdefault("headers", {})
             headers["Host"] = val2
-    elif str_st.get("network") == "grpc":
-        grpc_st = str_st.setdefault("grpcSettings", {})
-        grpc_st["serviceName"] = val
 elif act == "id":
     if "password" in st and "clients" not in st:
         st["password"] = val
@@ -597,10 +522,6 @@ PY
     systemctl restart xray >/dev/null 2>&1
 }
 
-if [[ "$1" == "run" ]] || [[ "$1" == "-config" ]] || [[ "$1" == "run-config" ]]; then
-    exec /usr/local/xray/xray "$@"
-fi
-
 if [[ -f "$LOCK_FILE" ]]; then
     rm -f "$LOCK_FILE"
 fi
@@ -620,11 +541,11 @@ while true; do
     echo -e " ${YELLOW}${BOLD}⚙️  PANEL PRINCIPAL XRAY${NC}"
     echo -e "  ${WHITE}${BOLD}[ 1 ]${NC} ${CYAN}🔄 Cambiar Protocolo / Transmisión${NC}"
     echo -e "  ${WHITE}${BOLD}[ 2 ]${NC} ${CYAN}🔌 Cambiar Puerto${NC}"
-    echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}🛤️  Cambiar Path WS / Host Header / ServiceName gRPC${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}🛤️  Cambiar Path WS / Host Header${NC}"
     echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}🔑 Cambiar ID / Contraseña Principal${NC}"
     echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${GREEN}➕ Agregar Nuevo Usuario / ID${NC}"
-    echo -e "  ${WHITE}${BOLD}[ 6 ]${NC} ${CYAN}📋 Ver Datos de Conexión / Links${NC}"
-    echo -e "  ${WHITE}${BOLD}[ 7 ]${NC} ${YELLOW}🔍 Ver Logs en Vivo (Monitoreo HTTP Custom)${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 6 ]${NC} ${CYAN}📋 Ver Datos de Conexión / Links / QR${NC}"
+    echo -e "  ${WHITE}${BOLD}[ 7 ]${NC} ${YELLOW}🔍 Ver Logs en Vivo (Monitoreo)${NC}"
     echo -e "  ${WHITE}${BOLD}[ 8 ]${NC} ${CYAN}🔄 Reiniciar Servicio Xray${NC}"
     echo -e "  ${WHITE}${BOLD}[ 9 ]${NC} ${RED}🗑️  Desinstalar Xray por Completo${NC}"
     echo -e "  ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}🚪 Salir del Menú${NC}"
@@ -635,15 +556,15 @@ while true; do
     case "$op" in
         1) configure_protocol ;;
         2)
-            read_val np "Nuevo Puerto:" "9090"
+            read_val np "Nuevo Puerto:" "443"
             open_port "$np"
             modify_param "port" "$np"
             echo -e "${GREEN}✔ Puerto actualizado a $np.${NC}"
             pause_screen
             ;;
         3)
-            read_val npath "Nuevo Path WS / ServiceName gRPC:" "/trojan-ws"
-            read_val nhost "Nuevo Host Header WS (Enter para omitir):" ""
+            read_val npath "Nuevo Path WS:" "/trojan-ws"
+            read_val nhost "Nuevo Host Header WS:" ""
             modify_param "path" "$npath" "$nhost"
             echo -e "${GREEN}✔ Parámetros actualizados exitosamente.${NC}"
             pause_screen
@@ -652,20 +573,19 @@ while true; do
             nid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)
             read_val nid "Nueva ID/Contraseña:" "$nid"
             modify_param "id" "$nid"
-            echo -e "${GREEN}✔ ID/Contraseña actualizada a $nid${NC}"
+            echo -e "${GREEN}✔ ID actualizada a $nid${NC}"
             pause_screen
             ;;
         5)
             aid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)
-            read_val aid "ID/Contraseña a agregar:" "$aid"
+            read_val aid "ID a agregar:" "$aid"
             modify_param "add_id" "$aid"
-            echo -e "${GREEN}✔ ID/Contraseña $aid agregada correctamente.${NC}"
+            echo -e "${GREEN}✔ ID $aid agregada correctamente.${NC}"
             pause_screen
             ;;
         6) show_info ;;
         7)
             echo -e "\n${YELLOW}Presiona CTRL + C para detener logs...${NC}\n"
-            sleep 1.5
             journalctl -u xray -f
             ;;
         8)
@@ -677,7 +597,7 @@ while true; do
             echo -e "\n${YELLOW}⚡ Desinstalando Xray por completo...${NC}"
             systemctl stop xray 2>/dev/null
             systemctl disable xray 2>/dev/null
-            rm -rf /usr/local/xray /etc/systemd/system/xray.service /usr/local/bin/xray /usr/local/bin/v2ray /usr/local/bin/menu
+            rm -rf /usr/local/etc/xray /usr/local/bin/menu /usr/bin/menu /usr/bin/v2ray /usr/local/bin/v2ray
             systemctl daemon-reload
             rm -f "$LOCK_FILE"
             echo -e "${GREEN}✔ Desinstalación completa realizada.${NC}"
@@ -692,6 +612,5 @@ while true; do
 done
 EOF
 
-chmod +x /usr/local/bin/xray
-echo -e "\n${GREEN}${BOLD}🚀 Script corregido e instalado exitosamente.${NC}\n"
-/usr/local/bin/xray
+chmod +x /usr/local/bin/menu
+menu
