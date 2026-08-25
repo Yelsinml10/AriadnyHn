@@ -1,4 +1,4 @@
-cat << 'EOF' > /usr/local/bin/xray
+cat << 'EOF' > /usr/local/bin/xray-panel
 #!/bin/bash
 # =========================================================
 #  XRAY MANAGER - OFFICIAL CORE + REALITY & XHTTP EDITION
@@ -76,16 +76,20 @@ install_core_if_missing() {
     open_port 22
     open_port 443
 
-    if [ ! -f "$XRAY_BIN" ]; then
+    if [ ! -f "$XRAY_BIN" ] || file "$XRAY_BIN" 2>/dev/null | grep -q "shell script"; then
         echo -e "${CYAN}${BOLD}⚡ Instalando dependencias y Xray Core Oficial...${NC}"
         apt-get update -y >/dev/null 2>&1
-        apt-get install -y curl qrencode python3 openssl certbot >/dev/null 2>&1 || yum install -y curl qrencode python3 openssl >/dev/null 2>&1
+        apt-get install -y curl qrencode python3 openssl certbot file >/dev/null 2>&1 || yum install -y curl qrencode python3 openssl file >/dev/null 2>&1
         
         systemctl stop sing-box 2>/dev/null
         systemctl disable sing-box 2>/dev/null
+        rm -f "$XRAY_BIN"
 
         # Instalador Oficial XTLS
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u root >/dev/null 2>&1
+        
+        # Eliminar config generica para forzar primera configuracion
+        rm -f "$CONFIG_FILE"
     fi
     mkdir -p /usr/local/etc/xray
 }
@@ -93,7 +97,7 @@ install_core_if_missing() {
 get_status() {
     if systemctl is-active --quiet xray 2>/dev/null; then
         echo -e "${GREEN}${BOLD}● ONLINE / FUNCIONANDO${NC}"
-    elif [[ -f "$CONFIG_FILE" ]]; then
+    elif [[ -f "$CONFIG_FILE" && $(grep -q "_domain" "$CONFIG_FILE" 2>/dev/null; echo $?) -eq 0 ]]; then
         echo -e "${RED}${BOLD}● OFFLINE / DETENIDO${NC}"
     else
         echo -e "${YELLOW}${BOLD}● SIN CONFIGURACIÓN${NC}"
@@ -332,7 +336,7 @@ configure_protocol() {
     echo -e "  ${WHITE}${BOLD}[ 3 ]${NC} ${CYAN}${BOLD}Trojan${NC}"
     echo -e "  ${WHITE}${BOLD}[ 4 ]${NC} ${CYAN}${BOLD}Shadowsocks${NC}"
     echo -e "  ${WHITE}${BOLD}[ 5 ]${NC} ${CYAN}${BOLD}SOCKS5${NC}"
-    if [[ -f "$CONFIG_FILE" ]]; then
+    if [[ -f "$CONFIG_FILE" && $(grep -q "_domain" "$CONFIG_FILE" 2>/dev/null; echo $?) -eq 0 ]]; then
         echo -e "  ${WHITE}${BOLD}[ 0 ]${NC} ${YELLOW}${BOLD}Volver al Menú Principal${NC}\n"
     else
         echo
@@ -602,8 +606,8 @@ check_root
 install_shortcuts
 install_core_if_missing
 
-# Caer directo al panel de protocolos en la primera instalación
-if [[ ! -f "$CONFIG_FILE" ]]; then
+# Caer directo al panel de protocolos en la primera instalación o sin config personalizada
+if [[ ! -f "$CONFIG_FILE" ]] || ! grep -q "_domain" "$CONFIG_FILE" 2>/dev/null; then
     configure_protocol
 fi
 
@@ -684,6 +688,6 @@ while true; do
 done
 EOF
 
-chmod +x /usr/local/bin/xray
-alias xray='/usr/local/bin/xray'
-bash /usr/local/bin/xray
+chmod +x /usr/local/bin/xray-panel
+alias xray='/usr/local/bin/xray-panel'
+bash /usr/local/bin/xray-panel
