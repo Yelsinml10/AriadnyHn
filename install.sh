@@ -870,18 +870,10 @@ v2ray_menu() {
 
 xray_menu() {
     prepare_for_external_script
-    if command_exists menuV2; then
+    if [[ -x /usr/local/bin/xray-panel ]]; then
+        /usr/local/bin/xray-panel
+    elif command_exists menuV2; then
         menuV2
-    elif systemctl is-active --quiet xray 2>/dev/null; then
-        if [[ -x /usr/local/bin/xray ]]; then
-            /usr/local/bin/xray
-        elif [[ -x /usr/bin/xray ]]; then
-            /usr/bin/xray
-        else
-            panel_header "EJECUTANDO XRAY PANEL" "🔰"
-            execute_script "install-xray.sh" "xray.sh" "Xray.sh"
-            pause_screen
-        fi
     else
         panel_header "INSTALANDO XRAY PANEL DESDE GITHUB" "🔰"
         execute_script "install-xray.sh" "xray.sh" "Xray.sh"
