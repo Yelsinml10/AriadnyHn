@@ -296,33 +296,37 @@ if ports: print(" ".join(str(x) for x in sorted(ports)))
 
 get_nginx_ports() {
     python3 -c '
-import subprocess, re, os
+import subprocess, re, os, shutil
+if not shutil.which("nginx"):
+    exit(0)
+
 ports = set()
-conf_dirs = ["/etc/nginx/sites-enabled", "/etc/nginx/conf.d", "/etc/nginx"]
-for d in conf_dirs:
-    if os.path.exists(d):
-        for root, _, files in os.walk(d):
-            for file in files:
-                if file.endswith(".conf") or d.endswith("sites-enabled"):
-                    try:
-                        with open(os.path.join(root, file), "r") as f:
-                            for line in f:
-                                line = line.strip()
-                                if line.startswith("#"): continue
-                                m = re.search(r"listen\s+(?:\[::\]:)?(\d+)", line)
-                                if m:
-                                    p = int(m.group(1))
-                                    if p not in [9090, 8888]: ports.add(p)
-                    except Exception: pass
+try:
+    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+    for line in out.splitlines():
+        if "nginx" in line:
+            for m in re.findall(r":(\d+)\s", line):
+                p = int(m)
+                if p not in [9090, 8888]: ports.add(p)
+except Exception: pass
+
 if not ports:
-    try:
-        out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-        for line in out.splitlines():
-            if "nginx" in line:
-                for m in re.findall(r":(\d+)\s", line):
-                    p = int(m)
-                    if p not in [9090, 8888]: ports.add(p)
-    except Exception: pass
+    conf_dirs = ["/etc/nginx/sites-enabled", "/etc/nginx/conf.d", "/etc/nginx"]
+    for d in conf_dirs:
+        if os.path.exists(d):
+            for root, _, files in os.walk(d):
+                for file in files:
+                    if file.endswith(".conf") or d.endswith("sites-enabled"):
+                        try:
+                            with open(os.path.join(root, file), "r") as f:
+                                for line in f:
+                                    line = line.strip()
+                                    if line.startswith("#"): continue
+                                    m = re.search(r"listen\s+(?:\[::\]:)?(\d+)", line)
+                                    if m:
+                                        p = int(m.group(1))
+                                        if p not in [9090, 8888]: ports.add(p)
+                        except Exception: pass
 if ports: print(" ".join(str(x) for x in sorted(ports)))
 ' 2>/dev/null
 }
@@ -400,21 +404,21 @@ if ports: print(",".join(map(str, sorted(ports))))
 get_ports_summary() {
     ACTIVE_ITEMS=()
 
-    if systemctl is-active --quiet caddy 2>/dev/null; then
+    if command_exists caddy && (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1); then
         local c_http=$(get_caddy_ports_http 2>/dev/null)
         local c_https=$(get_caddy_ports_https 2>/dev/null)
         local all_caddy=$(echo "$c_http $c_https" | xargs -n1 2>/dev/null | grep -v '^$' | sort -u -n | paste -sd, -)
         [[ -n "$all_caddy" ]] && ACTIVE_ITEMS+=("🌐 Caddy  : $(truncate_str "$all_caddy")") || ACTIVE_ITEMS+=("🌐 Caddy  : ACTIVO")
     fi
 
-    if systemctl is-active --quiet nginx 2>/dev/null; then
+    if command_exists nginx && (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1); then
         local ng_ports=$(get_nginx_ports 2>/dev/null)
         local all_nginx=$(echo "$ng_ports" | tr ' ' ',' 2>/dev/null)
         [[ -n "$all_nginx" ]] && ACTIVE_ITEMS+=("🔀 Nginx  : $(truncate_str "$all_nginx")") || ACTIVE_ITEMS+=("🔀 Nginx  : ACTIVO")
     fi
 
     local v_cfg=$(get_v2ray_cfg_path)
-    if systemctl is-active --quiet v2ray 2>/dev/null; then
+    if command_exists v2ray && (systemctl is-active --quiet v2ray 2>/dev/null || pgrep -x v2ray >/dev/null 2>&1); then
         local v_out=$(python3 -c '
 import json, sys, re, subprocess
 ports = set()
@@ -735,19 +739,21 @@ panel_header() {
 }
 
 download_to_path() {
-    local script_name="$1"
-    local destination="$2"
+    local destination="$1"
+    shift
+    local names=("$@")
 
-    printf "  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
+    for script_name in "${names[@]}"; do
+        printf "  %b⬇ Descargando %s...%b\n" "$CYAN" "$script_name" "$NC"
+        if curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$destination" 2>/dev/null && [[ -s "$destination" ]]; then
+            chmod 700 "$destination"
+            info "Archivo instalado en $destination"
+            return 0
+        fi
+        rm -f "$destination"
+    done
 
-    if curl -fsSL --connect-timeout 15 --max-time 300 "$BASE_URL/$script_name" -o "$destination" 2>/dev/null && [[ -s "$destination" ]]; then
-        chmod 700 "$destination"
-        info "Archivo instalado en $destination"
-        return 0
-    fi
-
-    error_msg "No se pudo descargar $script_name o el archivo está vacío."
-    rm -f "$destination"
+    error_msg "No se pudo descargar ningún script (${names[*]}). Verifica tu repositorio GitHub."
     return 1
 }
 
@@ -795,13 +801,9 @@ execute_script() {
     fi
 }
 
-is_python_installed() {
-    [[ -f /root/proxy.py ]] || [[ -f /usr/local/bin/proxy ]] || systemctl is-active --quiet python-proxy 2>/dev/null || (systemctl is-active --quiet socks-proxy 2>/dev/null && pgrep -f "proxy.py" >/dev/null)
-}
-
 caddy_menu() {
     prepare_for_external_script
-    if systemctl is-active --quiet caddy 2>/dev/null; then
+    if command_exists caddy && (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1); then
         if [[ -x /usr/local/bin/cadmin ]]; then
             /usr/local/bin/cadmin
         elif [[ -x /usr/bin/cadmin ]]; then
@@ -820,7 +822,7 @@ caddy_menu() {
 
 nginx_menu() {
     prepare_for_external_script
-    if systemctl is-active --quiet nginx 2>/dev/null; then
+    if command_exists nginx && (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1); then
         if [[ -x /usr/local/bin/MenuN ]]; then
             /usr/local/bin/MenuN
         elif [[ -x /usr/local/bin/menun ]]; then
@@ -843,7 +845,8 @@ multiplexacion_menu() {
 
         printf "\n"
         echo -ne "  \033[1;33m> Selecciona una opción [0-2]: \033[0m"
-        read sub_m
+        local sub_m
+        read -r sub_m
         sub_m=$(echo "$sub_m" | tr -d '\r\n\t ')
 
         case "$sub_m" in
@@ -858,10 +861,12 @@ multiplexacion_menu() {
 v2ray_menu() {
     prepare_for_external_script
     panel_header "INSTALANDO/EJECUTANDO V2RAY" "⚡"
-    if [[ -x /usr/local/bin/v2ray ]]; then
+    if [[ -x /usr/local/bin/menuv2ray ]]; then
+        /usr/local/bin/menuv2ray
+    elif [[ -x /usr/local/bin/v2ray-panel ]]; then
+        /usr/local/bin/v2ray-panel
+    elif [[ -x /usr/local/bin/v2ray ]] && grep -qE '^#!(/bin/bash|/usr/bin/env bash|/bin/sh)' /usr/local/bin/v2ray 2>/dev/null; then
         /usr/local/bin/v2ray
-    elif [[ -x /usr/bin/v2ray ]]; then
-        /usr/bin/v2ray
     else
         execute_script "install-v2ray.sh" "v2ray.sh" "V2ray.sh"
         pause_screen
@@ -915,7 +920,8 @@ mas_opciones_menu() {
 
         printf "\n"
         echo -ne "  \033[1;33m> Selecciona una opción [0-2]: \033[0m"
-        read sub_op
+        local sub_op
+        read -r sub_op
         sub_op=$(echo "$sub_op" | tr -d '\r\n\t ')
 
         case "$sub_op" in
@@ -958,29 +964,24 @@ rust_menu() {
 
 python_menu() {
     prepare_for_external_script
-    if is_python_installed; then
-        if [[ -x /usr/local/bin/proxy ]]; then
-            /usr/local/bin/proxy
-        elif [[ -f /root/proxy.py ]]; then
-            python3 /root/proxy.py
-        else
-            panel_header "SOCKS PROXY PYTHON" "🐍"
-            execute_script "Python.sh" "python.sh" "proxy.sh"
-            pause_screen
-        fi
+    panel_header "SOCKS PROXY PYTHON" "🐍"
+    if [[ -x /usr/local/bin/P-Proxy ]]; then
+        /usr/local/bin/P-Proxy
+    elif [[ -x /usr/local/bin/python-proxy ]]; then
+        /usr/local/bin/python-proxy
+    elif [[ -x /usr/local/bin/proxy ]] && grep -qE '^#!(/bin/bash|/usr/bin/env bash|/bin/sh|/usr/bin/python3|/usr/bin/env python3)' /usr/local/bin/proxy 2>/dev/null; then
+        /usr/local/bin/proxy
     else
-        panel_header "SOCKS PROXY PYTHON" "🐍"
         execute_script "Python.sh" "python.sh" "proxy.sh"
-        pause_screen
     fi
+    pause_screen
 }
 
 ssh_panel_menu() {
     prepare_for_external_script
     local ssh_panel="/usr/local/bin/sshpanel.sh"
     panel_header "SSH PANEL MANAGER" "👥"
-    printf "  %bDescargando panel SSH...%b\n" "$CYAN" "$NC"
-    if download_to_path "sshpanel.sh" "$ssh_panel" || download_to_path "Sshpanel.sh" "$ssh_panel"; then
+    if download_to_path "$ssh_panel" "sshpanel.sh" "Sshpanel.sh" "ssh-panel.sh"; then
         bash "$ssh_panel"
     fi
     pause_screen
@@ -1006,14 +1007,18 @@ monitor_menu() {
 status_menu() {
     prepare_for_external_script
     panel_header "ESTADO GENERAL DE SERVICIOS" "📋"
-    printf "  Caddy:       "; systemctl is-active --quiet caddy 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  Nginx:       "; systemctl is-active --quiet nginx 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  V2Ray:       "; systemctl is-active --quiet v2ray 2>/dev/null && info "ACTIVO" || warn "INACTIVO"
-    printf "  SSH-Go:      "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  BadVPN:      "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
+    printf "  Caddy:        "; (command_exists caddy && (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1)) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Nginx:        "; (command_exists nginx && (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1)) && info "ACTIVO" || warn "INACTIVO"
+    printf "  V2Ray:        "; (command_exists v2ray && (systemctl is-active --quiet v2ray 2>/dev/null || pgrep -x v2ray >/dev/null 2>&1)) && info "ACTIVO" || warn "INACTIVO"
+    printf "  XRay:         "; (systemctl is-active --quiet xray 2>/dev/null || pgrep -x xray >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  SSH-Go:       "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  UDP Panel:    "; (systemctl is-active --quiet udp-custom 2>/dev/null || systemctl is-active --quiet udp-hysteria 2>/dev/null || systemctl is-active --quiet zivpn 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Socks Rust:   "; (systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null || pgrep -f "socks-rust" >/dev/null || pgrep -f "rust-proxy" >/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Socks Python: "; (systemctl is-active --quiet python-proxy 2>/dev/null || pgrep -f "proxy.py" >/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  BadVPN:       "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
     
     local dns_p=$(get_slowdns_ports)
-    printf "  SlowDNS:     "
+    printf "  SlowDNS:      "
     if (systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null || pgrep -f "slowdns" >/dev/null); then
         [[ -n "$dns_p" ]] && info "ACTIVO (Puerto: $dns_p)" || info "ACTIVO"
     else
@@ -1021,7 +1026,7 @@ status_menu() {
     fi
 
     local ssl_p=$(get_ssl_ports)
-    printf "  SSL/Stunnel: "
+    printf "  SSL/Stunnel:  "
     if (systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null); then
         [[ -n "$ssl_p" ]] && info "ACTIVO (Puerto: $ssl_p)" || info "ACTIVO"
     else
@@ -1039,7 +1044,8 @@ main_menu() {
 
         printf "\n"
         echo -ne "  \033[1;33m> Selecciona una opción [0-16]: \033[0m"
-        read option
+        local option
+        read -r option
         option=$(echo "$option" | tr -d '\r\n\t ')
 
         case "$option" in
@@ -1076,4 +1082,4 @@ require_root
 install_dependencies
 setup_menu_shortcut
 setup_login_banner
-main_menu
+main_menu "$@"
