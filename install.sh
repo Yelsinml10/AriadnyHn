@@ -341,7 +341,7 @@ for cfg in ["/root/socks_config.json", "/etc/socks-python/config.json"]:
 try:
     out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
-        if "proxy.py" in line.lower() or ("python" in line.lower() and not any(k in line.lower() for k in ["rust", "caddy", "nginx"])):
+        if "proxy.py" in line.lower() or ("python" in line.lower() and not any(k in line.lower() for k in ["rust", "caddy", "nginx", "sshd"])):
             for m in re.findall(r":(\d+)\s", line):
                 ports.add(int(m))
 except Exception: pass
@@ -396,7 +396,8 @@ ports = set()
 try:
     out = subprocess.check_output("ss -tlpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
-        if "sshd" in line.lower() or "ssh" in line.lower():
+        # Detección estricta del demonio sshd (excluye python, ssh-go, vpn-proxy, etc.)
+        if "\"sshd\"" in line or ("sshd" in line.lower() and not any(x in line.lower() for x in ["python", "vpn-proxy", "ssh-go", "socks", "rust"])):
             for m in re.findall(r":(\d+)\s", line):
                 ports.add(int(m))
 except Exception: pass
@@ -415,11 +416,75 @@ print(",".join(map(str, sorted(ports))))
 get_ports_summary() {
     ACTIVE_ITEMS=()
 
-    # Únicamente mostrar puerto de XRay activo
+    # Caddy
+    if command_exists caddy && (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1); then
+        local p=$(get_caddy_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🌐 Caddy   : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🌐 Caddy   : ON")
+    fi
+
+    # Nginx
+    if command_exists nginx && (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1); then
+        local p=$(get_nginx_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🔀 Nginx   : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🔀 Nginx   : ON")
+    fi
+
+    # V2Ray
+    if command_exists v2ray && (systemctl is-active --quiet v2ray 2>/dev/null || pgrep -x v2ray >/dev/null 2>&1); then
+        local p=$(get_v2ray_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("⚡ V2Ray   : $(truncate_str "$p")") || ACTIVE_ITEMS+=("⚡ V2Ray   : ON")
+    fi
+
+    # SSH-Go
+    if systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null || pgrep -f "vpn-proxy" >/dev/null || pgrep -f "ssh-go" >/dev/null; then
+        local p=$(get_sshgo_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🚀 SSH-Go  : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🚀 SSH-Go  : ON")
+    fi
+
+    # XRay
     if systemctl is-active --quiet xray 2>/dev/null || pgrep -x xray >/dev/null 2>&1; then
         local p=$(get_xray_ports)
         [[ -n "$p" ]] && ACTIVE_ITEMS+=("🔰 XRay    : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🔰 XRay    : ON")
     fi
+
+    # UDP
+    if systemctl is-active --quiet udp-custom 2>/dev/null || systemctl is-active --quiet udp-hysteria 2>/dev/null || systemctl is-active --quiet zivpn 2>/dev/null || pgrep -f "udp-custom" >/dev/null; then
+        local p=$(get_udp_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("⚡ UDP     : $(truncate_str "$p")") || ACTIVE_ITEMS+=("⚡ UDP     : ON")
+    fi
+
+    # BadVPN
+    if pgrep -f badvpn-udpgw >/dev/null 2>&1 || systemctl is-active --quiet badvpn 2>/dev/null; then
+        local p=$(get_badvpn_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🚀 BadVPN  : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🚀 BadVPN  : 7200,7300")
+    fi
+
+    # Rust
+    if pgrep -f "socks-rust" >/dev/null || pgrep -f "rust-proxy" >/dev/null || systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null; then
+        local p=$(get_rust_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🦀 Rust    : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🦀 Rust    : ON")
+    fi
+
+    # Python
+    if pgrep -f "proxy.py" >/dev/null || systemctl is-active --quiet python-proxy 2>/dev/null; then
+        local p=$(get_python_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🐍 Python  : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🐍 Python  : ON")
+    fi
+
+    # SlowDNS
+    if systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null || pgrep -f "slowdns" >/dev/null; then
+        local p=$(get_slowdns_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🐌 SlowDNS : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🐌 SlowDNS : 53")
+    fi
+
+    # SSL/Stunnel
+    if systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null; then
+        local p=$(get_ssl_ports)
+        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🔒 SSL/TLS : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🔒 SSL/TLS : 443")
+    fi
+
+    # SSH (Únicamente OpenSSH / sshd)
+    local ssh_p=$(get_ssh_ports)
+    [[ -n "$ssh_p" ]] && ACTIVE_ITEMS+=("🔐 SSH     : $(truncate_str "$ssh_p")") || ACTIVE_ITEMS+=("🔐 SSH     : 22")
 }
 
 render_ui() {
