@@ -535,7 +535,7 @@ if active_items:
         print(B_PURPLE + "│" + NC + s1 + s2 + B_PURPLE + "│" + NC)
     print(B_PURPLE + "└" + ("─" * (w - 2)) + "┘" + NC)
 
-# 3. Menú Principal (2 Columnas)
+# 3. Menú Principal (2 Columnas con Opciones a Diferentes Colores)
 if mode == "full":
     t_m1 = "PROTOCOLOS & PROXIES"
     vt_m1 = vis_len(t_m1)
@@ -543,12 +543,12 @@ if mode == "full":
     print(B_BLUE + "┌── " + t_m1 + " " + ("─" * rem_m1) + "┐" + NC)
 
     opts1 = [
-        ("  " + B_CYAN + "[01]" + NC + " 🔀 " + WHITE + "Multiplexores" + NC, "  " + B_YELLOW + "[02]" + NC + " ⚡ " + WHITE + "V2Ray / VMess" + NC),
-        ("  " + B_GREEN + "[03]" + NC + " 🚀 " + WHITE + "SSH-Go Proxy" + NC, "  " + B_PURPLE + "[04]" + NC + " 🔰 " + WHITE + "XRay Panel" + NC),
-        ("  " + B_RED + "[05]" + NC + " ⚡ " + WHITE + "UDP Panel" + NC, "  " + B_YELLOW + "[06]" + NC + " 🦀 " + WHITE + "SOCKS Proxy Rust" + NC),
-        ("  " + B_GREEN + "[07]" + NC + " 🐍 " + WHITE + "SOCKS Proxy Python" + NC, "  " + B_CYAN + "[08]" + NC + " 👥 " + WHITE + "SSH Panel / User" + NC),
-        ("  " + B_PURPLE + "[09]" + NC + " 🚀 " + WHITE + "BadVPN UDPGW" + NC, "  " + B_YELLOW + "[10]" + NC + " 🐌 " + WHITE + "SlowDNS Panel" + NC),
-        ("  " + B_BLUE + "[11]" + NC + " 🔒 " + WHITE + "SSL / TLS Manager" + NC, "  " + B_YELLOW + "[12]" + NC + " 📁 " + B_YELLOW + "Más Opciones..." + NC),
+        ("  " + B_CYAN + "[01]" + NC + " 🔀 " + B_CYAN + "Multiplexores" + NC, "  " + B_YELLOW + "[02]" + NC + " ⚡ " + B_YELLOW + "V2Ray / VMess" + NC),
+        ("  " + B_GREEN + "[03]" + NC + " 🚀 " + B_GREEN + "SSH-Go Proxy" + NC, "  " + B_PURPLE + "[04]" + NC + " 🔰 " + B_PURPLE + "XRay Panel" + NC),
+        ("  " + B_RED + "[05]" + NC + " ⚡ " + B_RED + "UDP Panel" + NC, "  " + B_YELLOW + "[06]" + NC + " 🦀 " + B_YELLOW + "SOCKS Proxy Rust" + NC),
+        ("  " + B_GREEN + "[07]" + NC + " 🐍 " + B_GREEN + "SOCKS Proxy Python" + NC, "  " + B_CYAN + "[08]" + NC + " 👥 " + B_CYAN + "SSH Panel / User" + NC),
+        ("  " + B_PURPLE + "[09]" + NC + " 🚀 " + B_PURPLE + "BadVPN UDPGW" + NC, "  " + B_YELLOW + "[10]" + NC + " 🐌 " + B_YELLOW + "SlowDNS Panel" + NC),
+        ("  " + B_BLUE + "[11]" + NC + " 🔒 " + B_BLUE + "SSL / TLS Manager" + NC, "  " + B_YELLOW + "[12]" + NC + " 📁 " + B_YELLOW + "Más Opciones..." + NC),
     ]
 
     for c1, c2 in opts1:
@@ -564,8 +564,8 @@ if mode == "full":
     print(B_BLUE + "├── " + t_m2 + " " + ("─" * rem_m2) + "┤" + NC)
 
     opts2 = [
-        ("  " + B_RED + "[13]" + NC + " 🛡 " + WHITE + "Firewall" + NC, "  " + B_GREEN + "[14]" + NC + " 🔐 " + WHITE + "Configurar SSH" + NC),
-        ("  " + B_CYAN + "[15]" + NC + " 📊 " + WHITE + "Monitoreo Sistema" + NC, "  " + B_PURPLE + "[16]" + NC + " 📋 " + WHITE + "Estado General" + NC),
+        ("  " + B_RED + "[13]" + NC + " 🛡 " + B_RED + "Firewall" + NC, "  " + B_GREEN + "[14]" + NC + " 🔐 " + B_GREEN + "Configurar SSH" + NC),
+        ("  " + B_CYAN + "[15]" + NC + " 📊 " + B_CYAN + "Monitoreo Sistema" + NC, "  " + B_PURPLE + "[16]" + NC + " 📋 " + B_PURPLE + "Estado General" + NC),
         ("  " + B_RED + "[00]" + NC + " 🚪 " + B_RED + "Salir del Panel" + NC, ""),
     ]
 
@@ -583,8 +583,8 @@ elif mode == "sub_multiplexacion":
     print(B_BLUE + "┌── " + t_sub + " " + ("─" * rem_sub) + "┐" + NC)
 
     sub_opts = [
-        "  " + B_CYAN + "[01]" + NC + " 🌐 " + WHITE + "Caddy Server" + NC,
-        "  " + B_CYAN + "[02]" + NC + " 🔀 " + WHITE + "Nginx Proxy" + NC,
+        "  " + B_CYAN + "[01]" + NC + " 🌐 " + B_CYAN + "Caddy Server" + NC,
+        "  " + B_GREEN + "[02]" + NC + " 🔀 " + B_GREEN + "Nginx Proxy" + NC,
         "  " + B_RED + "[00]" + NC + " ⬅️  " + B_RED + "Volver al Menú Principal" + NC
     ]
 
@@ -601,8 +601,8 @@ elif mode == "sub_mas_opciones":
     print(B_BLUE + "┌── " + t_sub + " " + ("─" * rem_sub) + "┐" + NC)
 
     sub_opts = [
-        "  " + B_CYAN + "[01]" + NC + " ⚙️  " + WHITE + "Nueva Función 1" + NC,
-        "  " + B_CYAN + "[02]" + NC + " ⚙️  " + WHITE + "Nueva Función 2" + NC,
+        "  " + B_CYAN + "[01]" + NC + " ⚙️  " + B_CYAN + "Nueva Función 1" + NC,
+        "  " + B_GREEN + "[02]" + NC + " ⚙️  " + B_GREEN + "Nueva Función 2" + NC,
         "  " + B_RED + "[00]" + NC + " ⬅️  " + B_RED + "Volver al Menú Principal" + NC
     ]
 
