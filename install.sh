@@ -164,12 +164,6 @@ try:
                 p = int(m)
                 if p not in [2019]: ports.add(p)
 except Exception: pass
-if not ports:
-    try:
-        with open("/etc/caddy/Caddyfile", "r") as f:
-            for m in re.finditer(r"(?<![a-zA-Z0-9.-]):([0-9]+)", f.read()):
-                ports.add(int(m.group(1)))
-    except Exception: pass
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -193,16 +187,6 @@ get_v2ray_ports() {
     python3 -c '
 import subprocess, re, json
 ports = set()
-for cfg in ["/usr/local/v2ray/config.json", "/usr/local/etc/v2ray/config.json", "/etc/v2ray/config.json"]:
-    try:
-        with open(cfg, "r") as f:
-            d = json.load(f)
-            inbs = d.get("inbounds", [])
-            if "inbound" in d: inbs.append(d["inbound"])
-            for inb in inbs:
-                if "port" in inb and str(inb["port"]).isdigit():
-                    ports.add(int(inb["port"]))
-    except Exception: pass
 try:
     out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
@@ -210,6 +194,17 @@ try:
             for m in re.findall(r":(\d+)\s", line):
                 ports.add(int(m))
 except Exception: pass
+if not ports:
+    for cfg in ["/usr/local/v2ray/config.json", "/usr/local/etc/v2ray/config.json", "/etc/v2ray/config.json"]:
+        try:
+            with open(cfg, "r") as f:
+                d = json.load(f)
+                inbs = d.get("inbounds", [])
+                if "inbound" in d: inbs.append(d["inbound"])
+                for inb in inbs:
+                    if "port" in inb and str(inb["port"]).isdigit():
+                        ports.add(int(inb["port"]))
+        except Exception: pass
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -218,16 +213,6 @@ get_xray_ports() {
     python3 -c '
 import subprocess, re, json
 ports = set()
-for cfg in ["/usr/local/etc/xray/config.json", "/etc/xray/config.json"]:
-    try:
-        with open(cfg, "r") as f:
-            d = json.load(f)
-            inbs = d.get("inbounds", [])
-            if "inbound" in d: inbs.append(d["inbound"])
-            for inb in inbs:
-                if "port" in inb and str(inb["port"]).isdigit():
-                    ports.add(int(inb["port"]))
-    except Exception: pass
 try:
     out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
@@ -235,6 +220,17 @@ try:
             for m in re.findall(r":(\d+)\s", line):
                 ports.add(int(m))
 except Exception: pass
+if not ports:
+    for cfg in ["/usr/local/etc/xray/config.json", "/etc/xray/config.json"]:
+        try:
+            with open(cfg, "r") as f:
+                d = json.load(f)
+                inbs = d.get("inbounds", [])
+                if "inbound" in d: inbs.append(d["inbound"])
+                for inb in inbs:
+                    if "port" in inb and str(inb["port"]).isdigit():
+                        ports.add(int(inb["port"]))
+        except Exception: pass
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -243,14 +239,6 @@ get_sshgo_ports() {
     python3 -c '
 import subprocess, re, json
 ports = set()
-for cfg in ["/opt/vpn-proxy/config.json", "/etc/vpn-proxy/config.json", "/etc/ssh-go/config.json"]:
-    try:
-        with open(cfg, "r") as f:
-            d = json.load(f)
-            p = d.get("port") or d.get("ports")
-            if isinstance(p, int): ports.add(p)
-            elif isinstance(p, list): ports.update([int(x) for x in p if str(x).isdigit()])
-    except Exception: pass
 try:
     out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
@@ -258,6 +246,15 @@ try:
             for m in re.findall(r":(\d+)\s", line):
                 ports.add(int(m))
 except Exception: pass
+if not ports:
+    for cfg in ["/opt/vpn-proxy/config.json", "/etc/vpn-proxy/config.json", "/etc/ssh-go/config.json"]:
+        try:
+            with open(cfg, "r") as f:
+                d = json.load(f)
+                p = d.get("port") or d.get("ports")
+                if isinstance(p, int): ports.add(p)
+                elif isinstance(p, list): ports.update([int(x) for x in p if str(x).isdigit()])
+        except Exception: pass
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -266,12 +263,6 @@ get_udp_ports() {
     python3 -c '
 import subprocess, re, json
 ports = set()
-for cfg in ["/etc/udp/config.json", "/etc/udp-custom/config.json", "/etc/hysteria/config.json", "/etc/zivpn/config.json"]:
-    try:
-        with open(cfg, "r") as f:
-            for m in re.findall(r":(\d+)", f.read()):
-                ports.add(int(m))
-    except Exception: pass
 try:
     out = subprocess.check_output("ss -ulpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
@@ -280,6 +271,13 @@ try:
                 p = int(m)
                 if p not in [68, 123]: ports.add(p)
 except Exception: pass
+if not ports:
+    for cfg in ["/etc/udp/config.json", "/etc/udp-custom/config.json", "/etc/hysteria/config.json", "/etc/zivpn/config.json"]:
+        try:
+            with open(cfg, "r") as f:
+                for m in re.findall(r":(\d+)", f.read()):
+                    ports.add(int(m))
+        except Exception: pass
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -293,12 +291,6 @@ try:
     for m in re.findall(r"--listen-addr\s+(?:127\.0\.0\.1:)?(\d+)", out):
         ports.add(int(m))
 except Exception: pass
-if not ports:
-    try:
-        out = subprocess.check_output("systemctl cat badvpn 2>/dev/null", shell=True).decode()
-        for m in re.findall(r"--listen-addr\s+(?:127\.0\.0\.1:)?(\d+)", out):
-            ports.add(int(m))
-    except Exception: pass
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -306,23 +298,53 @@ if ports: print(",".join(map(str, sorted(ports))))
 get_rust_ports() {
     python3 -c '
 import subprocess, re, json
+
 ports = set()
-for cfg in ["/root/socks_config.json", "/etc/socks-rust/config.json", "/etc/rust-proxy/config.json"]:
+listening_ports = set()
+
+# 1. Obtener puertos en escucha en ss
+try:
+    ss_out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+    for line in ss_out.splitlines():
+        if any(x in line.lower() for x in ["socks-rust", "rust-proxy", "socks_rust", "rust_proxy", "proxy-rust", "rust-socks", "socks-proxy", "ssservice"]) or ("rust" in line.lower() and not any(k in line.lower() for k in ["caddy", "nginx", "python", "sshd", "xray", "v2ray"])):
+            for m in re.findall(r":(\d+)\s", line):
+                ports.add(int(m))
+        if not any(k in line.lower() for k in ["sshd", "caddy", "nginx", "xray", "v2ray"]):
+            for m in re.findall(r":(\d+)\s", line):
+                listening_ports.add(int(m))
+except Exception:
+    pass
+
+# 2. Si no lo detectó directo en ss, leer archivos de configuración y verificar si su puerto está activo
+config_files = [
+    "/root/socks_config.json",
+    "/etc/socks-rust/config.json",
+    "/etc/rust-proxy/config.json",
+    "/etc/proxy-rust/config.json",
+    "/etc/rust/config.json",
+    "/etc/shadowsocks-rust/config.json",
+    "/etc/socks/config.json"
+]
+
+for cfg in config_files:
     try:
         with open(cfg, "r") as f:
             d = json.load(f)
-            p = d.get("ports") or d.get("port")
-            if isinstance(p, list): ports.update([int(x) for x in p if str(x).isdigit()])
-            elif isinstance(p, (int, str)) and str(p).isdigit(): ports.add(int(p))
-    except Exception: pass
-try:
-    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-    for line in out.splitlines():
-        if any(x in line.lower() for x in ["socks-rust", "rust-proxy", "socks_rust"]):
-            for m in re.findall(r":(\d+)\s", line):
-                ports.add(int(m))
-except Exception: pass
-if ports: print(",".join(map(str, sorted(ports))))
+            p = d.get("ports") or d.get("port") or d.get("server_port") or d.get("local_port")
+            candidates = []
+            if isinstance(p, list):
+                candidates = [int(x) for x in p if str(x).isdigit()]
+            elif isinstance(p, (int, str)) and str(p).isdigit():
+                candidates = [int(p)]
+            for cp in candidates:
+                if cp in listening_ports or not ports:
+                    if cp in listening_ports:
+                        ports.add(cp)
+    except Exception:
+        pass
+
+if ports:
+    print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
 
@@ -330,21 +352,30 @@ get_python_ports() {
     python3 -c '
 import subprocess, re, json
 ports = set()
-for cfg in ["/root/socks_config.json", "/etc/socks-python/config.json"]:
+listening_ports = set()
+try:
+    ss_out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
+    for line in ss_out.splitlines():
+        if "proxy.py" in line.lower() or ("python" in line.lower() and not any(k in line.lower() for k in ["rust", "caddy", "nginx", "sshd", "xray", "v2ray"])):
+            for m in re.findall(r":(\d+)\s", line):
+                ports.add(int(m))
+        if not any(k in line.lower() for k in ["sshd", "caddy", "nginx", "xray", "v2ray"]):
+            for m in re.findall(r":(\d+)\s", line):
+                listening_ports.add(int(m))
+except Exception: pass
+
+for cfg in ["/root/socks_config.json", "/etc/socks-python/config.json", "/etc/python-proxy/config.json"]:
     try:
         with open(cfg, "r") as f:
             d = json.load(f)
             p = d.get("ports") or d.get("port")
-            if isinstance(p, list): ports.update([int(x) for x in p if str(x).isdigit()])
-            elif isinstance(p, (int, str)) and str(p).isdigit(): ports.add(int(p))
+            candidates = []
+            if isinstance(p, list): candidates = [int(x) for x in p if str(x).isdigit()]
+            elif isinstance(p, (int, str)) and str(p).isdigit(): candidates = [int(p)]
+            for cp in candidates:
+                if cp in listening_ports: ports.add(cp)
     except Exception: pass
-try:
-    out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
-    for line in out.splitlines():
-        if "proxy.py" in line.lower() or ("python" in line.lower() and not any(k in line.lower() for k in ["rust", "caddy", "nginx", "sshd"])):
-            for m in re.findall(r":(\d+)\s", line):
-                ports.add(int(m))
-except Exception: pass
+
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -371,20 +402,21 @@ get_ssl_ports() {
 import subprocess, re
 ports = set()
 try:
-    with open("/etc/stunnel/stunnel.conf", "r") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("accept"):
-                m = re.search(r"=\s*(?:[0-9.]+:)?([0-9]+)", line)
-                if m: ports.add(int(m.group(1)))
-except Exception: pass
-try:
     out = subprocess.check_output("ss -tulpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
         if any(x in line.lower() for x in ["stunnel", "stunnel4"]):
             for m in re.findall(r":(\d+)\s", line):
                 ports.add(int(m))
 except Exception: pass
+if not ports:
+    try:
+        with open("/etc/stunnel/stunnel.conf", "r") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("accept"):
+                    m = re.search(r"=\s*(?:[0-9.]+:)?([0-9]+)", line)
+                    if m: ports.add(int(m.group(1)))
+    except Exception: pass
 if ports: print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
@@ -396,7 +428,6 @@ ports = set()
 try:
     out = subprocess.check_output("ss -tlpn 2>/dev/null", shell=True).decode()
     for line in out.splitlines():
-        # Detección estricta del demonio sshd (excluye python, ssh-go, vpn-proxy, etc.)
         if "\"sshd\"" in line or ("sshd" in line.lower() and not any(x in line.lower() for x in ["python", "vpn-proxy", "ssh-go", "socks", "rust"])):
             for m in re.findall(r":(\d+)\s", line):
                 ports.add(int(m))
@@ -413,78 +444,84 @@ print(",".join(map(str, sorted(ports))))
 ' 2>/dev/null
 }
 
+# ==================== FILTRADO ESTRICTO DE ACTIVOS ====================
+
 get_ports_summary() {
     ACTIVE_ITEMS=()
 
     # Caddy
-    if command_exists caddy && (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1); then
-        local p=$(get_caddy_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🌐 Caddy   : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🌐 Caddy   : ON")
+    local caddy_p=$(get_caddy_ports)
+    if [[ -n "$caddy_p" ]] && (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1); then
+        ACTIVE_ITEMS+=("🌐 Caddy   : $(truncate_str "$caddy_p")")
     fi
 
     # Nginx
-    if command_exists nginx && (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1); then
-        local p=$(get_nginx_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🔀 Nginx   : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🔀 Nginx   : ON")
+    local nginx_p=$(get_nginx_ports)
+    if [[ -n "$nginx_p" ]] && (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1); then
+        ACTIVE_ITEMS+=("🔀 Nginx   : $(truncate_str "$nginx_p")")
     fi
 
     # V2Ray
-    if command_exists v2ray && (systemctl is-active --quiet v2ray 2>/dev/null || pgrep -x v2ray >/dev/null 2>&1); then
-        local p=$(get_v2ray_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("⚡ V2Ray   : $(truncate_str "$p")") || ACTIVE_ITEMS+=("⚡ V2Ray   : ON")
+    local v2ray_p=$(get_v2ray_ports)
+    if [[ -n "$v2ray_p" ]] && (systemctl is-active --quiet v2ray 2>/dev/null || pgrep -f "v2ray" >/dev/null 2>&1); then
+        ACTIVE_ITEMS+=("⚡ V2Ray   : $(truncate_str "$v2ray_p")")
     fi
 
     # SSH-Go
-    if systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null || pgrep -f "vpn-proxy" >/dev/null || pgrep -f "ssh-go" >/dev/null; then
-        local p=$(get_sshgo_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🚀 SSH-Go  : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🚀 SSH-Go  : ON")
+    local sshgo_p=$(get_sshgo_ports)
+    if [[ -n "$sshgo_p" ]] && (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null || pgrep -f "vpn-proxy" >/dev/null 2>&1 || pgrep -f "ssh-go" >/dev/null 2>&1); then
+        ACTIVE_ITEMS+=("🚀 SSH-Go  : $(truncate_str "$sshgo_p")")
     fi
 
     # XRay
-    if systemctl is-active --quiet xray 2>/dev/null || pgrep -x xray >/dev/null 2>&1; then
-        local p=$(get_xray_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🔰 XRay    : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🔰 XRay    : ON")
+    local xray_p=$(get_xray_ports)
+    if [[ -n "$xray_p" ]] && (systemctl is-active --quiet xray 2>/dev/null || pgrep -f "xray" >/dev/null 2>&1); then
+        ACTIVE_ITEMS+=("🔰 XRay    : $(truncate_str "$xray_p")")
     fi
 
-    # UDP
-    if systemctl is-active --quiet udp-custom 2>/dev/null || systemctl is-active --quiet udp-hysteria 2>/dev/null || systemctl is-active --quiet zivpn 2>/dev/null || pgrep -f "udp-custom" >/dev/null; then
-        local p=$(get_udp_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("⚡ UDP     : $(truncate_str "$p")") || ACTIVE_ITEMS+=("⚡ UDP     : ON")
+    # UDP Panel
+    local udp_p=$(get_udp_ports)
+    if [[ -n "$udp_p" ]] && (systemctl is-active --quiet udp-custom 2>/dev/null || systemctl is-active --quiet udp-hysteria 2>/dev/null || systemctl is-active --quiet zivpn 2>/dev/null || pgrep -f "udp-custom" >/dev/null 2>&1 || pgrep -f "zivpn" >/dev/null 2>&1); then
+        ACTIVE_ITEMS+=("⚡ UDP     : $(truncate_str "$udp_p")")
     fi
 
     # BadVPN
-    if pgrep -f badvpn-udpgw >/dev/null 2>&1 || systemctl is-active --quiet badvpn 2>/dev/null; then
-        local p=$(get_badvpn_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🚀 BadVPN  : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🚀 BadVPN  : 7200,7300")
+    local badvpn_p=$(get_badvpn_ports)
+    if [[ -n "$badvpn_p" ]] && (pgrep -f badvpn-udpgw >/dev/null 2>&1 || systemctl is-active --quiet badvpn 2>/dev/null); then
+        ACTIVE_ITEMS+=("🚀 BadVPN  : $(truncate_str "$badvpn_p")")
     fi
 
     # Rust
-    if pgrep -f "socks-rust" >/dev/null || pgrep -f "rust-proxy" >/dev/null || systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null; then
-        local p=$(get_rust_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🦀 Rust    : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🦀 Rust    : ON")
+    local rust_p=$(get_rust_ports)
+    if [[ -n "$rust_p" ]]; then
+        ACTIVE_ITEMS+=("🦀 Rust    : $(truncate_str "$rust_p")")
+    elif systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null || systemctl is-active --quiet rust 2>/dev/null || pgrep -f "socks-rust" >/dev/null 2>&1 || pgrep -f "rust-proxy" >/dev/null 2>&1 || pgrep -f "socks_rust" >/dev/null 2>&1; then
+        ACTIVE_ITEMS+=("🦀 Rust    : ON")
     fi
 
     # Python
-    if pgrep -f "proxy.py" >/dev/null || systemctl is-active --quiet python-proxy 2>/dev/null; then
-        local p=$(get_python_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🐍 Python  : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🐍 Python  : ON")
+    local python_p=$(get_python_ports)
+    if [[ -n "$python_p" ]] && (pgrep -f "proxy.py" >/dev/null 2>&1 || systemctl is-active --quiet python-proxy 2>/dev/null || pgrep -f "python-proxy" >/dev/null 2>&1 || pgrep -f "P-Proxy" >/dev/null 2>&1); then
+        ACTIVE_ITEMS+=("🐍 Python  : $(truncate_str "$python_p")")
     fi
 
     # SlowDNS
-    if systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null || pgrep -f "slowdns" >/dev/null; then
-        local p=$(get_slowdns_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🐌 SlowDNS : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🐌 SlowDNS : 53")
+    if systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null 2>&1 || pgrep -f "slowdns" >/dev/null 2>&1 || pgrep -f "dnstt" >/dev/null 2>&1; then
+        local slowdns_p=$(get_slowdns_ports)
+        [[ -n "$slowdns_p" ]] && ACTIVE_ITEMS+=("🐌 SlowDNS : $(truncate_str "$slowdns_p")") || ACTIVE_ITEMS+=("🐌 SlowDNS : 53")
     fi
 
     # SSL/Stunnel
-    if systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null; then
-        local p=$(get_ssl_ports)
-        [[ -n "$p" ]] && ACTIVE_ITEMS+=("🔒 SSL/TLS : $(truncate_str "$p")") || ACTIVE_ITEMS+=("🔒 SSL/TLS : 443")
+    if systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null 2>&1; then
+        local ssl_p=$(get_ssl_ports)
+        [[ -n "$ssl_p" ]] && ACTIVE_ITEMS+=("🔒 SSL/TLS : $(truncate_str "$ssl_p")") || ACTIVE_ITEMS+=("🔒 SSL/TLS : ON")
     fi
 
-    # SSH (Únicamente OpenSSH / sshd)
-    local ssh_p=$(get_ssh_ports)
-    [[ -n "$ssh_p" ]] && ACTIVE_ITEMS+=("🔐 SSH     : $(truncate_str "$ssh_p")") || ACTIVE_ITEMS+=("🔐 SSH     : 22")
+    # SSH
+    if systemctl is-active --quiet sshd 2>/dev/null || systemctl is-active --quiet ssh 2>/dev/null || pgrep -x sshd >/dev/null 2>&1; then
+        local ssh_p=$(get_ssh_ports)
+        [[ -n "$ssh_p" ]] && ACTIVE_ITEMS+=("🔐 SSH     : $(truncate_str "$ssh_p")") || ACTIVE_ITEMS+=("🔐 SSH     : 22")
+    fi
 }
 
 render_ui() {
@@ -945,17 +982,17 @@ monitor_menu() {
 status_menu() {
     prepare_for_external_script
     panel_header "ESTADO GENERAL DE SERVICIOS" "📋"
-    printf "  Caddy:        "; (command_exists caddy && (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1)) && info "ACTIVO" || warn "INACTIVO"
-    printf "  Nginx:        "; (command_exists nginx && (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1)) && info "ACTIVO" || warn "INACTIVO"
-    printf "  V2Ray:        "; (command_exists v2ray && (systemctl is-active --quiet v2ray 2>/dev/null || pgrep -x v2ray >/dev/null 2>&1)) && info "ACTIVO" || warn "INACTIVO"
-    printf "  XRay:         "; (systemctl is-active --quiet xray 2>/dev/null || pgrep -x xray >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
-    printf "  SSH-Go:       "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  UDP Panel:    "; (systemctl is-active --quiet udp-custom 2>/dev/null || systemctl is-active --quiet udp-hysteria 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  Socks Rust:   "; (systemctl is-active --quiet rust-proxy 2>/dev/null || pgrep -f "socks-rust" >/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  Socks Python: "; (systemctl is-active --quiet python-proxy 2>/dev/null || pgrep -f "proxy.py" >/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  BadVPN:       "; pgrep -f badvpn-udpgw >/dev/null 2>&1 && info "ACTIVO" || warn "INACTIVO"
-    printf "  SlowDNS:      "; (systemctl is-active --quiet slowdns 2>/dev/null || pgrep -f "dns-server" >/dev/null) && info "ACTIVO" || warn "INACTIVO"
-    printf "  SSL/Stunnel:  "; (systemctl is-active --quiet stunnel4 2>/dev/null || pgrep -f "stunnel" >/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Caddy:        "; (systemctl is-active --quiet caddy 2>/dev/null || pgrep -x caddy >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Nginx:        "; (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  V2Ray:        "; (systemctl is-active --quiet v2ray 2>/dev/null || pgrep -f "v2ray" >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  XRay:         "; (systemctl is-active --quiet xray 2>/dev/null || pgrep -f "xray" >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  SSH-Go:       "; (systemctl is-active --quiet vpn-proxy 2>/dev/null || systemctl is-active --quiet ssh-go 2>/dev/null || pgrep -f "vpn-proxy" >/dev/null 2>&1 || pgrep -f "ssh-go" >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  UDP Panel:    "; (systemctl is-active --quiet udp-custom 2>/dev/null || systemctl is-active --quiet udp-hysteria 2>/dev/null || systemctl is-active --quiet zivpn 2>/dev/null || pgrep -f "udp-custom" >/dev/null 2>&1 || pgrep -f "zivpn" >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Socks Rust:   "; (systemctl is-active --quiet rust-proxy 2>/dev/null || systemctl is-active --quiet socks-rust 2>/dev/null || pgrep -f "socks-rust" >/dev/null 2>&1 || pgrep -f "rust-proxy" >/dev/null 2>&1 || [[ -n "$(get_rust_ports)" ]]) && info "ACTIVO" || warn "INACTIVO"
+    printf "  Socks Python: "; (systemctl is-active --quiet python-proxy 2>/dev/null || pgrep -f "proxy.py" >/dev/null 2>&1 || pgrep -f "python-proxy" >/dev/null 2>&1 || pgrep -f "P-Proxy" >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  BadVPN:       "; (pgrep -f badvpn-udpgw >/dev/null 2>&1 || systemctl is-active --quiet badvpn 2>/dev/null) && info "ACTIVO" || warn "INACTIVO"
+    printf "  SlowDNS:      "; (systemctl is-active --quiet slowdns 2>/dev/null || systemctl is-active --quiet dns-server 2>/dev/null || pgrep -f "dns-server" >/dev/null 2>&1 || pgrep -f "slowdns" >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
+    printf "  SSL/Stunnel:  "; (systemctl is-active --quiet stunnel4 2>/dev/null || systemctl is-active --quiet stunnel 2>/dev/null || pgrep -f "stunnel" >/dev/null 2>&1) && info "ACTIVO" || warn "INACTIVO"
     pause_screen
 }
 
