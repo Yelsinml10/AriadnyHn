@@ -14,24 +14,45 @@ C_WHITE='\033[1;37m'
 BG_BLUE='\033[44m'
 BG_GREEN='\033[42m'
 
-clear
-echo -e "${C_CYAN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
-echo -e "${C_CYAN}│${C_RESET} ${BG_BLUE}${C_WHITE}${C_BOLD}   🦀 INSTALADOR PROXY + PANEL 100% RUST (COMANDO rust) 🦀  ${C_RESET} ${C_CYAN}│${C_RESET}"
-echo -e "${C_CYAN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
-
+# 1. Comprobación de usuario root
 if [ "$EUID" -ne 0 ]; then
   echo -e "\n${C_RED}❌ Error: Por favor ejecuta este script como usuario root.${C_RESET}\n"
   exit 1
 fi
 
-# 1. Instalar dependencias puras en Rust
-echo -e "\n${C_YELLOW}[1/4] Instalando compilador Rust (rustc) y herramientas...${C_RESET}"
-apt update -y && apt install -y rustc curl wget net-tools openssh-server systemd > /dev/null 2>&1
+# 2. DETECCIÓN: Si ya está instalado, mandar directo al panel
+if [ -f "/usr/local/bin/rust" ] && [ -f "/root/socks_config.json" ] && [ -f "/etc/systemd/system/socks-proxy.service" ]; then
+    /usr/local/bin/rust
+    exit 0
+fi
+
+clear
+echo -e "${C_CYAN}┌─────────────────────────────────────────────────────────────┐${C_RESET}"
+echo -e "${C_CYAN}│${C_RESET} ${BG_BLUE}${C_WHITE}${C_BOLD}   🦀 INSTALADOR PROXY + PANEL 100% RUST (COMANDO rust) 🦀  ${C_RESET} ${C_CYAN}│${C_RESET}"
+echo -e "${C_CYAN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
+
+# 3. Instalación optimizada de dependencias (sólo las que falten para máxima velocidad)
+echo -e "\n${C_YELLOW}[1/4] Verificando e instalando dependencias (rustc, openssh, etc.)...${C_RESET}"
+export DEBIAN_FRONTEND=noninteractive
+
+REQUIRED_PKGS=("rustc" "curl" "wget" "net-tools" "openssh-server" "systemd")
+MISSING_PKGS=()
+
+for pkg in "${REQUIRED_PKGS[@]}"; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        MISSING_PKGS+=("$pkg")
+    fi
+done
+
+if [ ${#MISSING_PKGS[@]} -ne 0 ]; then
+    apt-get update -qq > /dev/null 2>&1
+    apt-get install -y -qq --no-install-recommends "${MISSING_PKGS[@]}" > /dev/null 2>&1
+fi
 
 # Asegurar servicio SSH activo
-systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null
+systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd >/dev/null 2>&1
 
-# 2. Configuración Interactiva
+# 4. Configuración Interactiva Inicial
 echo -e "\n${C_YELLOW}[2/4] Configurando el protocolo Proxy WebSocket Custom...${C_RESET}"
 
 read -p "$(echo -e "${C_WHITE}${C_BOLD}ESCRIBE EL PUERTO PROXY A ABRIR [8080]: ${C_RESET}")" LISTEN_PORT
@@ -47,7 +68,7 @@ cat > "$CONFIG_FILE" << EOF
 }
 EOF
 
-# 3. Código Fuente en Rust (Corregido para compilación)
+# 5. Código Fuente en Rust (INTACTO)
 echo -e "\n${C_YELLOW}[3/4] Compilando binario nativo principal '/usr/local/bin/rust'...${C_RESET}"
 cat > /root/proxy.rs << 'EOF'
 use std::env;
@@ -435,11 +456,11 @@ fn main() {
 }
 EOF
 
-# Compilar ejecutable binario nativo en /usr/local/bin/rust
+# 6. Compilación optimizada
 rustc -O /root/proxy.rs -o /usr/local/bin/rust
 chmod +x /usr/local/bin/rust
 
-# 4. Configurar Servicio Systemd
+# 7. Configurar Servicio Systemd
 echo -e "${C_YELLOW}[4/4] Configurando servicio systemd para Rust...${C_RESET}"
 cat > /etc/systemd/system/socks-proxy.service << 'EOF'
 [Unit]
@@ -461,7 +482,7 @@ systemctl daemon-reload
 systemctl enable socks-proxy > /dev/null 2>&1
 systemctl restart socks-proxy
 
-# Agregar alias exclusivo al entorno bash
+# Agregar alias al entorno bash si aún no existe
 grep -q "alias rust=" /root/.bashrc || echo "alias rust='/usr/local/bin/rust'" >> /root/.bashrc
 hash -r 2>/dev/null
 
@@ -470,7 +491,5 @@ echo -e "${C_GREEN}│${C_RESET} ${BG_GREEN}${C_WHITE}${C_BOLD}    ¡INSTALACIÓ
 echo -e "${C_GREEN}└─────────────────────────────────────────────────────────────┘${C_RESET}"
 echo -e "\n📌 Escribe la palabra ${C_BOLD}${C_YELLOW}rust${C_RESET} en tu terminal para abrir el panel.\n"
 
-read -p "$(echo -e "${C_BOLD}${C_CYAN}¿Deseas abrir el Panel Administrativo en Rust ahora? (S/n): ${C_RESET}")" RUN_NOW
-if [[ "$RUN_NOW" =~ ^[sS]$ ]] || [ -z "$RUN_NOW" ]; then
-    /usr/local/bin/rust
-fi
+# Iniciar panel automáticamente tras la instalación
+/usr/local/bin/rust
